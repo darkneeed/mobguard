@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+*.log
+runtime/
+tests/
+web/node_modules/
+web/dist/
+mobguard panel 0.6.sh
