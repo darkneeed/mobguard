@@ -89,56 +89,82 @@ load_env_if_exists() {
 require_base_dependencies() {
   require_cmd docker
   docker compose version >/dev/null 2>&1 || fail "Не найден docker compose plugin"
-  require_cmd curl
-  require_cmd tar
   require_cmd caddy
 }
 
-check_required_env() {
+get_missing_required_env() {
   missing=""
 
   for key in TG_MAIN_BOT_TOKEN TG_ADMIN_BOT_TOKEN TG_ADMIN_BOT_USERNAME PANEL_TOKEN IPINFO_TOKEN; do
     eval "value=\${$key:-}"
     if [ -z "$value" ]; then
-      missing="$missing $key"
+      if [ -n "$missing" ]; then
+        missing="$missing "
+      fi
+      missing="${missing}${key}"
     fi
   done
 
-  if [ ! -f "$GEOIP_DB" ]; then
-    if [ -z "${MAXMIND_LICENSE_KEY:-}" ]; then
-      missing="$missing MAXMIND_LICENSE_KEY"
-    fi
-  fi
-
-  if [ -n "$missing" ]; then
-    warn "Не заполнены обязательные переменные в .env:$missing"
-    warn "Откройте $ENV_FILE, заполните значения и запустите скрипт повторно."
-    exit 1
-  fi
+  printf '%s' "$missing"
 }
 
 download_geolite_asn() {
-  if [ -f "$GEOIP_DB" ]; then
-    info "GeoLite2-ASN.mmdb уже существует"
-    return
-  fi
-
-  [ -n "${MAXMIND_LICENSE_KEY:-}" ] || fail "MAXMIND_LICENSE_KEY не задан, GeoLite2-ASN.mmdb не может быть загружен"
+  require_cmd curl
+  require_cmd tar
+  require_cmd mktemp
 
   TMP_DIR="$(mktemp -d)"
   ARCHIVE_PATH="$TMP_DIR/geolite-asn.tar.gz"
   DOWNLOAD_URL="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz"
 
   info "Скачиваю GeoLite2-ASN.mmdb с MaxMind"
-  curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE_PATH"
-  tar -xzf "$ARCHIVE_PATH" -C "$TMP_DIR"
+  if ! curl -fsSL "$DOWNLOAD_URL" -o "$ARCHIVE_PATH"; then
+    rm -rf "$TMP_DIR"
+    return 1
+  fi
+
+  if ! tar -xzf "$ARCHIVE_PATH" -C "$TMP_DIR"; then
+    rm -rf "$TMP_DIR"
+    return 1
+  fi
 
   MMDB_PATH="$(find "$TMP_DIR" -name 'GeoLite2-ASN.mmdb' | head -n 1)"
-  [ -n "$MMDB_PATH" ] || fail "После распаковки не найден файл GeoLite2-ASN.mmdb"
+  if [ -z "$MMDB_PATH" ]; then
+    rm -rf "$TMP_DIR"
+    return 1
+  fi
 
   cp "$MMDB_PATH" "$GEOIP_DB"
   rm -rf "$TMP_DIR"
   info "GeoLite2-ASN.mmdb сохранён в $GEOIP_DB"
+}
+
+handle_geolite_asn() {
+  if [ -f "$GEOIP_DB" ]; then
+    info "Найдена существующая ASN-база: $GEOIP_DB"
+    return
+  fi
+
+  if [ -z "${MAXMIND_LICENSE_KEY:-}" ]; then
+    warn "ASN-база не найдена: $GEOIP_DB"
+    warn "Установка продолжится без GeoLite2-ASN.mmdb, но ASN-анализ и качество score будут ниже."
+    warn "Положите GeoLite2-ASN.mmdb вручную в $GEOIP_DB или заполните MAXMIND_LICENSE_KEY в $ENV_FILE и запустите install.sh повторно."
+    return
+  fi
+
+  if ! download_geolite_asn; then
+    warn "Не удалось автоматически загрузить GeoLite2-ASN.mmdb."
+    warn "Продолжаю без ASN-базы. Положите файл вручную в $GEOIP_DB или проверьте MAXMIND_LICENSE_KEY и повторно запустите install.sh."
+  fi
+}
+
+print_missing_env_warning() {
+  missing="$1"
+
+  [ -n "$missing" ] || return
+
+  warn "Не заполнены обязательные переменные в $ENV_FILE: $missing"
+  warn "Подготовительный этап завершён. Заполните .env и повторно запустите install.sh для запуска docker compose."
 }
 
 print_next_steps() {
@@ -169,8 +195,13 @@ main() {
   ensure_structure
   load_env_if_exists
   require_base_dependencies
-  check_required_env
-  download_geolite_asn
+  missing_required="$(get_missing_required_env)"
+  handle_geolite_asn
+  if [ -n "$missing_required" ]; then
+    print_missing_env_warning "$missing_required"
+    print_next_steps
+    exit 0
+  fi
   start_stack
   print_next_steps
 }

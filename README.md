@@ -69,7 +69,7 @@ MobGuard — это система, которая отслеживает нек
 
 ### 2.1. Что хранится в `.env`
 
-В `.env` должны лежать только секреты и обязательные токены:
+В `.env` должны лежать только секреты и токены:
 
 ```env
 TG_MAIN_BOT_TOKEN=
@@ -77,6 +77,7 @@ TG_ADMIN_BOT_TOKEN=
 TG_ADMIN_BOT_USERNAME=
 PANEL_TOKEN=
 IPINFO_TOKEN=
+# optional: нужен только для автоматической загрузки GeoLite2-ASN.mmdb
 MAXMIND_LICENSE_KEY=
 ```
 
@@ -86,8 +87,18 @@ MAXMIND_LICENSE_KEY=
 - `TG_ADMIN_BOT_TOKEN` — админ-бот
 - `TG_ADMIN_BOT_USERNAME` — username админ-бота без `@`
 - `PANEL_TOKEN` — токен доступа к Remnawave API
-- `IPINFO_TOKEN` — токен IPInfo, без него score может деградировать к `0`
-- `MAXMIND_LICENSE_KEY` — ключ MaxMind, нужен для автоматической загрузки `GeoLite2-ASN.mmdb`
+- `IPINFO_TOKEN` — обязательный токен IPInfo, без него score может деградировать к `0`
+- `MAXMIND_LICENSE_KEY` — необязательный ключ MaxMind, нужен только для автоматической загрузки `runtime/GeoLite2-ASN.mmdb`
+
+Обязательными для запуска `install.sh` с последующим `docker compose up -d --build` считаются только:
+
+- `TG_MAIN_BOT_TOKEN`
+- `TG_ADMIN_BOT_TOKEN`
+- `TG_ADMIN_BOT_USERNAME`
+- `PANEL_TOKEN`
+- `IPINFO_TOKEN`
+
+`MAXMIND_LICENSE_KEY` не блокирует установку, если ASN-база уже лежит в `runtime/GeoLite2-ASN.mmdb`, будет положена вручную позже или установка пока выполняется без неё.
 
 Большинство инфраструктурных путей пользователю вручную больше задавать не нужно:
 
@@ -117,22 +128,33 @@ MAXMIND_LICENSE_KEY=
 
 ## 3. Почему score может быть равен 0
 
-Самая частая причина:
+Обычно причины делятся на две группы.
 
-- не заполнен `IPINFO_TOKEN`
+### 3.1. Не заполнен `IPINFO_TOKEN`
+
+Если `IPINFO_TOKEN` пустой:
+
 - `IPInfo` не возвращает ASN, ISP и hostname
-- из-за этого:
-  - `asn=None`
-  - `Unknown ISP`
-  - не срабатывают `pure_mobile_asns`
-  - не срабатывают `pure_home_asns`
-  - не срабатывают `mixed_asns`
-  - keyword-анализ сильно деградирует
+- `asn` часто становится `None`
+- ISP определяется как `Unknown ISP`
+- не срабатывают `pure_mobile_asns`, `pure_home_asns` и `mixed_asns`
+- keyword-анализ сильно деградирует
 
 Итог:
 
 - score часто остаётся равным `0`
 - кейсы массово улетают в ручную модерацию
+
+### 3.2. Нет `runtime/GeoLite2-ASN.mmdb`
+
+Если `runtime/GeoLite2-ASN.mmdb` отсутствует:
+
+- fallback по ASN работает неполно
+- ASN-анализ и часть эвристик становятся менее точными
+- `analysis_24h.asn_missing_ratio` может заметно расти
+- score тоже может залипать ниже ожидаемого, особенно если данных от IPInfo недостаточно
+
+Если одновременно нет и `IPINFO_TOKEN`, и `GeoLite2-ASN.mmdb`, деградация качества анализа будет максимальной.
 
 Теперь проект показывает это явно:
 
@@ -155,15 +177,29 @@ MAXMIND_LICENSE_KEY=
 
 Идея установки такая:
 
-- пользователь создаёт каталог `/opt/mobguard`
-- кладёт туда один install/bootstrap script
-- запускает его
-- при первом запуске скрипт создаёт структуру, `.env`, `runtime/config.json`, базу и останавливается, если обязательные секреты не заполнены
-- после заполнения `.env` пользователь запускает тот же скрипт повторно
-- при повторном запуске скрипт скачивает `GeoLite2-ASN.mmdb`, поднимает контейнеры и завершает установку
+- единственный официальный install entrypoint — корневой `install.sh`
+- первый запуск может только подготовить проект: создать структуру, `.env`, `runtime/config.json` и `runtime/bans.db`
+- после заполнения обязательных токенов тот же `install.sh` запускается повторно и продолжает установку
+- отсутствие ASN-базы не должно выглядеть как полный блокер установки: проект можно подготовить и даже запустить без неё, но качество ASN-анализа будет ниже
 
-Если репозиторий уже склонирован — скрипт работает по месту.  
-Если репозиторий ещё не склонирован — скрипт может сам его клонировать по `MOBGUARD_REPO_URL` или по первому аргументу.
+Поддерживаются только два реальных сценария запуска:
+
+- проект уже склонирован, запуск по месту: `./install.sh`
+- в каталоге лежит только `install.sh`, и он сам клонирует приватный репозиторий: `./install.sh 'https://<TOKEN>@github.com/darkneeed/mobguard.git'`
+
+### 4.1. Сценарии ASN-базы
+
+`install.sh` обрабатывает `runtime/GeoLite2-ASN.mmdb` так:
+
+1. если файл уже лежит в `runtime/GeoLite2-ASN.mmdb`, установка продолжается без `MAXMIND_LICENSE_KEY`
+2. если файла нет, но заполнен `MAXMIND_LICENSE_KEY`, скрипт пытается скачать ASN-базу автоматически
+3. если файла нет и `MAXMIND_LICENSE_KEY` пустой, скрипт выводит предупреждение и продолжает установку без ASN-базы
+
+В третьем сценарии можно в любой момент:
+
+- положить `GeoLite2-ASN.mmdb` вручную в `runtime/GeoLite2-ASN.mmdb`
+- заполнить `MAXMIND_LICENSE_KEY` в `.env`
+- повторно запустить `./install.sh`
 
 ---
 
@@ -181,6 +217,8 @@ MAXMIND_LICENSE_KEY=
 - git
 - curl
 - tar
+
+`curl` и `tar` нужны только для автоматической загрузки `GeoLite2-ASN.mmdb`. Если ASN-база уже положена вручную, они не участвуют в анализе самого рантайма.
 
 Проверьте:
 
@@ -229,9 +267,9 @@ ls -la /opt/mobguard
 
 Текущий каталог должен быть `/opt/mobguard`.
 
-### Шаг 3. Подготовьте install script
+### Шаг 3. Подготовьте `install.sh`
 
-Есть два варианта.
+Есть только два поддерживаемых варианта.
 
 #### Вариант А. Репозиторий уже склонирован
 
@@ -241,7 +279,7 @@ ls -la /opt/mobguard
 chmod +x /opt/mobguard/install.sh
 ```
 
-#### Вариант Б. В каталоге пока только один скрипт
+#### Вариант Б. В каталоге пока только один `install.sh`
 
 Если вы загрузили только один `install.sh` в пустую папку `/opt/mobguard`, то он должен быть исполняемым:
 
@@ -279,7 +317,7 @@ ls -la /opt/mobguard
 - `README.md`
 - `install.sh`
 
-### Шаг 4. Запустите install/bootstrap script в первый раз
+### Шаг 4. Запустите `install.sh` в первый раз
 
 Если проект уже склонирован:
 
@@ -288,15 +326,17 @@ cd /opt/mobguard
 ./install.sh
 ```
 
-Что должен сделать скрипт:
+Что делает скрипт:
 
-1. создать `runtime/`
-2. создать `runtime/health/`
-3. создать `.env`, если файла нет
-4. создать `runtime/config.json`, если файла нет
-5. создать `runtime/bans.db`, если файла нет
-6. проверить обязательные зависимости
-7. остановиться с понятной инструкцией, если обязательные секреты ещё не заполнены
+1. найти исходники на месте или клонировать их из приватного git URL
+2. создать `runtime/`
+3. создать `runtime/health/`
+4. создать `.env`, если файла нет
+5. создать `runtime/config.json`, если файла нет
+6. создать `runtime/bans.db`, если файла нет
+7. проверить обязательные токены
+8. обработать ASN-базу по мягкой логике
+9. запустить `docker compose up -d --build`, только если обязательные токены уже заполнены
 
 Что считается правильным результатом:
 
@@ -306,6 +346,7 @@ cd /opt/mobguard
   - `/opt/mobguard/runtime/bans.db`
   - `/opt/mobguard/runtime/health/`
 - скрипт не затирает уже существующие пользовательские файлы
+- первый запуск может корректно закончиться только на этапе подготовки проекта
 
 Что проверить после шага:
 
@@ -322,7 +363,7 @@ ls -la /opt/mobguard/runtime
 nano /opt/mobguard/.env
 ```
 
-Заполните:
+Заполните обязательные значения:
 
 ```env
 TG_MAIN_BOT_TOKEN=...
@@ -330,13 +371,15 @@ TG_ADMIN_BOT_TOKEN=...
 TG_ADMIN_BOT_USERNAME=...
 PANEL_TOKEN=...
 IPINFO_TOKEN=...
+# optional: только для автоматической загрузки ASN-базы
 MAXMIND_LICENSE_KEY=...
 ```
 
 Что считается правильным результатом:
 
-- значения заполнены
-- пустых обязательных строк не осталось
+- обязательные строки не пустые
+- `MAXMIND_LICENSE_KEY` заполнен только если вы хотите, чтобы `install.sh` сам скачал ASN-базу
+- если `runtime/GeoLite2-ASN.mmdb` уже лежит вручную, `MAXMIND_LICENSE_KEY` можно оставить пустым
 
 Что проверить после шага:
 
@@ -386,7 +429,7 @@ nano /opt/mobguard/runtime/config.json
 cat /opt/mobguard/runtime/config.json
 ```
 
-### Шаг 7. Запустите install/bootstrap script повторно
+### Шаг 7. Запустите `install.sh` повторно
 
 После заполнения `.env` запустите тот же скрипт ещё раз.
 
@@ -399,15 +442,18 @@ cd /opt/mobguard
 
 Теперь скрипт должен:
 
-1. увидеть, что `.env` уже заполнен
-2. скачать `GeoLite2-ASN.mmdb` через `MAXMIND_LICENSE_KEY`, если файла ещё нет
-3. не трогать уже существующие `runtime/config.json` и `.env`
-4. запустить `docker compose up -d --build`
+1. увидеть, что `.env` уже существует и не перетирать его
+2. не трогать уже существующие `runtime/config.json` и `runtime/bans.db`
+3. обработать ASN-базу по одному из трёх сценариев:
+   - использовать уже существующий `runtime/GeoLite2-ASN.mmdb`
+   - скачать `runtime/GeoLite2-ASN.mmdb` через `MAXMIND_LICENSE_KEY`
+   - вывести предупреждение и продолжить без ASN-базы
+4. запустить `docker compose up -d --build`, если обязательные токены заполнены
 
 Что считается правильным результатом:
 
-- `runtime/GeoLite2-ASN.mmdb` появился
-- контейнеры стартовали
+- контейнеры стартовали, если обязательные токены были заполнены
+- `runtime/GeoLite2-ASN.mmdb` либо уже существует, либо был скачан, либо его отсутствие явно объяснено предупреждением
 
 Что проверить после шага:
 
@@ -415,6 +461,8 @@ cd /opt/mobguard
 ls -lh /opt/mobguard/runtime/GeoLite2-ASN.mmdb
 docker compose ps
 ```
+
+Если файла нет, но скрипт честно предупредил о снижении качества ASN-анализа и контейнеры поднялись, это не считается ошибкой установки.
 
 ### Шаг 8. Проверьте состояние контейнеров
 
@@ -819,15 +867,15 @@ sudo mkdir -p /opt/mobguard
 sudo chown -R $USER:$USER /opt/mobguard
 cd /opt/mobguard
 
-# поместить сюда проект или один install-скрипт
+# положить сюда уже склонированный проект или один install.sh
 
 chmod +x install.sh
 ./install.sh
 
-nano .env
+nano .env  # обязательные токены; MAXMIND_LICENSE_KEY опционален
 nano runtime/config.json
 
-./install.sh
+./install.sh  # продолжает установку; без ASN-базы только предупреждает
 
 docker compose ps
 curl http://127.0.0.1:8080/api/health
@@ -844,5 +892,5 @@ sudo systemctl status caddy
 2. Каталог проекта: `/opt/mobguard`
 3. Секреты: `/opt/mobguard/.env`
 4. Основной runtime-конфиг: `/opt/mobguard/runtime/config.json`
-5. Если score снова падает к нулю — сначала проверяйте `IPINFO_TOKEN` и `/api/health`
+5. Если score снова падает к нулю — сначала проверяйте `IPINFO_TOKEN`, `/api/health` и наличие `runtime/GeoLite2-ASN.mmdb`
 6. Первый безопасный запуск делайте с `shadow_mode=true`
