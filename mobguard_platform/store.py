@@ -498,6 +498,29 @@ class PlatformStore:
                 """
             )
 
+            columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(ip_decisions)").fetchall()
+            }
+            if columns and "bundle_json" not in columns:
+                conn.execute("ALTER TABLE ip_decisions ADD COLUMN bundle_json TEXT")
+            analysis_event_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(analysis_events)").fetchall()
+            }
+            if analysis_event_columns and "system_id" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN system_id INTEGER")
+            review_case_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(review_cases)").fetchall()
+            }
+            if review_case_columns and "punitive_eligible" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN punitive_eligible INTEGER NOT NULL DEFAULT 0")
+            if review_case_columns and "system_id" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN system_id INTEGER")
+            live_rules_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(live_rules)").fetchall()
+            }
+            if live_rules_columns and "revision" not in live_rules_columns:
+                conn.execute("ALTER TABLE live_rules ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
+
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_review_cases_status ON review_cases(status, updated_at)"
             )
@@ -525,29 +548,6 @@ class PlatformStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_admin_sessions_exp ON admin_sessions(expires_at)"
             )
-
-            columns = {
-                row["name"] for row in conn.execute("PRAGMA table_info(ip_decisions)").fetchall()
-            }
-            if columns and "bundle_json" not in columns:
-                conn.execute("ALTER TABLE ip_decisions ADD COLUMN bundle_json TEXT")
-            analysis_event_columns = {
-                row["name"] for row in conn.execute("PRAGMA table_info(analysis_events)").fetchall()
-            }
-            if analysis_event_columns and "system_id" not in analysis_event_columns:
-                conn.execute("ALTER TABLE analysis_events ADD COLUMN system_id INTEGER")
-            review_case_columns = {
-                row["name"] for row in conn.execute("PRAGMA table_info(review_cases)").fetchall()
-            }
-            if review_case_columns and "punitive_eligible" not in review_case_columns:
-                conn.execute("ALTER TABLE review_cases ADD COLUMN punitive_eligible INTEGER NOT NULL DEFAULT 0")
-            if review_case_columns and "system_id" not in review_case_columns:
-                conn.execute("ALTER TABLE review_cases ADD COLUMN system_id INTEGER")
-            live_rules_columns = {
-                row["name"] for row in conn.execute("PRAGMA table_info(live_rules)").fetchall()
-            }
-            if live_rules_columns and "revision" not in live_rules_columns:
-                conn.execute("ALTER TABLE live_rules ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
 
             live_rules = conn.execute("SELECT rules_json FROM live_rules WHERE id = 1").fetchone()
             if not live_rules:

@@ -1,6 +1,7 @@
 import os
 import json
 import shutil
+import sqlite3
 import tempfile
 import unittest
 
@@ -206,6 +207,121 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertEqual(metrics["learning"]["legacy"]["total_patterns"], 1)
         self.assertEqual(metrics["learning"]["legacy"]["total_confidence"], 7)
         self.assertEqual(metrics["learning"]["thresholds"]["asn_min_support"], 1)
+
+    def test_init_schema_migrates_legacy_tables_before_creating_system_id_indexes(self):
+        legacy_db_path = os.path.join(self.temp_dir, "legacy.sqlite3")
+        with sqlite3.connect(legacy_db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE analysis_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    uuid TEXT,
+                    username TEXT,
+                    telegram_id TEXT,
+                    ip TEXT NOT NULL,
+                    tag TEXT,
+                    verdict TEXT NOT NULL,
+                    confidence_band TEXT NOT NULL,
+                    score INTEGER NOT NULL DEFAULT 0,
+                    isp TEXT,
+                    asn INTEGER,
+                    punitive_eligible INTEGER NOT NULL DEFAULT 0,
+                    reasons_json TEXT NOT NULL,
+                    signal_flags_json TEXT NOT NULL,
+                    bundle_json TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE review_cases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    unique_key TEXT NOT NULL UNIQUE,
+                    status TEXT NOT NULL,
+                    review_reason TEXT NOT NULL,
+                    uuid TEXT,
+                    username TEXT,
+                    telegram_id TEXT,
+                    ip TEXT NOT NULL,
+                    tag TEXT,
+                    verdict TEXT NOT NULL,
+                    confidence_band TEXT NOT NULL,
+                    score INTEGER NOT NULL DEFAULT 0,
+                    isp TEXT,
+                    asn INTEGER,
+                    latest_event_id INTEGER NOT NULL,
+                    repeat_count INTEGER NOT NULL DEFAULT 1,
+                    reason_codes_json TEXT NOT NULL,
+                    opened_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE live_rules (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    rules_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    updated_by TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE admin_sessions (
+                    token TEXT PRIMARY KEY,
+                    telegram_id INTEGER NOT NULL,
+                    username TEXT,
+                    first_name TEXT,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE review_labels (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    case_id INTEGER NOT NULL,
+                    event_id INTEGER NOT NULL,
+                    pattern_type TEXT NOT NULL,
+                    pattern_value TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE ip_decisions (
+                    ip TEXT PRIMARY KEY,
+                    status TEXT,
+                    confidence TEXT,
+                    details TEXT,
+                    asn INTEGER,
+                    expires TEXT,
+                    log_json TEXT
+                )
+                """
+            )
+            conn.commit()
+
+        legacy_store = PlatformStore(legacy_db_path, self.base_config, self.config_path)
+        legacy_store.init_schema()
+
+        with legacy_store._connect() as conn:
+            analysis_columns = {row["name"] for row in conn.execute("PRAGMA table_info(analysis_events)").fetchall()}
+            review_columns = {row["name"] for row in conn.execute("PRAGMA table_info(review_cases)").fetchall()}
+            indexes = {
+                row["name"] for row in conn.execute("PRAGMA index_list(review_cases)").fetchall()
+            }
+
+        self.assertIn("system_id", analysis_columns)
+        self.assertIn("system_id", review_columns)
+        self.assertIn("idx_review_cases_system_id", indexes)
 
     def test_health_snapshot_reflects_core_heartbeat(self):
         previous = os.environ.get("IPINFO_TOKEN")
