@@ -8,7 +8,27 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from dotenv import load_dotenv
 
-load_dotenv('/opt/ban_system/.env')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _resolve_runtime_dir() -> str:
+    explicit = os.getenv("BAN_SYSTEM_DIR")
+    if explicit:
+        return explicit
+
+    candidates = [
+        os.path.join(BASE_DIR, "runtime"),
+        "/opt/mobguard/runtime",
+        "/opt/ban_system",
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return candidates[1]
+
+
+BAN_SYSTEM_DIR = _resolve_runtime_dir()
+ENV_PATH = os.getenv("MOBGUARD_ENV_FILE", os.path.join(os.path.dirname(BAN_SYSTEM_DIR), ".env"))
+load_dotenv(ENV_PATH)
 
 logger = logging.getLogger("IPInfoAPI")
 

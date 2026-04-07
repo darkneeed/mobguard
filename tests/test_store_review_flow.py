@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ class StoreReviewFlowTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp(prefix="mobguard-store-")
         self.db_path = os.path.join(self.temp_dir, "test.sqlite3")
+        self.config_path = os.path.join(self.temp_dir, "config.json")
         self.base_config = {
             "mixed_asns": [12345],
             "allowed_isp_keywords": ["mobile"],
@@ -26,9 +28,10 @@ class StoreReviewFlowTests(unittest.TestCase):
                 "learning_promote_asn_min_precision": 1.0,
                 "learning_promote_combo_min_support": 1,
                 "learning_promote_combo_min_precision": 1.0,
+                "shadow_mode": True,
             },
         }
-        self.store = PlatformStore(self.db_path, self.base_config)
+        self.store = PlatformStore(self.db_path, self.base_config, self.config_path)
         self.store.init_schema()
 
     def tearDown(self):
@@ -83,11 +86,36 @@ class StoreReviewFlowTests(unittest.TestCase):
                 expected_updated_at=state["updated_at"],
             )
 
+        with open(self.config_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        self.assertEqual(payload["settings"]["threshold_mobile"], 70)
+        self.assertEqual(payload["_meta"]["revision"], updated["revision"])
+
     def test_health_snapshot_reflects_core_heartbeat(self):
-        self.store.update_service_heartbeat("mobguard-core", "ok", {"shadow_mode": True})
-        snapshot = self.store.get_health_snapshot()
-        self.assertEqual(snapshot["status"], "ok")
-        self.assertTrue(snapshot["core"]["healthy"])
+        previous = os.environ.get("IPINFO_TOKEN")
+        os.environ["IPINFO_TOKEN"] = "test-token"
+        try:
+            self.store.update_service_heartbeat("mobguard-core", "ok", {"shadow_mode": True})
+            snapshot = self.store.get_health_snapshot()
+            self.assertEqual(snapshot["status"], "ok")
+            self.assertTrue(snapshot["core"]["healthy"])
+            self.assertTrue(snapshot["ipinfo_token_present"])
+        finally:
+            if previous is None:
+                os.environ.pop("IPINFO_TOKEN", None)
+            else:
+                os.environ["IPINFO_TOKEN"] = previous
+
+    def test_health_snapshot_degrades_without_ipinfo_token(self):
+        previous = os.environ.pop("IPINFO_TOKEN", None)
+        try:
+            self.store.update_service_heartbeat("mobguard-core", "ok", {"shadow_mode": True})
+            snapshot = self.store.get_health_snapshot()
+            self.assertEqual(snapshot["status"], "degraded")
+            self.assertFalse(snapshot["ipinfo_token_present"])
+        finally:
+            if previous is not None:
+                os.environ["IPINFO_TOKEN"] = previous
 
 
 if __name__ == "__main__":

@@ -60,8 +60,8 @@
     "warning_timeout": 900,
     "debug_level": "FULL",
     "log_file": "/var/log/remnanode/access.log",
-    "geoip_db": "/opt/ban_system/GeoLite2-ASN.mmdb",
-    "db_file": "/opt/ban_system/bans.db",
+    "geoip_db": "/opt/mobguard/runtime/GeoLite2-ASN.mmdb",
+    "db_file": "/opt/mobguard/runtime/bans.db",
     "panel_url": "https://admpanel.mwnd.ru",
     "report_time": "06:00",
     "dry_run": true,
@@ -94,7 +94,7 @@
     "shadow_mode": true,
     "probable_home_warning_only": true,
     "auto_enforce_requires_hard_or_multi_signal": true,
-    "review_ui_base_url": "https://guard.example.com",
+    "review_ui_base_url": "https://mobguard.example.com",
     "learning_promote_asn_min_support": 10,
     "learning_promote_asn_min_precision": 0.95,
     "learning_promote_combo_min_support": 5,
@@ -103,5 +103,10 @@
   },
   "exempt_ids": [2, 3],
   "exempt_tg_ids": [1081950251],
-  "admin_tg_ids": [1081950251]
+  "admin_tg_ids": [1081950251],
+  "_meta": {
+    "revision": 1,
+    "updated_at": "",
+    "updated_by": "bootstrap"
+  }
 }

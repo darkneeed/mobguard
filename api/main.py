@@ -13,12 +13,28 @@ from mobguard_platform import PlatformStore, validate_live_rules_patch, verify_t
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-BAN_SYSTEM_DIR = Path(os.getenv("BAN_SYSTEM_DIR", str(ROOT_DIR)))
-load_dotenv(BAN_SYSTEM_DIR / ".env")
+
+def _resolve_runtime_dir() -> Path:
+    explicit = os.getenv("BAN_SYSTEM_DIR")
+    if explicit:
+        return Path(explicit)
+
+    candidates = [
+        ROOT_DIR / "runtime",
+        Path("/opt/mobguard/runtime"),
+        Path("/opt/ban_system"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[1]
+
+
+BAN_SYSTEM_DIR = _resolve_runtime_dir()
+ENV_PATH = Path(os.getenv("MOBGUARD_ENV_FILE", str(BAN_SYSTEM_DIR.parent / ".env")))
+load_dotenv(ENV_PATH)
 
 CONFIG_PATH = BAN_SYSTEM_DIR / "config.json"
-if not CONFIG_PATH.exists():
-    CONFIG_PATH = ROOT_DIR / "config.json"
 
 with CONFIG_PATH.open("r", encoding="utf-8") as handle:
     CONFIG = json.load(handle)
@@ -28,7 +44,7 @@ TG_ADMIN_BOT_USERNAME = os.getenv("TG_ADMIN_BOT_USERNAME", "")
 SESSION_COOKIE_NAME = os.getenv("MOBGUARD_SESSION_COOKIE", "mobguard_session")
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() == "true"
 
-store = PlatformStore(CONFIG["settings"]["db_file"], CONFIG)
+store = PlatformStore(CONFIG["settings"]["db_file"], CONFIG, str(CONFIG_PATH))
 store.init_schema()
 store.sync_runtime_config(CONFIG)
 

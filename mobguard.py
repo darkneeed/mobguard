@@ -30,9 +30,27 @@ from mobguard_platform import (
 # ================= CONFIGURATION & SETUP =================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BAN_SYSTEM_DIR = os.getenv("BAN_SYSTEM_DIR", "/opt/ban_system")
 
-load_dotenv(os.path.join(BAN_SYSTEM_DIR, '.env'))
+def _resolve_runtime_dir() -> str:
+    explicit = os.getenv("BAN_SYSTEM_DIR")
+    if explicit:
+        return explicit
+
+    candidates = [
+        os.path.join(BASE_DIR, "runtime"),
+        "/opt/mobguard/runtime",
+        "/opt/ban_system",
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return candidates[1]
+
+
+BAN_SYSTEM_DIR = _resolve_runtime_dir()
+ENV_PATH = os.getenv("MOBGUARD_ENV_FILE", os.path.join(os.path.dirname(BAN_SYSTEM_DIR), ".env"))
+
+load_dotenv(ENV_PATH)
 CONFIG_PATH = os.path.join(BAN_SYSTEM_DIR, 'config.json')
 
 try:
@@ -404,7 +422,7 @@ class DatabaseManager:
 
 db = DatabaseManager(CONFIG['settings']['db_file'])
 behavioral_engine = BehavioralEngine(db, CONFIG)
-platform_store = PlatformStore(CONFIG['settings']['db_file'], CONFIG)
+platform_store = PlatformStore(CONFIG['settings']['db_file'], CONFIG, CONFIG_PATH)
 
 # Передаём конфиг в ipinfo_api, чтобы is_datacenter использовал exclude_isp_keywords из конфига
 ipinfo_api.set_config(CONFIG)
@@ -2666,6 +2684,8 @@ def pre_flight_check():
     if not all([TG_MAIN_BOT_TOKEN, TG_ADMIN_BOT_TOKEN, PANEL_TOKEN]):
         print("❌ ERROR: Missing Tokens (.env)")
         config_ok = False
+    if not os.getenv("IPINFO_TOKEN"):
+        print("⚠️ WARNING: IPINFO_TOKEN missing. ASN/ISP detection will degrade and scores may collapse to 0.")
         
     if not os.path.exists(CONFIG['settings']['log_file']):
         print(f"❌ ERROR: Log file not found: {CONFIG['settings']['log_file']}")

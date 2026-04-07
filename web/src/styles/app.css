@@ -13,6 +13,19 @@
   --shadow: 0 24px 60px rgba(39, 52, 45, 0.14);
 }
 
+:root[data-theme="dark"] {
+  --bg: #0e1418;
+  --bg-panel: rgba(18, 25, 30, 0.9);
+  --ink: #eff8f1;
+  --muted: #9ab0a4;
+  --line: rgba(239, 248, 241, 0.12);
+  --accent: #53d4c5;
+  --accent-soft: rgba(83, 212, 197, 0.14);
+  --danger: #ff8a80;
+  --warning: #ffc266;
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -25,6 +38,13 @@ body {
     radial-gradient(circle at bottom right, rgba(199, 125, 26, 0.14), transparent 30%),
     linear-gradient(135deg, #f6f0e2, #efe7da);
   font-family: "IBM Plex Sans", sans-serif;
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at top left, rgba(83, 212, 197, 0.12), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(255, 194, 102, 0.09), transparent 28%),
+    linear-gradient(135deg, #0b1115, #121920);
 }
 
 a {
@@ -179,6 +199,17 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.theme-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.theme-picker span {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .content {

@@ -1,4 +1,4 @@
-guard.example.com {
+mobguard.example.com {
     encode zstd gzip
 
     header {

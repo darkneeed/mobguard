@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -129,9 +130,18 @@ def validate_live_rules_patch(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class PlatformStore:
-    def __init__(self, db_path: str, base_config: Optional[dict[str, Any]] = None):
+    def __init__(
+        self,
+        db_path: str,
+        base_config: Optional[dict[str, Any]] = None,
+        config_path: Optional[str] = None,
+    ):
         self.db_path = db_path
         self.base_config = copy.deepcopy(base_config or {})
+        self.config_path = config_path
+        self._rules_cache: Optional[dict[str, Any]] = None
+        self._rules_cache_meta: Optional[dict[str, Any]] = None
+        self._rules_cache_mtime: Optional[float] = None
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
@@ -162,6 +172,84 @@ class PlatformStore:
             for key in EDITABLE_SETTINGS_KEYS
         }
         return rules
+
+    def _normalize_rules(self, payload: dict[str, Any]) -> dict[str, Any]:
+        rules = copy.deepcopy(payload)
+        for key, value in DEFAULT_SETTINGS.items():
+            rules.setdefault("settings", {})
+            rules["settings"].setdefault(key, value)
+        rules.setdefault(
+            "admin_tg_ids",
+            self.base_config.get("admin_tg_ids", self.base_config.get("exempt_tg_ids", [])),
+        )
+        return rules
+
+    def _load_rules_from_file(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        if self.config_path and os.path.exists(self.config_path):
+            current_mtime = os.path.getmtime(self.config_path)
+            if (
+                self._rules_cache is not None
+                and self._rules_cache_meta is not None
+                and self._rules_cache_mtime == current_mtime
+            ):
+                return copy.deepcopy(self._rules_cache), copy.deepcopy(self._rules_cache_meta)
+
+            with open(self.config_path, "r", encoding="utf-8") as handle:
+                raw_payload = json.load(handle)
+            meta = dict(raw_payload.pop("_meta", {}))
+            rules = self._normalize_rules(raw_payload)
+            meta.setdefault("revision", 1)
+            meta.setdefault("updated_at", "")
+            meta.setdefault("updated_by", "bootstrap")
+            self._rules_cache = copy.deepcopy(rules)
+            self._rules_cache_meta = copy.deepcopy(meta)
+            self._rules_cache_mtime = current_mtime
+            return rules, meta
+
+        return self._normalize_rules(self.build_seed_rules()), {
+            "revision": 1,
+            "updated_at": "",
+            "updated_by": "bootstrap",
+        }
+
+    def _write_rules_to_file(self, rules: dict[str, Any], meta: dict[str, Any]) -> None:
+        if not self.config_path:
+            return
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+        payload = copy.deepcopy(rules)
+        payload["_meta"] = {
+            "revision": int(meta.get("revision", 1)),
+            "updated_at": meta.get("updated_at", ""),
+            "updated_by": meta.get("updated_by", "unknown"),
+        }
+        tmp_path = f"{self.config_path}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, self.config_path)
+        self._rules_cache = copy.deepcopy(rules)
+        self._rules_cache_meta = copy.deepcopy(meta)
+        self._rules_cache_mtime = os.path.getmtime(self.config_path)
+
+    def _mirror_live_rules_state(self, rules: dict[str, Any], meta: dict[str, Any]) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO live_rules (id, rules_json, revision, updated_at, updated_by)
+                VALUES (1, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    rules_json = excluded.rules_json,
+                    revision = excluded.revision,
+                    updated_at = excluded.updated_at,
+                    updated_by = excluded.updated_by
+                """,
+                (
+                    json.dumps(rules, ensure_ascii=False),
+                    int(meta.get("revision", 1)),
+                    meta.get("updated_at", ""),
+                    meta.get("updated_by", "bootstrap"),
+                ),
+            )
+            conn.commit()
 
     def init_schema(self) -> None:
         seed_rules = self.build_seed_rules()
@@ -375,30 +463,13 @@ class PlatformStore:
         return self.get_live_rules_state()["rules"]
 
     def get_live_rules_state(self) -> dict[str, Any]:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT rules_json, revision, updated_at, updated_by FROM live_rules WHERE id = 1"
-            ).fetchone()
-        if not row:
-            return {
-                "rules": self.build_seed_rules(),
-                "revision": 1,
-                "updated_at": "",
-                "updated_by": "bootstrap",
-            }
-        payload = json.loads(row["rules_json"])
-        for key, value in DEFAULT_SETTINGS.items():
-            payload.setdefault("settings", {})
-            payload["settings"].setdefault(key, value)
-        payload.setdefault(
-            "admin_tg_ids",
-            self.base_config.get("admin_tg_ids", self.base_config.get("exempt_tg_ids", [])),
-        )
+        payload, meta = self._load_rules_from_file()
+        self._mirror_live_rules_state(payload, meta)
         return {
             "rules": payload,
-            "revision": int(row["revision"] or 1),
-            "updated_at": row["updated_at"],
-            "updated_by": row["updated_by"],
+            "revision": int(meta["revision"]),
+            "updated_at": meta["updated_at"],
+            "updated_by": meta["updated_by"],
         }
 
     def sync_runtime_config(self, runtime_config: dict[str, Any]) -> dict[str, Any]:
@@ -432,17 +503,20 @@ class PlatformStore:
                 merged[key] = value
 
         now = _utcnow()
+        current_revision = int(current_state["revision"])
+        current_updated_at = current_state["updated_at"]
+        if expected_revision is not None and expected_revision != current_revision:
+            raise ValueError("Live rules revision conflict")
+        if expected_updated_at and expected_updated_at != current_updated_at:
+            raise ValueError("Live rules updated_at conflict")
+        next_revision = current_revision + 1
+        meta = {
+            "revision": next_revision,
+            "updated_at": now,
+            "updated_by": actor,
+        }
+        self._write_rules_to_file(merged, meta)
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT revision, updated_at FROM live_rules WHERE id = 1"
-            ).fetchone()
-            current_revision = int(row["revision"] or 1)
-            current_updated_at = row["updated_at"]
-            if expected_revision is not None and expected_revision != current_revision:
-                raise ValueError("Live rules revision conflict")
-            if expected_updated_at and expected_updated_at != current_updated_at:
-                raise ValueError("Live rules updated_at conflict")
-            next_revision = current_revision + 1
             conn.execute(
                 """
                 UPDATE live_rules
@@ -985,6 +1059,7 @@ class PlatformStore:
         return self.get_review_case(case_id)
 
     def get_quality_metrics(self) -> dict[str, Any]:
+        live_rules_state = self.get_live_rules_state()
         with self._connect() as conn:
             open_cases = conn.execute(
                 "SELECT COUNT(*) AS cnt FROM review_cases WHERE status = 'OPEN'"
@@ -1021,9 +1096,6 @@ class PlatformStore:
                 LIMIT 10
                 """
             ).fetchall()
-            last_rule_update = conn.execute(
-                "SELECT revision, updated_at, updated_by FROM live_rules WHERE id = 1"
-            ).fetchone()
             active_sessions = conn.execute(
                 "SELECT COUNT(*) AS cnt FROM admin_sessions WHERE expires_at > ?",
                 (_utcnow(),),
@@ -1038,9 +1110,9 @@ class PlatformStore:
             "active_learning_patterns": active_patterns,
             "top_noisy_asns": [dict(row) for row in top_noisy],
             "top_patterns": [dict(row) for row in top_patterns],
-            "live_rules_revision": int(last_rule_update["revision"] or 1) if last_rule_update else 1,
-            "live_rules_updated_at": last_rule_update["updated_at"] if last_rule_update else "",
-            "live_rules_updated_by": last_rule_update["updated_by"] if last_rule_update else "",
+            "live_rules_revision": int(live_rules_state["revision"] or 1),
+            "live_rules_updated_at": live_rules_state["updated_at"],
+            "live_rules_updated_by": live_rules_state["updated_by"],
             "active_sessions": active_sessions,
         }
 
@@ -1145,7 +1217,26 @@ class PlatformStore:
                 "SELECT COUNT(*) AS cnt FROM admin_sessions WHERE expires_at > ?",
                 (_utcnow(),),
             ).fetchone()["cnt"]
-        overall = "ok" if core_heartbeat["healthy"] else "degraded"
+            analysis_stats = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN score = 0 THEN 1 ELSE 0 END) AS score_zero_count,
+                    SUM(CASE WHEN asn IS NULL THEN 1 ELSE 0 END) AS asn_missing_count
+                FROM analysis_events
+                WHERE created_at >= ?
+                """,
+                ((datetime.utcnow() - timedelta(hours=24)).replace(microsecond=0).isoformat(),),
+            ).fetchone()
+        total = int(analysis_stats["total"] or 0)
+        score_zero_count = int(analysis_stats["score_zero_count"] or 0)
+        asn_missing_count = int(analysis_stats["asn_missing_count"] or 0)
+        score_zero_ratio = (score_zero_count / total) if total else 0.0
+        asn_missing_ratio = (asn_missing_count / total) if total else 0.0
+        ipinfo_token_present = bool(os.getenv("IPINFO_TOKEN"))
+
+        degraded = not core_heartbeat["healthy"] or not ipinfo_token_present
+        overall = "degraded" if degraded else "ok"
         return {
             "status": overall,
             "db": {"healthy": True, "path": self.db_path},
@@ -1156,6 +1247,14 @@ class PlatformStore:
             },
             "core": core_heartbeat,
             "admin_sessions": admin_sessions,
+            "ipinfo_token_present": ipinfo_token_present,
+            "analysis_24h": {
+                "total": total,
+                "score_zero_count": score_zero_count,
+                "score_zero_ratio": score_zero_ratio,
+                "asn_missing_count": asn_missing_count,
+                "asn_missing_ratio": asn_missing_ratio,
+            },
         }
 
     def is_admin_tg_id(self, tg_id: int) -> bool:
