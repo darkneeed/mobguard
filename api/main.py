@@ -11,27 +11,11 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from mobguard_platform import PlatformStore, validate_live_rules_patch, verify_telegram_auth
+from mobguard_platform.runtime_paths import normalize_runtime_bound_settings, resolve_runtime_dir
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-
-def _resolve_runtime_dir() -> Path:
-    explicit = os.getenv("BAN_SYSTEM_DIR")
-    if explicit:
-        return Path(explicit)
-
-    candidates = [
-        ROOT_DIR / "runtime",
-        Path("/opt/mobguard/runtime"),
-        Path("/opt/ban_system"),
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return candidates[1]
-
-
-BAN_SYSTEM_DIR = _resolve_runtime_dir()
+BAN_SYSTEM_DIR = Path(resolve_runtime_dir(ROOT_DIR, os.getenv("BAN_SYSTEM_DIR")))
 ENV_PATH = Path(os.getenv("MOBGUARD_ENV_FILE", str(BAN_SYSTEM_DIR.parent / ".env")))
 TEMPLATE_CONFIG_PATH = ROOT_DIR / "config.json"
 
@@ -49,7 +33,7 @@ load_dotenv(ENV_PATH)
 CONFIG_PATH = BAN_SYSTEM_DIR / "config.json"
 
 with CONFIG_PATH.open("r", encoding="utf-8") as handle:
-    CONFIG = json.load(handle)
+    CONFIG = normalize_runtime_bound_settings(json.load(handle), BAN_SYSTEM_DIR)
 
 TG_ADMIN_BOT_TOKEN = os.getenv("TG_ADMIN_BOT_TOKEN", "")
 TG_ADMIN_BOT_USERNAME = os.getenv("TG_ADMIN_BOT_USERNAME", "")

@@ -24,31 +24,16 @@ from mobguard_platform import (
     DecisionBundle,
     PlatformStore,
     derive_punitive_eligibility,
+    normalize_runtime_bound_settings,
     review_reason_for_bundle,
+    resolve_runtime_dir,
     should_warning_only,
 )
 
 # ================= CONFIGURATION & SETUP =================
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-def _resolve_runtime_dir() -> str:
-    explicit = os.getenv("BAN_SYSTEM_DIR")
-    if explicit:
-        return explicit
-
-    candidates = [
-        os.path.join(BASE_DIR, "runtime"),
-        "/opt/mobguard/runtime",
-        "/opt/ban_system",
-    ]
-    for candidate in candidates:
-        if os.path.exists(candidate):
-            return candidate
-    return candidates[1]
-
-
-BAN_SYSTEM_DIR = _resolve_runtime_dir()
+BAN_SYSTEM_DIR = resolve_runtime_dir(BASE_DIR, os.getenv("BAN_SYSTEM_DIR"))
 ENV_PATH = os.getenv("MOBGUARD_ENV_FILE", os.path.join(os.path.dirname(BAN_SYSTEM_DIR), ".env"))
 TEMPLATE_CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
@@ -70,7 +55,7 @@ CONFIG_PATH = os.path.join(BAN_SYSTEM_DIR, 'config.json')
 
 try:
     with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-        CONFIG = json.load(f)
+        CONFIG = normalize_runtime_bound_settings(json.load(f), BAN_SYSTEM_DIR)
 except FileNotFoundError:
     print(f"CRITICAL: {CONFIG_PATH} not found!")
     exit(1)
