@@ -19,6 +19,7 @@ from mobguard_platform.runtime_admin_defaults import (
     ENFORCEMENT_SETTINGS_DEFAULTS,
     ENFORCEMENT_TEMPLATE_DEFAULTS,
     TELEGRAM_RUNTIME_SETTINGS_DEFAULTS,
+    normalize_telegram_runtime_settings,
 )
 from mobguard_platform.runtime_paths import normalize_runtime_bound_settings, resolve_runtime_dir
 
@@ -26,13 +27,10 @@ from mobguard_platform.runtime_paths import normalize_runtime_bound_settings, re
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BAN_SYSTEM_DIR = Path(resolve_runtime_dir(ROOT_DIR, os.getenv("BAN_SYSTEM_DIR")))
 ENV_PATH = Path(os.getenv("MOBGUARD_ENV_FILE", str(BAN_SYSTEM_DIR.parent / ".env")))
-TEMPLATE_CONFIG_PATH = ROOT_DIR / "config.json"
 
 def _ensure_runtime_layout() -> None:
     BAN_SYSTEM_DIR.mkdir(parents=True, exist_ok=True)
     (BAN_SYSTEM_DIR / "health").mkdir(parents=True, exist_ok=True)
-    if not (BAN_SYSTEM_DIR / "config.json").exists() and TEMPLATE_CONFIG_PATH.exists():
-        shutil.copyfile(TEMPLATE_CONFIG_PATH, BAN_SYSTEM_DIR / "config.json")
     if not (BAN_SYSTEM_DIR / "bans.db").exists():
         (BAN_SYSTEM_DIR / "bans.db").touch()
 
@@ -41,8 +39,11 @@ load_dotenv(ENV_PATH)
 
 CONFIG_PATH = BAN_SYSTEM_DIR / "config.json"
 
-with CONFIG_PATH.open("r", encoding="utf-8") as handle:
-    CONFIG = normalize_runtime_bound_settings(json.load(handle), BAN_SYSTEM_DIR)
+try:
+    with CONFIG_PATH.open("r", encoding="utf-8") as handle:
+        CONFIG = normalize_runtime_bound_settings(json.load(handle), BAN_SYSTEM_DIR)
+except FileNotFoundError as exc:
+    raise RuntimeError(f"Required runtime config not found: {CONFIG_PATH}") from exc
 
 TG_ADMIN_BOT_TOKEN = os.getenv("TG_ADMIN_BOT_TOKEN", "")
 TG_ADMIN_BOT_USERNAME = os.getenv("TG_ADMIN_BOT_USERNAME", "")
@@ -693,7 +694,7 @@ def get_telegram_settings(_: dict[str, Any] = Depends(get_session)) -> dict[str,
     runtime_config = _load_runtime_config()
     env_values = _load_env_values()
     env_status = get_env_file_status(str(ENV_PATH))
-    settings = _normalize_runtime_settings(runtime_config, TELEGRAM_RUNTIME_SETTINGS_DEFAULTS)
+    settings = normalize_telegram_runtime_settings(runtime_config.get("settings", {}))
     return {
         "settings": settings,
         "env": _serialize_env_fields(TELEGRAM_ENV_FIELDS, env_values),

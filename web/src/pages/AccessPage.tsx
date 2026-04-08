@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
+import { FieldLabel } from "../components/FieldLabel";
 import { RULE_LIST_FIELDS } from "../rulesMeta";
 
 type AccessPayload = {
@@ -133,11 +134,11 @@ export function AccessPage() {
             <div className="detail-grid">
               {ACCESS_FIELDS.map((field) => (
                 <div className="rule-field" key={field.key}>
-                  <div className="rule-copy">
-                    <strong>{field.label}</strong>
-                    <p>{field.description}</p>
-                    <span className="muted">{field.recommendation}</span>
-                  </div>
+                  <FieldLabel
+                    label={field.label}
+                    description={field.description}
+                    recommendation={field.recommendation}
+                  />
                   <textarea
                     className="note-box tall"
                     value={lists[field.key] || ""}

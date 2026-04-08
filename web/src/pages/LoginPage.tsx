@@ -78,7 +78,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
         <span className="eyebrow">Remnawave + MobGuard</span>
         <h1>Веб-панель модерации, данных и runtime-настроек</h1>
         <p>
-          Очередь спорных кейсов, data-admin, enforcement и runtime-конфигурация в одной панели.
+          Очередь спорных кейсов, data-admin, Telegram delivery и runtime-конфигурация в одной панели.
         </p>
         <div className="login-methods">
           <div className="login-method">

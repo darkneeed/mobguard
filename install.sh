@@ -61,11 +61,10 @@ clone_repo_if_needed() {
 ensure_structure() {
   mkdir -p "$RUNTIME_DIR" "$HEALTH_DIR"
 
-  if [ ! -f "$CONFIG_FILE" ]; then
-    cp "$ROOT_DIR/config.json" "$CONFIG_FILE"
-    info "Создан runtime/config.json из шаблона"
-  else
+  if [ -f "$CONFIG_FILE" ]; then
     info "Найден существующий runtime/config.json"
+  else
+    fail "Не найден обязательный runtime/config.json. Репозиторий должен содержать единственный runtime-конфиг в $CONFIG_FILE."
   fi
 
   if [ ! -f "$ENV_FILE" ]; then

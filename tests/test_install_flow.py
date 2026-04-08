@@ -52,10 +52,12 @@ class InstallFlowTests(unittest.TestCase):
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         self.command_log = self.root / "command.log"
+        runtime_dir = self.root / "runtime"
+        runtime_dir.mkdir()
 
         shutil.copy2(PROJECT_ROOT / "install.sh", self.root / "install.sh")
         shutil.copy2(PROJECT_ROOT / ".env.example", self.root / ".env.example")
-        shutil.copy2(PROJECT_ROOT / "config.json", self.root / "config.json")
+        shutil.copy2(PROJECT_ROOT / "runtime" / "config.json", runtime_dir / "config.json")
 
         (self.root / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.root / "mobguard.py").write_text("print('mobguard')\n", encoding="utf-8")

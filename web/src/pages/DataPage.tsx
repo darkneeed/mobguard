@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
+import { formatDisplayDateTime } from "../utils/datetime";
 
 type DataTab = "users" | "violations" | "overrides" | "cache" | "learning" | "cases";
 
@@ -223,7 +224,7 @@ export function DataPage() {
                 {reviewCases.map((item) => (
                   <li key={String(item.id)}>
                     <Link to={`/reviews/${item.id}`}>
-                      #{String(item.id)} · {String(item.review_reason)} · {String(item.ip)} · {String(item.updated_at)}
+                      #{String(item.id)} · {String(item.review_reason)} · {String(item.ip)} · {formatDisplayDateTime(String(item.updated_at ?? ""), "n/a")}
                     </Link>
                   </li>
                 ))}
@@ -238,7 +239,7 @@ export function DataPage() {
                   <li key={`${String(item.timestamp)}-${String(item.ip)}`}>
                     <strong>{String(item.ip)}</strong>
                     <span>{String(item.tag)} · strike {String(item.strike_number)} · {String(item.punishment_duration)} min</span>
-                    <span>{String(item.timestamp)}</span>
+                    <span>{formatDisplayDateTime(String(item.timestamp ?? ""), "n/a")}</span>
                   </li>
                 ))}
               </ul>
@@ -261,7 +262,7 @@ export function DataPage() {
               <li key={String(item.uuid)}>
                 <strong>{String(item.uuid)}</strong>
                 <span>strikes {String(item.strikes)} · warning_count {String(item.warning_count)}</span>
-                <span>unban {String(item.unban_time || "n/a")}</span>
+                <span>unban {formatDisplayDateTime(String(item.unban_time ?? ""), "n/a")}</span>
               </li>
             ))}
           </ul>
@@ -273,7 +274,7 @@ export function DataPage() {
               <li key={String(item.id)}>
                 <strong>{String(item.uuid)}</strong>
                 <span>{String(item.ip)} · strike {String(item.strike_number)} · {String(item.punishment_duration)} min</span>
-                <span>{String(item.timestamp)}</span>
+                <span>{formatDisplayDateTime(String(item.timestamp ?? ""), "n/a")}</span>
               </li>
             ))}
           </ul>
@@ -302,7 +303,7 @@ export function DataPage() {
             {exactIp.map((item) => (
               <li key={String(item.ip)}>
                 <strong>{String(item.ip)}</strong>
-                <span>{String(item.decision)} · expires {String(item.expires_at || "n/a")}</span>
+                <span>{String(item.decision)} · expires {formatDisplayDateTime(String(item.expires_at ?? ""), "n/a")}</span>
                 <button className="ghost" onClick={async () => {
                   await api.deleteExactOverride(String(item.ip));
                   setOverrides(await api.getOverrides());
@@ -326,7 +327,7 @@ export function DataPage() {
             {unsure.map((item) => (
               <li key={String(item.ip_pattern)}>
                 <strong>{String(item.ip_pattern)}</strong>
-                <span>{String(item.decision)} · {String(item.timestamp)}</span>
+                <span>{String(item.decision)} · {formatDisplayDateTime(String(item.timestamp ?? ""), "n/a")}</span>
                 <button className="ghost" onClick={async () => {
                   await api.deleteUnsureOverride(String(item.ip_pattern));
                   setOverrides(await api.getOverrides());

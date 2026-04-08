@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api } from "../api/client";
+import { formatDisplayDateTime } from "../utils/datetime";
 
 type ReviewReason = {
   code?: string;
@@ -96,8 +97,8 @@ export function ReviewDetailPage() {
               <div><dt>Verdict</dt><dd>{formatValue(data.verdict as string | undefined)}</dd></div>
               <div><dt>Confidence</dt><dd>{formatValue(data.confidence_band as string | undefined)}</dd></div>
               <div><dt>Punitive</dt><dd>{Number(data.punitive_eligible || 0) ? "yes" : "no"}</dd></div>
-              <div><dt>Opened</dt><dd>{formatValue(data.opened_at as string | undefined)}</dd></div>
-              <div><dt>Updated</dt><dd>{formatValue(data.updated_at as string | undefined)}</dd></div>
+              <div><dt>Opened</dt><dd>{formatDisplayDateTime(data.opened_at as string | undefined)}</dd></div>
+              <div><dt>Updated</dt><dd>{formatDisplayDateTime(data.updated_at as string | undefined)}</dd></div>
               <div><dt>ISP</dt><dd>{formatValue(data.isp as string | undefined)}</dd></div>
               <div><dt>Review URL</dt><dd>{formatValue(data.review_url as string | undefined)}</dd></div>
             </dl>
@@ -130,7 +131,7 @@ export function ReviewDetailPage() {
                 <li key={String(resolution.id)}>
                   <strong>{formatValue(resolution.resolution)}</strong>
                   <span>
-                    {formatValue(resolution.actor)} · {formatValue(resolution.created_at)}
+                    {formatValue(resolution.actor)} · {formatDisplayDateTime(resolution.created_at)}
                   </span>
                   <span>{formatValue(resolution.note)}</span>
                 </li>
@@ -151,7 +152,7 @@ export function ReviewDetailPage() {
                   <span>
                     {formatValue(item.system_id)} · {formatValue(item.telegram_id)} · {formatValue(item.uuid)}
                   </span>
-                  <span>{formatValue(item.updated_at)}</span>
+                  <span>{formatDisplayDateTime(item.updated_at)}</span>
                 </li>
               ))}
             </ul>

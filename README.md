@@ -37,7 +37,6 @@ MobGuard — это система, которая отслеживает нек
   Dockerfile.core
   README.md
   behavioral_analyzers.py
-  config.json
   ipinfo_api.py
   mobguard.py
   requirements-api.txt

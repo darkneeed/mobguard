@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../api/client";
+import { formatDisplayDateTime } from "../utils/datetime";
 
 type PromotedLearningTypeSummary = {
   pattern_type: string;
@@ -127,7 +128,7 @@ export function QualityPage() {
           </div>
           <div className="panel queue-footer">
             <span>Rules revision {data.live_rules_revision}</span>
-            <span>Updated {data.live_rules_updated_at}</span>
+            <span>Updated {formatDisplayDateTime(data.live_rules_updated_at, "n/a")}</span>
             <span>By {formatUpdatedBy(data.live_rules_updated_by)}</span>
           </div>
           <div className="panel">
@@ -237,7 +238,7 @@ export function QualityPage() {
                   <span>
                     {item.decision} · confidence {item.confidence}
                   </span>
-                  <span>{item.timestamp}</span>
+                  <span>{formatDisplayDateTime(item.timestamp)}</span>
                 </li>
               ))}
             </ul>

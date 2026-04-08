@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, Mapping
+
 
 ENFORCEMENT_SETTINGS_DEFAULTS = {
     "usage_time_threshold": 900,
@@ -21,11 +23,76 @@ TELEGRAM_RUNTIME_SETTINGS_DEFAULTS = {
     "telegram_admin_notifications_enabled": True,
     "telegram_user_notifications_enabled": True,
     "telegram_admin_commands_enabled": True,
-    "telegram_notify_review_enabled": True,
-    "telegram_notify_warning_only_enabled": True,
-    "telegram_notify_warning_enabled": True,
-    "telegram_notify_ban_enabled": True,
+    "telegram_notify_admin_review_enabled": True,
+    "telegram_notify_admin_warning_only_enabled": True,
+    "telegram_notify_admin_warning_enabled": True,
+    "telegram_notify_admin_ban_enabled": True,
+    "telegram_notify_user_warning_only_enabled": True,
+    "telegram_notify_user_warning_enabled": True,
+    "telegram_notify_user_ban_enabled": True,
 }
+
+
+TELEGRAM_NOTIFICATION_LEGACY_FALLBACKS = {
+    "telegram_notify_admin_review_enabled": "telegram_notify_review_enabled",
+    "telegram_notify_admin_warning_only_enabled": "telegram_notify_warning_only_enabled",
+    "telegram_notify_admin_warning_enabled": "telegram_notify_warning_enabled",
+    "telegram_notify_admin_ban_enabled": "telegram_notify_ban_enabled",
+    "telegram_notify_user_warning_only_enabled": "telegram_notify_warning_only_enabled",
+    "telegram_notify_user_warning_enabled": "telegram_notify_warning_enabled",
+    "telegram_notify_user_ban_enabled": "telegram_notify_ban_enabled",
+}
+
+
+TELEGRAM_EVENT_SETTING_KEYS = {
+    ("admin", "review"): "telegram_notify_admin_review_enabled",
+    ("admin", "warning_only"): "telegram_notify_admin_warning_only_enabled",
+    ("admin", "warning"): "telegram_notify_admin_warning_enabled",
+    ("admin", "ban"): "telegram_notify_admin_ban_enabled",
+    ("user", "warning_only"): "telegram_notify_user_warning_only_enabled",
+    ("user", "warning"): "telegram_notify_user_warning_enabled",
+    ("user", "ban"): "telegram_notify_user_ban_enabled",
+}
+
+
+def normalize_telegram_runtime_settings(raw_settings: Mapping[str, Any] | None) -> dict[str, Any]:
+    source = raw_settings or {}
+    normalized: dict[str, Any] = {}
+
+    for key, default in TELEGRAM_RUNTIME_SETTINGS_DEFAULTS.items():
+        if key in source:
+            normalized[key] = source[key]
+            continue
+
+        legacy_key = TELEGRAM_NOTIFICATION_LEGACY_FALLBACKS.get(key)
+        if legacy_key and legacy_key in source:
+            normalized[key] = source[legacy_key]
+            continue
+
+        normalized[key] = default
+
+    return normalized
+
+
+def telegram_notification_setting(
+    raw_settings: Mapping[str, Any] | None,
+    key: str,
+) -> bool:
+    normalized = normalize_telegram_runtime_settings(raw_settings)
+    return bool(normalized.get(key, TELEGRAM_RUNTIME_SETTINGS_DEFAULTS[key]))
+
+
+def telegram_event_notifications_enabled(
+    raw_settings: Mapping[str, Any] | None,
+    recipient: str,
+    event: str,
+) -> bool:
+    master_key = f"telegram_{recipient}_notifications_enabled"
+    if not telegram_notification_setting(raw_settings, master_key):
+        return False
+
+    event_key = TELEGRAM_EVENT_SETTING_KEYS[(recipient, event)]
+    return telegram_notification_setting(raw_settings, event_key)
 
 
 ENFORCEMENT_TEMPLATE_DEFAULTS = {

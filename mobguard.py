@@ -34,6 +34,9 @@ from mobguard_platform.runtime_admin_defaults import (
     ENFORCEMENT_SETTINGS_DEFAULTS,
     ENFORCEMENT_TEMPLATE_DEFAULTS,
     TELEGRAM_RUNTIME_SETTINGS_DEFAULTS,
+    normalize_telegram_runtime_settings,
+    telegram_event_notifications_enabled,
+    telegram_notification_setting,
 )
 
 # ================= CONFIGURATION & SETUP =================
@@ -41,14 +44,10 @@ from mobguard_platform.runtime_admin_defaults import (
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BAN_SYSTEM_DIR = resolve_runtime_dir(BASE_DIR, os.getenv("BAN_SYSTEM_DIR"))
 ENV_PATH = os.getenv("MOBGUARD_ENV_FILE", os.path.join(os.path.dirname(BAN_SYSTEM_DIR), ".env"))
-TEMPLATE_CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
 def _ensure_runtime_layout() -> None:
     os.makedirs(BAN_SYSTEM_DIR, exist_ok=True)
     os.makedirs(os.path.join(BAN_SYSTEM_DIR, "health"), exist_ok=True)
-    config_path = os.path.join(BAN_SYSTEM_DIR, "config.json")
-    if not os.path.exists(config_path) and os.path.exists(TEMPLATE_CONFIG_PATH):
-        shutil.copyfile(TEMPLATE_CONFIG_PATH, config_path)
     db_path = os.path.join(BAN_SYSTEM_DIR, "bans.db")
     if not os.path.exists(db_path):
         with open(db_path, "a", encoding="utf-8"):
@@ -63,7 +62,7 @@ try:
     with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         CONFIG = normalize_runtime_bound_settings(json.load(f), BAN_SYSTEM_DIR)
 except FileNotFoundError:
-    print(f"CRITICAL: {CONFIG_PATH} not found!")
+    print(f"CRITICAL: required runtime config not found: {CONFIG_PATH}")
     exit(1)
 
 # Env variables
@@ -1071,7 +1070,7 @@ def enforcement_template(key: str) -> str:
 
 
 def telegram_setting(key: str) -> Any:
-    return settings().get(key, TELEGRAM_RUNTIME_SETTINGS_DEFAULTS[key])
+    return normalize_telegram_runtime_settings(settings())[key]
 
 
 def admin_bot_available() -> bool:
@@ -1083,11 +1082,33 @@ def main_bot_available() -> bool:
 
 
 def admin_notifications_enabled() -> bool:
-    return admin_bot_available() and config_flag("telegram_admin_notifications_enabled", True)
+    return admin_bot_available() and telegram_notification_setting(
+        settings(),
+        "telegram_admin_notifications_enabled",
+    )
 
 
 def user_notifications_enabled() -> bool:
-    return main_bot_available() and config_flag("telegram_user_notifications_enabled", True)
+    return main_bot_available() and telegram_notification_setting(
+        settings(),
+        "telegram_user_notifications_enabled",
+    )
+
+
+def admin_event_notifications_enabled(event: str) -> bool:
+    return admin_bot_available() and telegram_event_notifications_enabled(
+        settings(),
+        "admin",
+        event,
+    )
+
+
+def user_event_notifications_enabled(event: str) -> bool:
+    return main_bot_available() and telegram_event_notifications_enabled(
+        settings(),
+        "user",
+        event,
+    )
 
 
 def admin_commands_enabled() -> bool:
@@ -1185,7 +1206,7 @@ def escape_html(text: str) -> str:
 
 async def send_unsure_notify(user: Dict, bundle: DecisionBundle, tag: str, review_reason: str):
     global UNSURE_NOTIFIED
-    if not config_flag("telegram_notify_review_enabled", True):
+    if not admin_event_notifications_enabled("review"):
         return
 
     uuid = user.get('uuid')
@@ -2191,7 +2212,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
     }
 
     if warning_only:
-        if config_flag("telegram_notify_warning_only_enabled", True):
+        if admin_event_notifications_enabled("warning_only"):
             admin_msg = render_runtime_template(
                 "admin_warning_only_template",
                 {**common_context, "confidence_band": f"{bundle.confidence_band} / punitive disabled"},
@@ -2202,7 +2223,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
             await notify_admin(admin_msg)
         await db.delete_tracker(tracker_key)
 
-        if not DRY_RUN and user.get('telegramId') and config_flag("telegram_notify_warning_only_enabled", True):
+        if not DRY_RUN and user.get('telegramId') and user_event_notifications_enabled("warning_only"):
             user_msg = render_runtime_template("user_warning_only_template", common_context)
             await notify_user(int(user['telegramId']), user_msg)
         return
@@ -2219,7 +2240,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
                 "INSERT OR REPLACE INTO violations (uuid, strikes, unban_time, last_strike_time, warning_time, warning_count) VALUES (?, ?, NULL, ?, ?, ?)",
                 (uuid, strikes, now.isoformat(), now.isoformat(), warning_count),
             )
-            if config_flag("telegram_notify_warning_enabled", True):
+            if admin_event_notifications_enabled("warning"):
                 admin_msg = render_runtime_template(
                     "admin_warning_template",
                     {
@@ -2230,7 +2251,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
                 )
                 await notify_admin(admin_msg)
             await db.delete_tracker(tracker_key)
-            if not DRY_RUN and user.get('telegramId') and config_flag("telegram_notify_warning_enabled", True):
+            if not DRY_RUN and user.get('telegramId') and user_event_notifications_enabled("warning"):
                 user_msg = render_runtime_template(
                     "user_warning_template",
                     {
@@ -2276,7 +2297,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
             status_icon = "⛔️" if not DRY_RUN else "[ОТЛАДКА] ⛔️"
             keyboard = None
 
-        if config_flag("telegram_notify_ban_enabled", True):
+        if admin_event_notifications_enabled("ban"):
             admin_msg = render_runtime_template(
                 "admin_ban_template",
                 {
@@ -2302,7 +2323,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
 
         if not DRY_RUN:
             await panel.toggle_user(uuid, False)
-            if user.get('telegramId') and config_flag("telegram_notify_ban_enabled", True):
+            if user.get('telegramId') and user_event_notifications_enabled("ban"):
                 user_msg = render_runtime_template(
                     "user_ban_template",
                     {
@@ -2323,7 +2344,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
         (uuid, strikes, now.isoformat(), now.isoformat(), 1),
     )
 
-    if config_flag("telegram_notify_warning_enabled", True):
+    if admin_event_notifications_enabled("warning"):
         admin_msg = render_runtime_template(
             "admin_warning_template",
             {
@@ -2337,7 +2358,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
             admin_msg += f"  • {escape_html(entry)}\n"
         await notify_admin(admin_msg)
 
-    if not DRY_RUN and user.get('telegramId') and config_flag("telegram_notify_warning_enabled", True):
+    if not DRY_RUN and user.get('telegramId') and user_event_notifications_enabled("warning"):
         user_msg = render_runtime_template(
             "user_warning_template",
             {

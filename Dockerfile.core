@@ -8,7 +8,7 @@ WORKDIR /app
 COPY requirements-core.txt ./
 RUN pip install --no-cache-dir -r requirements-core.txt
 
-COPY mobguard.py behavioral_analyzers.py ipinfo_api.py config.json ./
+COPY mobguard.py behavioral_analyzers.py ipinfo_api.py ./
 COPY mobguard_platform ./mobguard_platform
 
 CMD ["python", "mobguard.py"]

@@ -10,6 +10,5 @@ RUN pip install --no-cache-dir -r requirements-api.txt
 
 COPY api ./api
 COPY mobguard_platform ./mobguard_platform
-COPY config.json ./config.json
 
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

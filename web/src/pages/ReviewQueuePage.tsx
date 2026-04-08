@@ -2,6 +2,7 @@ import { MouseEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, ReviewItem, ReviewListResponse } from "../api/client";
+import { formatDisplayDateTime } from "../utils/datetime";
 
 type ReviewFilters = {
   status: string;
@@ -294,8 +295,8 @@ export function ReviewQueuePage() {
             ) : null}
             <div className="queue-card-bottom">
               <span>repeat x{item.repeat_count}</span>
-              <span>opened {item.opened_at || "n/a"}</span>
-              <span>{item.updated_at}</span>
+              <span>opened {formatDisplayDateTime(item.opened_at, "n/a")}</span>
+              <span>{formatDisplayDateTime(item.updated_at, "n/a")}</span>
             </div>
           </Link>
         ))}
