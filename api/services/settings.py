@@ -8,6 +8,7 @@ from mobguard_platform.runtime import get_env_file_status, update_env_file
 from mobguard_platform.runtime_admin_defaults import (
     ENFORCEMENT_SETTINGS_DEFAULTS,
     ENFORCEMENT_TEMPLATE_DEFAULTS,
+    normalize_telegram_runtime_settings,
 )
 
 from ..context import APIContainer
