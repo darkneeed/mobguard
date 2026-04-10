@@ -5,6 +5,7 @@ from .policy import derive_punitive_eligibility, review_reason_for_bundle, shoul
 from .runtime import (
     DetectionRules,
     LearningThresholds,
+    ProviderProfile,
     RuntimeContext,
     RuntimeRuleView,
     ScoreWeights,
@@ -21,6 +22,7 @@ __all__ = [
     "DecisionReason",
     "DetectionRules",
     "LearningThresholds",
+    "ProviderProfile",
     "detect_asn_source",
     "extract_asn_fields",
     "ensure_runtime_layout",

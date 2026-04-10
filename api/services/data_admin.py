@@ -300,7 +300,17 @@ def delete_cache(container: APIContainer, ip: str) -> dict[str, Any]:
 def get_learning_admin(container: APIContainer) -> dict[str, Any]:
     with container.store._connect() as conn:
         if not container.store._table_exists(conn, "unsure_learning"):
-            return {"promoted_active": [], "promoted_stats": [], "legacy": []}
+            return {
+                "promoted_active": [],
+                "promoted_stats": [],
+                "legacy": [],
+                "promoted_provider_active": [],
+                "promoted_provider_service_active": [],
+                "promoted_provider_stats": [],
+                "promoted_provider_service_stats": [],
+                "legacy_provider": [],
+                "legacy_provider_service": [],
+            }
         promoted_active = conn.execute(
             """
             SELECT pattern_type, pattern_value, decision, support, precision, promoted_at, metadata_json
@@ -325,10 +335,29 @@ def get_learning_admin(container: APIContainer) -> dict[str, Any]:
             LIMIT 200
             """
         ).fetchall()
+    promoted_active_rows = [dict(row) for row in promoted_active]
+    promoted_stats_rows = [dict(row) for row in promoted_stats]
+    legacy_rows = [dict(row) for row in legacy]
     return {
-        "promoted_active": [dict(row) for row in promoted_active],
-        "promoted_stats": [dict(row) for row in promoted_stats],
-        "legacy": [dict(row) for row in legacy],
+        "promoted_active": promoted_active_rows,
+        "promoted_stats": promoted_stats_rows,
+        "legacy": legacy_rows,
+        "promoted_provider_active": [
+            row for row in promoted_active_rows if row.get("pattern_type") == "provider"
+        ],
+        "promoted_provider_service_active": [
+            row for row in promoted_active_rows if row.get("pattern_type") == "provider_service"
+        ],
+        "promoted_provider_stats": [
+            row for row in promoted_stats_rows if row.get("pattern_type") == "provider"
+        ],
+        "promoted_provider_service_stats": [
+            row for row in promoted_stats_rows if row.get("pattern_type") == "provider_service"
+        ],
+        "legacy_provider": [row for row in legacy_rows if row.get("pattern_type") == "provider"],
+        "legacy_provider_service": [
+            row for row in legacy_rows if row.get("pattern_type") == "provider_service"
+        ],
     }
 
 

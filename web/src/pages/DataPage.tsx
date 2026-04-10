@@ -397,6 +397,14 @@ export function DataPage() {
     const promotedActive = (learning?.promoted_active as Array<Record<string, unknown>> | undefined) || [];
     const promotedStats = (learning?.promoted_stats as Array<Record<string, unknown>> | undefined) || [];
     const legacy = (learning?.legacy as Array<Record<string, unknown>> | undefined) || [];
+    const promotedProviderActive =
+      (learning?.promoted_provider_active as Array<Record<string, unknown>> | undefined) || [];
+    const promotedProviderServiceActive =
+      (learning?.promoted_provider_service_active as Array<Record<string, unknown>> | undefined) || [];
+    const legacyProvider =
+      (learning?.legacy_provider as Array<Record<string, unknown>> | undefined) || [];
+    const legacyProviderService =
+      (learning?.legacy_provider_service as Array<Record<string, unknown>> | undefined) || [];
     return (
       <div className="detail-grid">
         <div className="panel">
@@ -438,6 +446,46 @@ export function DataPage() {
                     setLearning(await api.getLearningAdmin());
                   }}>{t("data.learning.delete")}</button>
                 </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="panel">
+          <h2>{t("data.learning.providerActiveTitle")}</h2>
+          <ul className="reason-list">
+            {promotedProviderActive.length === 0 ? <li><span>{t("data.learning.empty")}</span></li> : null}
+            {promotedProviderActive.map((item) => (
+              <li key={`${String(item.pattern_type)}:${String(item.pattern_value)}`}>
+                <strong>{String(item.pattern_value)}</strong>
+                <span>
+                  {String(item.decision)} · {t("data.learning.support", { value: String(item.support) })} · {t("data.learning.precision", { value: String(item.precision) })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="panel">
+          <h2>{t("data.learning.providerServiceActiveTitle")}</h2>
+          <ul className="reason-list">
+            {promotedProviderServiceActive.length === 0 ? <li><span>{t("data.learning.empty")}</span></li> : null}
+            {promotedProviderServiceActive.map((item) => (
+              <li key={`${String(item.pattern_type)}:${String(item.pattern_value)}`}>
+                <strong>{String(item.pattern_value)}</strong>
+                <span>
+                  {String(item.decision)} · {t("data.learning.support", { value: String(item.support) })} · {t("data.learning.precision", { value: String(item.precision) })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="panel">
+          <h2>{t("data.learning.providerLegacyTitle")}</h2>
+          <ul className="reason-list">
+            {[...legacyProvider, ...legacyProviderService].length === 0 ? <li><span>{t("data.learning.empty")}</span></li> : null}
+            {[...legacyProvider, ...legacyProviderService].map((item) => (
+              <li key={String(item.id)}>
+                <strong>{String(item.pattern_type)}:{String(item.pattern_value)}</strong>
+                <span>{String(item.decision)} · {t("data.learning.confidence", { value: String(item.confidence) })}</span>
               </li>
             ))}
           </ul>

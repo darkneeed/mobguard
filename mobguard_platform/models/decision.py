@@ -77,21 +77,32 @@ class DecisionBundle:
             )
         )
 
-    @property
-    def home_sources(self) -> set[str]:
+    def sources_for_direction(self, direction: str) -> set[str]:
+        if direction == "HOME":
+            return {
+                reason.source
+                for reason in self.reasons
+                if reason.direction == "HOME" and reason.weight < 0
+            }
+        if direction == "MOBILE":
+            return {
+                reason.source
+                for reason in self.reasons
+                if reason.direction == "MOBILE" and reason.weight > 0
+            }
         return {
             reason.source
             for reason in self.reasons
-            if reason.direction == "HOME" and reason.weight < 0
+            if reason.direction == direction
         }
 
     @property
+    def home_sources(self) -> set[str]:
+        return self.sources_for_direction("HOME")
+
+    @property
     def mobile_sources(self) -> set[str]:
-        return {
-            reason.source
-            for reason in self.reasons
-            if reason.direction == "MOBILE" and reason.weight > 0
-        }
+        return self.sources_for_direction("MOBILE")
 
     @property
     def has_hard_home_reason(self) -> bool:

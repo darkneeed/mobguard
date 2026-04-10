@@ -47,12 +47,15 @@ export function ReviewDetailPage() {
   const [data, setData] = useState<ReviewPayload | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     api
       .getReview(caseId)
       .then((payload) => setData(payload as ReviewPayload))
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [caseId]);
 
   function formatValue(value: string | number | null | undefined): string {
@@ -83,9 +86,22 @@ export function ReviewDetailPage() {
       </div>
 
       {error ? <div className="error-box">{error}</div> : null}
-      {!data ? <div className="panel">{t("reviewDetail.loading")}</div> : null}
+      {loading ? (
+        <div className="detail-grid">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div className="panel skeleton-card" key={index}>
+              <div className="loading-stack">
+                <span className="skeleton-line medium" />
+                <span className="skeleton-line long" />
+                <span className="skeleton-line long" />
+                <span className="skeleton-line short" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
-      {data ? (
+      {data && !loading ? (
         <div className="detail-grid">
           <div className="panel">
             <h2>{t("reviewDetail.sections.summary")}</h2>

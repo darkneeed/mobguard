@@ -52,6 +52,19 @@ type QualityPayload = {
     label: string;
     files: string[];
   };
+  mixed_providers: {
+    open_cases: number;
+    conflict_cases: number;
+    conflict_rate: number;
+    top_open_cases: Array<{
+      provider_key: string;
+      open_cases: number;
+      conflict_cases: number;
+      home_cases: number;
+      mobile_cases: number;
+      unsure_cases: number;
+    }>;
+  };
   learning: {
     thresholds: {
       asn_min_support: number;
@@ -88,6 +101,12 @@ export function QualityPage() {
   const updatedBy = !data?.live_rules_updated_by || data.live_rules_updated_by === "bootstrap"
     ? t("common.system")
     : data.live_rules_updated_by;
+  const promotedProviderTypes = data?.learning.promoted.by_type.filter((item) =>
+    item.pattern_type === "provider" || item.pattern_type === "provider_service"
+  ) || [];
+  const legacyProviderTypes = data?.learning.legacy.by_type.filter((item) =>
+    item.pattern_type === "provider" || item.pattern_type === "provider_service"
+  ) || [];
 
   return (
     <section className="page">
@@ -98,7 +117,16 @@ export function QualityPage() {
         </div>
       </div>
       {error ? <div className="error-box">{error}</div> : null}
-      {!data ? <div className="panel">{t("common.loading")}</div> : null}
+      {!data ? (
+        <div className="stats-grid">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div className="stat-card skeleton-card" key={index}>
+              <span className="skeleton-line short" />
+              <strong className="skeleton-line medium" />
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {data ? (
         <>
@@ -110,6 +138,8 @@ export function QualityPage() {
             <div className="stat-card"><span>{t("quality.cards.skipped")}</span><strong>{data.skipped}</strong></div>
             <div className="stat-card"><span>{t("quality.cards.activePatterns")}</span><strong>{data.active_learning_patterns}</strong></div>
             <div className="stat-card"><span>{t("quality.cards.activeSessions")}</span><strong>{data.active_sessions}</strong></div>
+            <div className="stat-card"><span>{t("quality.cards.mixedProviderCases")}</span><strong>{data.mixed_providers.open_cases}</strong></div>
+            <div className="stat-card"><span>{t("quality.cards.mixedConflictRate")}</span><strong>{Math.round(data.mixed_providers.conflict_rate * 100)}%</strong></div>
             <div className="stat-card">
               <span>{t("quality.cards.homeRatio")}</span>
               <strong>
@@ -149,6 +179,26 @@ export function QualityPage() {
                 <li key={item.asn_key}>
                   <strong>{item.asn_key}</strong>
                   <span>{t("quality.reviewCases", { count: item.cnt })}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="panel">
+            <h2>{t("quality.topMixedProvidersTitle")}</h2>
+            <ul className="reason-list">
+              {data.mixed_providers.top_open_cases.length === 0 ? <li><span>{t("quality.noMixedProviders")}</span></li> : null}
+              {data.mixed_providers.top_open_cases.map((item) => (
+                <li key={item.provider_key}>
+                  <strong>{item.provider_key}</strong>
+                  <span>
+                    {t("quality.mixedProviderStats", {
+                      open: item.open_cases,
+                      conflict: item.conflict_cases,
+                      home: item.home_cases,
+                      mobile: item.mobile_cases,
+                      unsure: item.unsure_cases
+                    })}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -232,6 +282,41 @@ export function QualityPage() {
                 </li>
               ))}
             </ul>
+          </div>
+          <div className="panel">
+            <h2>{t("quality.providerLearningTitle")}</h2>
+            <div className="detail-grid">
+              <div className="panel">
+                <h3>{t("quality.providerLearning.promoted")}</h3>
+                <ul className="reason-list">
+                  {promotedProviderTypes.length === 0 ? <li><span>{t("quality.noPromotedData")}</span></li> : null}
+                  {promotedProviderTypes.map((item) => (
+                    <li key={`provider-${item.pattern_type}`}>
+                      <strong>{item.pattern_type}</strong>
+                      <span>
+                        {t("quality.patternStats", {
+                          count: item.count,
+                          support: item.total_support,
+                          precision: `${Math.round(item.avg_precision * 100)}%`
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="panel">
+                <h3>{t("quality.providerLearning.legacy")}</h3>
+                <ul className="reason-list">
+                  {legacyProviderTypes.length === 0 ? <li><span>{t("quality.noLegacyData")}</span></li> : null}
+                  {legacyProviderTypes.map((item) => (
+                    <li key={`legacy-provider-${item.pattern_type}`}>
+                      <strong>{item.pattern_type}</strong>
+                      <span>{t("quality.legacyStats", { count: item.count, confidence: item.total_confidence })}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
           <div className="panel">
             <h2>{t("quality.topLegacyTitle")}</h2>

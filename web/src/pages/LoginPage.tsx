@@ -2,6 +2,7 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 
 import { api, AuthCapabilities, Session } from "../api/client";
+import { BrandLogo } from "../components/BrandLogo";
 import { useI18n } from "../localization";
 
 declare global {
@@ -77,6 +78,13 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   return (
     <div className="login-screen">
       <div className="login-card">
+        <div className="brand-hero">
+          <BrandLogo className="brand-hero-mark" />
+          <div>
+            <strong>MobGuard</strong>
+            <small>{t("layout.brandSubtitle")}</small>
+          </div>
+        </div>
         <span className="eyebrow">{t("login.eyebrow")}</span>
         <div className="action-row">
           <label className="theme-picker">

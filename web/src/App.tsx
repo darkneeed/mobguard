@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { AppRouter } from "./app/AppRouter";
 import { useSession } from "./app/useSession";
+import { BrandLogo } from "./components/BrandLogo";
 import { LanguageProvider, Language, useI18n } from "./localization";
 import { LoginPage } from "./pages/LoginPage";
 
@@ -13,7 +14,22 @@ function LoadingScreen() {
   const { t } = useI18n();
   return (
     <div className="login-screen">
-      <div className="login-card">{t("common.loadingSession")}</div>
+      <div className="login-card loading-card">
+        <div className="brand-hero">
+          <BrandLogo className="brand-hero-mark" />
+          <div>
+            <strong>MobGuard</strong>
+            <small>{t("layout.brandSubtitle")}</small>
+          </div>
+        </div>
+        <span className="eyebrow">{t("common.loadingLabel")}</span>
+        <h1>{t("common.loadingSession")}</h1>
+        <div className="loading-stack">
+          <span className="skeleton-line long" />
+          <span className="skeleton-line medium" />
+          <span className="skeleton-line short" />
+        </div>
+      </div>
     </div>
   );
 }

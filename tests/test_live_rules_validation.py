@@ -39,6 +39,35 @@ class LiveRulesValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_live_rules_patch({"settings": {"threshold_mobile": "high"}})
 
+    def test_provider_profiles_are_normalized(self):
+        payload = validate_live_rules_patch(
+            {
+                "provider_profiles": [
+                    {
+                        "key": "MTS",
+                        "classification": "mixed",
+                        "aliases": ["MTS", "mgts"],
+                        "mobile_markers": ["lte", "mobile"],
+                        "home_markers": ["gpon", "fiber"],
+                        "asns": ["8359", 12389],
+                    }
+                ]
+            }
+        )
+        self.assertEqual(
+            payload["provider_profiles"],
+            [
+                {
+                    "key": "mts",
+                    "classification": "mixed",
+                    "aliases": ["mts", "mgts"],
+                    "mobile_markers": ["lte", "mobile"],
+                    "home_markers": ["gpon", "fiber"],
+                    "asns": [8359, 12389],
+                }
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

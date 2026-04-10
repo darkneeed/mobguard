@@ -28,6 +28,14 @@ EDITABLE_TOP_LEVEL_KEYS = {
     "exempt_ids": int,
 }
 
+PROVIDER_CLASSIFICATION_ALIASES = {
+    "mixed": "mixed",
+    "mobile": "mobile",
+    "home": "home",
+    "pure_mobile": "mobile",
+    "pure_home": "home",
+}
+
 LEGACY_EDITABLE_SETTING_ALIASES = {
     "mobile_score_threshold": "threshold_mobile",
 }
@@ -37,6 +45,8 @@ EDITABLE_SETTINGS_KEYS = {
     "mixed_asn_score": (int, float),
     "ptr_home_penalty": (int, float),
     "mobile_kw_bonus": (int, float),
+    "provider_mobile_marker_bonus": (int, float),
+    "provider_home_marker_penalty": (int, float),
     "ip_api_mobile_bonus": (int, float),
     "pure_home_asn_penalty": (int, float),
     "concurrency_threshold": int,
@@ -59,6 +69,7 @@ EDITABLE_SETTINGS_KEYS = {
     "shadow_mode": bool,
     "probable_home_warning_only": bool,
     "auto_enforce_requires_hard_or_multi_signal": bool,
+    "provider_conflict_review_only": bool,
     "review_ui_base_url": str,
     "learning_promote_asn_min_support": int,
     "learning_promote_asn_min_precision": (int, float),
@@ -71,7 +82,10 @@ DEFAULT_SETTINGS = {
     "shadow_mode": True,
     "probable_home_warning_only": True,
     "auto_enforce_requires_hard_or_multi_signal": True,
+    "provider_conflict_review_only": True,
     "review_ui_base_url": "",
+    "provider_mobile_marker_bonus": 18,
+    "provider_home_marker_penalty": -18,
     "learning_promote_asn_min_support": 10,
     "learning_promote_asn_min_precision": 0.95,
     "learning_promote_combo_min_support": 5,
@@ -94,6 +108,55 @@ def _ensure_list_of_type(key: str, value: Any, item_type: type) -> list[Any]:
         except (TypeError, ValueError) as exc:
             raise ValueError(f"{key} contains invalid value {item!r}") from exc
     return cleaned
+
+
+def _normalize_string_list(key: str, value: Any) -> list[str]:
+    cleaned = _ensure_list_of_type(key, value, str)
+    return [item.strip().lower() for item in cleaned if item.strip()]
+
+
+def _normalize_provider_profile_item(index: int, value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"provider_profiles[{index}] must be an object")
+    key = str(value.get("key", "")).strip().lower()
+    if not key:
+        raise ValueError(f"provider_profiles[{index}].key is required")
+    classification = PROVIDER_CLASSIFICATION_ALIASES.get(
+        str(value.get("classification", "mixed")).strip().lower()
+    )
+    if not classification:
+        raise ValueError(f"provider_profiles[{index}].classification is invalid")
+    return {
+        "key": key,
+        "classification": classification,
+        "aliases": _normalize_string_list(f"provider_profiles[{index}].aliases", value.get("aliases", [])),
+        "mobile_markers": _normalize_string_list(
+            f"provider_profiles[{index}].mobile_markers", value.get("mobile_markers", [])
+        ),
+        "home_markers": _normalize_string_list(
+            f"provider_profiles[{index}].home_markers", value.get("home_markers", [])
+        ),
+        "asns": _ensure_list_of_type(f"provider_profiles[{index}].asns", value.get("asns", []), int),
+    }
+
+
+def _normalize_provider_profiles(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("provider_profiles must be a list")
+    profiles: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for index, item in enumerate(value):
+        normalized = _normalize_provider_profile_item(index, item)
+        if normalized["key"] in seen_keys:
+            raise ValueError(f"provider_profiles contains duplicate key {normalized['key']!r}")
+        seen_keys.add(normalized["key"])
+        profiles.append(normalized)
+    return profiles
+
+
+EDITABLE_COMPLEX_TOP_LEVEL_KEYS = {
+    "provider_profiles": _normalize_provider_profiles,
+}
 
 
 def _validate_setting(key: str, value: Any) -> Any:
@@ -176,6 +239,9 @@ def validate_live_rules_patch(payload: dict[str, Any]) -> dict[str, Any]:
     for key, item_type in EDITABLE_TOP_LEVEL_KEYS.items():
         if key in payload:
             normalized[key] = _ensure_list_of_type(key, payload[key], item_type)
+    for key, validator in EDITABLE_COMPLEX_TOP_LEVEL_KEYS.items():
+        if key in payload:
+            normalized[key] = validator(payload[key])
 
     if "settings" in payload:
         settings = payload["settings"]
@@ -183,7 +249,7 @@ def validate_live_rules_patch(payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("settings must be an object")
         normalized["settings"] = _normalize_settings_for_storage(settings)
 
-    unsupported = set(payload) - set(EDITABLE_TOP_LEVEL_KEYS) - {"settings"}
+    unsupported = set(payload) - set(EDITABLE_TOP_LEVEL_KEYS) - set(EDITABLE_COMPLEX_TOP_LEVEL_KEYS) - {"settings"}
     if unsupported:
         raise ValueError(f"Unsupported live rule keys: {', '.join(sorted(unsupported))}")
     return normalized
@@ -228,6 +294,11 @@ class PlatformStore:
             if raw_value is None:
                 raw_value = []
             rules[key] = _ensure_list_of_type(key, raw_value, item_type)
+        for key, validator in EDITABLE_COMPLEX_TOP_LEVEL_KEYS.items():
+            raw_value = copy.deepcopy(payload.get(key, self.base_config.get(key, [])))
+            if raw_value is None:
+                raw_value = []
+            rules[key] = validator(raw_value)
 
         rules["settings"] = _normalize_settings_for_runtime(
             payload.get("settings", {}),
@@ -285,6 +356,8 @@ class PlatformStore:
 
         for key in EDITABLE_TOP_LEVEL_KEYS:
             payload[key] = list(copy.deepcopy(rules.get(key, [])))
+        for key in EDITABLE_COMPLEX_TOP_LEVEL_KEYS:
+            payload[key] = copy.deepcopy(rules.get(key, []))
         payload["settings"] = settings_payload
         payload = canonicalize_runtime_bound_settings(payload, os.path.dirname(self.config_path))
         payload["_meta"] = {
@@ -606,6 +679,9 @@ class PlatformStore:
         for key in EDITABLE_TOP_LEVEL_KEYS:
             if key in live_rules:
                 runtime_config[key] = list(live_rules[key])
+        for key in EDITABLE_COMPLEX_TOP_LEVEL_KEYS:
+            if key in live_rules:
+                runtime_config[key] = copy.deepcopy(live_rules[key])
         runtime_config.setdefault("settings", {})
         runtime_config["settings"].pop("mobile_score_threshold", None)
         for key in EDITABLE_SETTINGS_KEYS:
@@ -1033,6 +1109,14 @@ class PlatformStore:
         labels: set[tuple[str, str]] = set()
         if bundle.asn:
             labels.add(("asn", str(bundle.asn)))
+        provider_evidence = bundle.signal_flags.get("provider_evidence")
+        if isinstance(provider_evidence, dict):
+            provider_key = str(provider_evidence.get("provider_key") or "").strip().lower()
+            service_type_hint = str(provider_evidence.get("service_type_hint") or "").strip().lower()
+            if provider_key:
+                labels.add(("provider", provider_key))
+                if service_type_hint and service_type_hint != "unknown":
+                    labels.add(("provider_service", f"{provider_key}:{service_type_hint}"))
         for reason in bundle.reasons:
             metadata = reason.metadata or {}
             for keyword in metadata.get("keywords", []):
@@ -1312,6 +1396,62 @@ class PlatformStore:
                 "SELECT COUNT(*) AS cnt FROM admin_sessions WHERE expires_at > ?",
                 (_utcnow(),),
             ).fetchone()["cnt"]
+            provider_rows = conn.execute(
+                """
+                SELECT rc.review_reason, rc.verdict, ae.bundle_json
+                FROM review_cases rc
+                JOIN analysis_events ae ON ae.id = rc.latest_event_id
+                WHERE rc.status = 'OPEN'
+                """
+            ).fetchall()
+        mixed_provider_open_cases = 0
+        mixed_provider_conflict_cases = 0
+        mixed_provider_stats: dict[str, dict[str, Any]] = {}
+        for row in provider_rows:
+            try:
+                bundle_payload = json.loads(row["bundle_json"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            signal_flags = bundle_payload.get("signal_flags", {})
+            if not isinstance(signal_flags, dict):
+                continue
+            evidence = signal_flags.get("provider_evidence", {})
+            if not isinstance(evidence, dict):
+                continue
+            if str(evidence.get("provider_classification") or "").lower() != "mixed":
+                continue
+            provider_key = str(evidence.get("provider_key") or "").strip().lower()
+            if not provider_key:
+                continue
+            mixed_provider_open_cases += 1
+            conflict_case = bool(evidence.get("service_conflict")) or str(row["review_reason"]) == "provider_conflict"
+            if conflict_case:
+                mixed_provider_conflict_cases += 1
+            bucket = mixed_provider_stats.setdefault(
+                provider_key,
+                {
+                    "provider_key": provider_key,
+                    "open_cases": 0,
+                    "conflict_cases": 0,
+                    "home_cases": 0,
+                    "mobile_cases": 0,
+                    "unsure_cases": 0,
+                },
+            )
+            bucket["open_cases"] += 1
+            if conflict_case:
+                bucket["conflict_cases"] += 1
+            verdict = str(row["verdict"] or "").upper()
+            if verdict == "HOME":
+                bucket["home_cases"] += 1
+            elif verdict == "MOBILE":
+                bucket["mobile_cases"] += 1
+            else:
+                bucket["unsure_cases"] += 1
+        top_mixed_providers = sorted(
+            mixed_provider_stats.values(),
+            key=lambda item: (-int(item["open_cases"]), -int(item["conflict_cases"]), item["provider_key"]),
+        )[:10]
         return {
             "open_cases": open_cases,
             "total_cases": total_cases,
@@ -1327,6 +1467,16 @@ class PlatformStore:
             "live_rules_updated_by": live_rules_state["updated_by"],
             "active_sessions": active_sessions,
             "asn_source": asn_source,
+            "mixed_providers": {
+                "open_cases": mixed_provider_open_cases,
+                "conflict_cases": mixed_provider_conflict_cases,
+                "conflict_rate": (
+                    mixed_provider_conflict_cases / mixed_provider_open_cases
+                    if mixed_provider_open_cases
+                    else 0.0
+                ),
+                "top_open_cases": top_mixed_providers,
+            },
             "learning": {
                 "thresholds": learning_thresholds,
                 "promoted": {

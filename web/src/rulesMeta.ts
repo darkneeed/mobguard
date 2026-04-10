@@ -14,6 +14,8 @@ export type RuleSettingKey =
   | "mixed_asn_score"
   | "ptr_home_penalty"
   | "mobile_kw_bonus"
+  | "provider_mobile_marker_bonus"
+  | "provider_home_marker_penalty"
   | "ip_api_mobile_bonus"
   | "pure_home_asn_penalty"
   | "concurrency_threshold"
@@ -36,6 +38,7 @@ export type RuleSettingKey =
   | "shadow_mode"
   | "probable_home_warning_only"
   | "auto_enforce_requires_hard_or_multi_signal"
+  | "provider_conflict_review_only"
   | "review_ui_base_url"
   | "learning_promote_asn_min_support"
   | "learning_promote_asn_min_precision"
@@ -48,8 +51,18 @@ export type RuleSettingSectionKey = "thresholds" | "scores" | "behavior" | "poli
 
 export type RuleSettingValue = string | number | boolean | null | undefined;
 
+export type ProviderProfileDraft = {
+  key: string;
+  classification: "mixed" | "mobile" | "home";
+  aliases: string[];
+  mobile_markers: string[];
+  home_markers: string[];
+  asns: string[];
+};
+
 export type RulesDraft = Partial<Record<RuleListKey, Array<string | number>>> & {
   settings?: Partial<Record<RuleSettingKey, RuleSettingValue>>;
+  provider_profiles?: ProviderProfileDraft[];
 };
 
 export type RuleListFieldMeta = {
@@ -86,6 +99,8 @@ export const RULE_SETTING_FIELDS: RuleSettingFieldMeta[] = [
   { key: "mixed_asn_score", sectionKey: "scores", inputType: "number" },
   { key: "ptr_home_penalty", sectionKey: "scores", inputType: "number" },
   { key: "mobile_kw_bonus", sectionKey: "scores", inputType: "number" },
+  { key: "provider_mobile_marker_bonus", sectionKey: "scores", inputType: "number" },
+  { key: "provider_home_marker_penalty", sectionKey: "scores", inputType: "number" },
   { key: "ip_api_mobile_bonus", sectionKey: "scores", inputType: "number" },
   { key: "pure_home_asn_penalty", sectionKey: "scores", inputType: "number" },
   { key: "score_subnet_mobile_bonus", sectionKey: "scores", inputType: "number" },
@@ -113,6 +128,7 @@ export const RULE_SETTING_FIELDS: RuleSettingFieldMeta[] = [
     sectionKey: "policy",
     inputType: "boolean"
   },
+  { key: "provider_conflict_review_only", sectionKey: "policy", inputType: "boolean" },
   { key: "review_ui_base_url", sectionKey: "policy", inputType: "text" },
   { key: "live_rules_refresh_seconds", sectionKey: "policy", inputType: "number" },
   { key: "learning_promote_asn_min_support", sectionKey: "learning", inputType: "number" },

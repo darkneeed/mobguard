@@ -15,7 +15,14 @@ from .paths import (
     storage_runtime_db_path,
     storage_runtime_geoip_db_path,
 )
-from .typed_config import DetectionRules, LearningThresholds, RuntimeRuleView, ScoreWeights, Thresholds
+from .typed_config import (
+    DetectionRules,
+    LearningThresholds,
+    ProviderProfile,
+    RuntimeRuleView,
+    ScoreWeights,
+    Thresholds,
+)
 
 __all__ = [
     "DB_FILENAME",
@@ -24,6 +31,7 @@ __all__ = [
     "GEOIP_DB_FILENAME",
     "LEGACY_RUNTIME_DIR",
     "LearningThresholds",
+    "ProviderProfile",
     "RUNTIME_DIRNAME",
     "RuntimeContext",
     "RuntimeRuleView",

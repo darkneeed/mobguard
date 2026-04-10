@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
 
+import { BrandLogo } from "./BrandLogo";
 import { Language, useI18n } from "../localization";
 
 type ThemeMode = "light" | "dark" | "system";
@@ -27,7 +28,7 @@ export function Layout({
     <div className="shell">
       <aside className="sidebar">
         <Link to="/" className="brand">
-          <span className="brand-mark">MG</span>
+          <BrandLogo />
           <div>
             <strong>MobGuard</strong>
             <small>{t("layout.brandSubtitle")}</small>

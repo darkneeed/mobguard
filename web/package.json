@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "node ./node_modules/typescript/bin/tsc --project tsconfig.json --noEmit && node ./node_modules/vite/bin/vite.js build",
-    "preview": "vite preview --host 0.0.0.0 --port 4173"
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "check:i18n": "node ./scripts/check-i18n.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

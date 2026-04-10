@@ -21,6 +21,16 @@ class StoreReviewFlowTests(unittest.TestCase):
             "allowed_isp_keywords": ["mobile"],
             "home_isp_keywords": ["fiber"],
             "exclude_isp_keywords": ["hosting"],
+            "provider_profiles": [
+                {
+                    "key": "mts",
+                    "classification": "mixed",
+                    "aliases": ["mts", "mgts"],
+                    "mobile_markers": ["mobile", "lte"],
+                    "home_markers": ["fiber", "gpon"],
+                    "asns": [12345],
+                }
+            ],
             "admin_tg_ids": [1001],
             "exempt_tg_ids": [2002],
             "exempt_ids": [3003],
@@ -31,6 +41,9 @@ class StoreReviewFlowTests(unittest.TestCase):
                 "threshold_home": 15,
                 "threshold_probable_home": 30,
                 "threshold_probable_mobile": 50,
+                "provider_mobile_marker_bonus": 18,
+                "provider_home_marker_penalty": -18,
+                "provider_conflict_review_only": True,
                 "learning_promote_asn_min_support": 1,
                 "learning_promote_asn_min_precision": 1.0,
                 "learning_promote_combo_min_support": 1,
@@ -57,13 +70,20 @@ class StoreReviewFlowTests(unittest.TestCase):
         )
         bundle.add_reason(
             "keyword_home",
-            "keyword",
+            "generic_keyword",
             -20,
             "soft",
             "HOME",
             "keyword matched",
             {"keywords": ["fiber"]},
         )
+        bundle.signal_flags["provider_evidence"] = {
+            "provider_key": "mts",
+            "provider_classification": "mixed",
+            "service_type_hint": "home",
+            "service_conflict": False,
+            "review_recommended": True,
+        }
         user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
         event_id = self.store.record_analysis_event(user, bundle.ip, "TAG", bundle)
         summary = self.store.ensure_review_case(user, bundle.ip, "TAG", bundle, event_id, "probable_home")
@@ -76,6 +96,12 @@ class StoreReviewFlowTests(unittest.TestCase):
         pattern = self.store.get_promoted_pattern("asn", "12345")
         self.assertIsNotNone(pattern)
         self.assertEqual(pattern["decision"], "HOME")
+        provider_pattern = self.store.get_promoted_pattern("provider", "mts")
+        self.assertIsNotNone(provider_pattern)
+        self.assertEqual(provider_pattern["decision"], "HOME")
+        provider_service_pattern = self.store.get_promoted_pattern("provider_service", "mts:home")
+        self.assertIsNotNone(provider_service_pattern)
+        self.assertEqual(provider_service_pattern["decision"], "HOME")
 
     def test_live_rules_revision_conflict_is_rejected(self):
         state = self.store.get_live_rules_state()
@@ -125,8 +151,37 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertEqual(state["rules"]["admin_tg_ids"], [1001])
         self.assertEqual(state["rules"]["exempt_tg_ids"], [2002])
         self.assertEqual(state["rules"]["exempt_ids"], [3003])
+        self.assertEqual(state["rules"]["provider_profiles"][0]["key"], "mts")
         self.assertTrue(self.store.is_admin_tg_id(1001))
         self.assertFalse(self.store.is_admin_tg_id(2002))
+
+    def test_provider_profiles_are_persisted_in_saved_rules(self):
+        updated = self.store.update_live_rules(
+            {
+                "provider_profiles": [
+                    {
+                        "key": "rostelecom",
+                        "classification": "mixed",
+                        "aliases": ["rostelecom", "onlime"],
+                        "mobile_markers": ["mobile", "lte"],
+                        "home_markers": ["fiber", "gpon"],
+                        "asns": [8359],
+                    }
+                ],
+                "settings": {
+                    "provider_mobile_marker_bonus": 20,
+                    "provider_home_marker_penalty": -22,
+                    "provider_conflict_review_only": True,
+                },
+            },
+            "admin",
+            1001,
+        )
+        self.assertEqual(updated["rules"]["provider_profiles"][0]["key"], "rostelecom")
+        self.assertEqual(updated["rules"]["settings"]["provider_mobile_marker_bonus"], 20)
+        with open(self.config_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        self.assertEqual(payload["provider_profiles"][0]["key"], "rostelecom")
 
     def test_list_review_cases_filters_by_dates_identifiers_and_repeat_count(self):
         first_user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
@@ -213,6 +268,32 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertEqual(metrics["learning"]["legacy"]["total_confidence"], 7)
         self.assertEqual(metrics["learning"]["thresholds"]["asn_min_support"], 1)
         self.assertEqual(metrics["asn_source"]["type"], "missing")
+
+    def test_quality_metrics_include_mixed_provider_conflict_rate(self):
+        user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
+        bundle = DecisionBundle(
+            ip="10.10.10.20",
+            verdict="HOME",
+            confidence_band="HIGH_HOME",
+            score=-18,
+            asn=12345,
+            isp="MTS Fiber",
+        )
+        bundle.signal_flags["provider_evidence"] = {
+            "provider_key": "mts",
+            "provider_classification": "mixed",
+            "service_type_hint": "home",
+            "service_conflict": False,
+            "review_recommended": True,
+        }
+        event_id = self.store.record_analysis_event(user, bundle.ip, "TAG", bundle)
+        self.store.ensure_review_case(user, bundle.ip, "TAG", bundle, event_id, "provider_conflict")
+
+        metrics = self.store.get_quality_metrics()
+
+        self.assertEqual(metrics["mixed_providers"]["open_cases"], 1)
+        self.assertEqual(metrics["mixed_providers"]["conflict_cases"], 1)
+        self.assertEqual(metrics["mixed_providers"]["top_open_cases"][0]["provider_key"], "mts")
 
     def test_build_review_url_falls_back_to_base_config_when_live_rules_are_empty(self):
         self.assertEqual(

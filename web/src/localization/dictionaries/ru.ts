@@ -3,6 +3,7 @@ import type { TranslationDictionary } from "../types";
 export const ruDictionary: TranslationDictionary = {
   common: {
     loading: "Загрузка…",
+    loadingLabel: "Загрузка",
     loadingSession: "Загружаю сессию…",
     notAvailable: "N/A",
     admin: "Администратор",
@@ -173,6 +174,48 @@ export const ruDictionary: TranslationDictionary = {
       description: "Параметры эскалации runtime и контроля санкций.",
       save: "Сохранить общие настройки"
     },
+    providerProfiles: {
+      description: "Профили операторов с alias и service markers для осторожного review-first скоринга.",
+      add: "Добавить профиль оператора",
+      remove: "Удалить профиль",
+      empty: "Профили операторов пока не настроены.",
+      cardTitle: "Профиль оператора #{index}",
+      cardSubtitle: "По одному значению на строку. ASN указываются только числами.",
+      classifications: {
+        mixed: "Смешанный",
+        mobile: "Мобильный",
+        home: "Домашний"
+      },
+      validation: {
+        missingKey: "Профиль оператора #{index}: нужен key"
+      },
+      fields: {
+        key: {
+          label: "Ключ профиля",
+          description: "Стабильный идентификатор для learning labels и quality-метрик."
+        },
+        classification: {
+          label: "Классификация",
+          description: "Смешанные профили остаются в review-first режиме, пока их не подтвердит второй независимый фактор."
+        },
+        aliases: {
+          label: "Алиасы",
+          description: "Имена оператора, бренды, PTR-фрагменты и org-алиасы для поиска в ISP/hostname."
+        },
+        mobile_markers: {
+          label: "Мобильные service markers",
+          description: "Маркеры услуг, указывающие на мобильную сторону оператора."
+        },
+        home_markers: {
+          label: "Домашние service markers",
+          description: "Маркеры услуг, указывающие на фиксированную/домашнюю сторону оператора."
+        },
+        asns: {
+          label: "Список ASN",
+          description: "ASN, относящиеся к этому профилю оператора."
+        }
+      }
+    },
     listSectionDescription: "Редактируемые правила в формате списков.",
     settingSectionDescription: "Только каноничные редактируемые настройки.",
     invalidNumber: "{field}: некорректное число",
@@ -335,6 +378,10 @@ export const ruDictionary: TranslationDictionary = {
       promotedActiveTitle: "Активные promoted patterns",
       promotedStatsTitle: "Статистика promoted",
       legacyTitle: "Legacy learning",
+      providerActiveTitle: "Promoted provider patterns",
+      providerServiceActiveTitle: "Promoted provider service patterns",
+      providerLegacyTitle: "Legacy provider patterns",
+      empty: "Provider-specific learning пока пуст",
       support: "support {value}",
       precision: "precision {value}",
       total: "total {value}",
@@ -353,11 +400,13 @@ export const ruDictionary: TranslationDictionary = {
     cards: {
       openCases: "Открытые кейсы",
       totalCases: "Всего кейсов",
-      resolvedHome: "Resolved HOME",
-      resolvedMobile: "Resolved MOBILE",
+      resolvedHome: "Подтверждённые HOME",
+      resolvedMobile: "Подтверждённые MOBILE",
       skipped: "Пропущено",
       activePatterns: "Активные паттерны",
       activeSessions: "Активные сессии",
+      mixedProviderCases: "Открытые mixed-provider кейсы",
+      mixedConflictRate: "Conflict-rate mixed providers",
       homeRatio: "Доля HOME",
       mobileRatio: "Доля MOBILE"
     },
@@ -367,10 +416,14 @@ export const ruDictionary: TranslationDictionary = {
     asnSourceTitle: "Источник ASN",
     noAsnSource: "Источник ASN недоступен",
     topNoisyAsnTitle: "Самые шумные ASN",
+    topMixedProvidersTitle: "Mixed providers с наибольшим backlog",
+    noMixedProviders: "Mixed-provider backlog пока пуст",
+    mixedProviderStats: "{open} open · {conflict} conflicts · HOME {home} · MOBILE {mobile} · UNSURE {unsure}",
     reviewCases: "{count} кейсов ревью",
     topPromotedPatternsTitle: "Топ promoted patterns",
     topPatternDetails: "{decision} · support {support} · precision {precision}",
     learningStateTitle: "Состояние обучения",
+    providerLearningTitle: "Обучение по операторам",
     promotedByTypeTitle: "Promoted learning по типам",
     noPromotedData: "Promoted-данных пока нет",
     legacyByTypeTitle: "Legacy learning по типам",
@@ -386,6 +439,10 @@ export const ruDictionary: TranslationDictionary = {
       comboMinSupport: "Combo min support",
       comboMinPrecision: "Combo min precision"
     },
+    providerLearning: {
+      promoted: "Promoted provider patterns",
+      legacy: "Legacy provider patterns"
+    },
     patternStats: "{count} patterns · support {support} · avg precision {precision}",
     legacyStats: "{count} patterns · accumulated confidence {confidence}"
   },
@@ -397,6 +454,7 @@ export const ruDictionary: TranslationDictionary = {
       access: "Доступ",
       asnLists: "ASN Lists",
       keywords: "Keywords",
+      providers: "Профили операторов",
       thresholds: "Thresholds",
       scores: "Scores",
       behavior: "Behavior",
@@ -491,6 +549,16 @@ export const ruDictionary: TranslationDictionary = {
         description: "Бонус за mobile keywords в ISP/hostname.",
         recommendation: "Делайте меньше чистого ASN-бонуса, но достаточно значимым."
       },
+      provider_mobile_marker_bonus: {
+        label: "Бонус за mobile marker оператора",
+        description: "Дополнительный бонус, когда provider profile находит мобильный service marker.",
+        recommendation: "Держите умеренным и не используйте как единственный автосигнал для mixed-провайдера."
+      },
+      provider_home_marker_penalty: {
+        label: "Штраф за home marker оператора",
+        description: "Дополнительный штраф, когда provider profile находит домашний service marker.",
+        recommendation: "Штраф должен быть заметным, но не единственной причиной для punitive по mixed-провайдеру."
+      },
       ip_api_mobile_bonus: {
         label: "ip-api mobile bonus",
         description: "Дополнительный bonus, если fallback ip-api подтверждает mobile сеть.",
@@ -580,6 +648,11 @@ export const ruDictionary: TranslationDictionary = {
         label: "Require hard or multi-signal for auto-enforce",
         description: "Авто-применение санкций разрешено только при сильном или многосигнальном HOME.",
         recommendation: "Безопаснее оставлять включённым."
+      },
+      provider_conflict_review_only: {
+        label: "Mixed provider conflicts только в review",
+        description: "Оставляет конфликты mixed-провайдеров, отсутствие service markers и однофакторные carrier hints в ручном ревью.",
+        recommendation: "Рекомендуется для review-first rollout по неоднозначным операторам."
       },
       review_ui_base_url: {
         label: "Review UI base URL",

@@ -3,6 +3,7 @@ import type { TranslationDictionary } from "../types";
 export const enDictionary: TranslationDictionary = {
   common: {
     loading: "Loading…",
+    loadingLabel: "Loading",
     loadingSession: "Loading session…",
     notAvailable: "N/A",
     admin: "Admin",
@@ -173,6 +174,48 @@ export const enDictionary: TranslationDictionary = {
       description: "Runtime escalation and sanction controls.",
       save: "Save general settings"
     },
+    providerProfiles: {
+      description: "Carrier-specific aliases and service markers for mixed-provider review-first scoring.",
+      add: "Add provider profile",
+      remove: "Remove profile",
+      empty: "No provider profiles configured yet.",
+      cardTitle: "Provider profile #{index}",
+      cardSubtitle: "One alias or marker per line. ASN values should stay numeric.",
+      classifications: {
+        mixed: "Mixed",
+        mobile: "Mobile",
+        home: "Home"
+      },
+      validation: {
+        missingKey: "Provider profile #{index}: key is required"
+      },
+      fields: {
+        key: {
+          label: "Profile key",
+          description: "Stable identifier used in learning labels and quality metrics."
+        },
+        classification: {
+          label: "Classification",
+          description: "Mixed profiles stay review-first until another independent factor confirms the verdict."
+        },
+        aliases: {
+          label: "Aliases",
+          description: "Carrier names, brands, PTR fragments, or org aliases matched in ISP/hostname."
+        },
+        mobile_markers: {
+          label: "Mobile service markers",
+          description: "Service-specific hints that indicate a mobile side of this provider."
+        },
+        home_markers: {
+          label: "Home service markers",
+          description: "Service-specific hints that indicate a fixed/home side of this provider."
+        },
+        asns: {
+          label: "ASN list",
+          description: "ASN values associated with this provider profile."
+        }
+      }
+    },
     listSectionDescription: "Editable list-based rules.",
     settingSectionDescription: "Canonical editable settings only.",
     invalidNumber: "{field}: invalid number",
@@ -335,6 +378,10 @@ export const enDictionary: TranslationDictionary = {
       promotedActiveTitle: "Promoted active patterns",
       promotedStatsTitle: "Promoted stats",
       legacyTitle: "Legacy learning",
+      providerActiveTitle: "Promoted provider patterns",
+      providerServiceActiveTitle: "Promoted provider service patterns",
+      providerLegacyTitle: "Legacy provider patterns",
+      empty: "No provider-specific learning data yet",
       support: "support {value}",
       precision: "precision {value}",
       total: "total {value}",
@@ -358,6 +405,8 @@ export const enDictionary: TranslationDictionary = {
       skipped: "Skipped",
       activePatterns: "Active patterns",
       activeSessions: "Active sessions",
+      mixedProviderCases: "Mixed-provider open cases",
+      mixedConflictRate: "Mixed-provider conflict rate",
       homeRatio: "HOME ratio",
       mobileRatio: "MOBILE ratio"
     },
@@ -367,10 +416,14 @@ export const enDictionary: TranslationDictionary = {
     asnSourceTitle: "ASN source",
     noAsnSource: "No ASN source available",
     topNoisyAsnTitle: "Top noisy ASN",
+    topMixedProvidersTitle: "Top mixed providers by open cases",
+    noMixedProviders: "No mixed-provider backlog yet",
+    mixedProviderStats: "{open} open · {conflict} conflicts · HOME {home} · MOBILE {mobile} · UNSURE {unsure}",
     reviewCases: "{count} review cases",
     topPromotedPatternsTitle: "Top promoted patterns",
     topPatternDetails: "{decision} · support {support} · precision {precision}",
     learningStateTitle: "Learning state",
+    providerLearningTitle: "Provider learning",
     promotedByTypeTitle: "Promoted learning by type",
     noPromotedData: "No promoted data yet",
     legacyByTypeTitle: "Legacy learning by type",
@@ -386,6 +439,10 @@ export const enDictionary: TranslationDictionary = {
       comboMinSupport: "Combo min support",
       comboMinPrecision: "Combo min precision"
     },
+    providerLearning: {
+      promoted: "Promoted provider patterns",
+      legacy: "Legacy provider patterns"
+    },
     patternStats: "{count} patterns · support {support} · avg precision {precision}",
     legacyStats: "{count} patterns · accumulated confidence {confidence}"
   },
@@ -397,6 +454,7 @@ export const enDictionary: TranslationDictionary = {
       access: "Access",
       asnLists: "ASN Lists",
       keywords: "Keywords",
+      providers: "Provider Profiles",
       thresholds: "Thresholds",
       scores: "Scores",
       behavior: "Behavior",
@@ -491,6 +549,16 @@ export const enDictionary: TranslationDictionary = {
         description: "Bonus for mobile keywords in ISP/hostname.",
         recommendation: "Keep it below the pure ASN bonus, but still meaningful."
       },
+      provider_mobile_marker_bonus: {
+        label: "Provider mobile marker bonus",
+        description: "Bonus applied when a provider profile matches a mobile service marker.",
+        recommendation: "Use as a moderate signal and wait for a second factor before automation on mixed providers."
+      },
+      provider_home_marker_penalty: {
+        label: "Provider home marker penalty",
+        description: "Penalty applied when a provider profile matches a fixed/home service marker.",
+        recommendation: "Keep it meaningful, but do not let a single carrier marker auto-punish a mixed provider."
+      },
       ip_api_mobile_bonus: {
         label: "ip-api mobile bonus",
         description: "Additional bonus when fallback ip-api confirms a mobile network.",
@@ -580,6 +648,11 @@ export const enDictionary: TranslationDictionary = {
         label: "Require hard or multi-signal for auto-enforce",
         description: "Auto-sanctions are allowed only for strong or multi-signal HOME cases.",
         recommendation: "Safer to keep enabled."
+      },
+      provider_conflict_review_only: {
+        label: "Review mixed provider conflicts only",
+        description: "Keep mixed-provider conflicts, missing service markers, and single-factor carrier hints in manual review.",
+        recommendation: "Recommended for review-first rollout of ambiguous carriers."
       },
       review_ui_base_url: {
         label: "Review UI base URL",

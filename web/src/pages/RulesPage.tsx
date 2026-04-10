@@ -11,6 +11,7 @@ import {
 } from "../features/rules/lib/serializers";
 import { useI18n } from "../localization";
 import {
+  ProviderProfileDraft,
   RULE_LIST_FIELDS,
   RULE_SETTING_FIELDS,
   RuleListFieldMeta,
@@ -55,6 +56,17 @@ const LIST_SECTIONS = Array.from(
   new Set(RULE_LIST_FIELDS.filter((field) => field.sectionKey !== "access").map((field) => field.sectionKey))
 );
 const SETTING_SECTIONS = Array.from(new Set(RULE_SETTING_FIELDS.map((field) => field.sectionKey)));
+
+function blankProviderProfile(): ProviderProfileDraft {
+  return {
+    key: "",
+    classification: "mixed",
+    aliases: [],
+    mobile_markers: [],
+    home_markers: [],
+    asns: []
+  };
+}
 
 export function RulesPage() {
   const { t, language } = useI18n();
@@ -129,6 +141,13 @@ export function RulesPage() {
     };
   }
 
+  function providerFieldMeta(field: "key" | "classification" | "aliases" | "mobile_markers" | "home_markers" | "asns") {
+    return {
+      label: t(`rules.providerProfiles.fields.${field}.label`),
+      description: t(`rules.providerProfiles.fields.${field}.description`)
+    };
+  }
+
   function serializeListField(meta: RuleListFieldMeta, values: Array<string | number> | undefined) {
     const rawValues = (values || []).map((item) => String(item).trim()).filter(Boolean);
     if (meta.itemType === "string") {
@@ -197,6 +216,39 @@ export function RulesPage() {
     return payload;
   }
 
+  function serializeProviderProfiles(profiles: ProviderProfileDraft[] | undefined) {
+    return (profiles || [])
+      .map((profile, index) => {
+        const key = profile.key.trim().toLowerCase();
+        if (!key) {
+          throw new Error(t("rules.providerProfiles.validation.missingKey", { index: index + 1 }));
+        }
+        const asns = profile.asns
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .map((item) => {
+            const parsed = Number(item);
+            if (!Number.isFinite(parsed)) {
+              throw new Error(
+                t("rules.invalidValue", {
+                  field: providerFieldMeta("asns").label,
+                  value: item
+                })
+              );
+            }
+            return parsed;
+          });
+        return {
+          key,
+          classification: profile.classification,
+          aliases: profile.aliases.map((item) => item.trim().toLowerCase()).filter(Boolean),
+          mobile_markers: profile.mobile_markers.map((item) => item.trim().toLowerCase()).filter(Boolean),
+          home_markers: profile.home_markers.map((item) => item.trim().toLowerCase()).filter(Boolean),
+          asns
+        };
+      });
+  }
+
   async function save() {
     if (!draft || !state) return;
     try {
@@ -205,6 +257,7 @@ export function RulesPage() {
       for (const field of RULE_LIST_FIELDS) {
         payload[field.key] = serializeListField(field, draft[field.key]);
       }
+      payload.provider_profiles = serializeProviderProfiles(draft.provider_profiles);
 
       for (const field of RULE_SETTING_FIELDS) {
         payload.settings = {
@@ -275,6 +328,37 @@ export function RulesPage() {
     setGeneralSaved("");
   }
 
+  function updateProviderProfile(index: number, patch: Partial<ProviderProfileDraft>) {
+    setDraft((prev) => {
+      const providerProfiles = [...(prev?.provider_profiles || [])];
+      providerProfiles[index] = { ...providerProfiles[index], ...patch };
+      return {
+        ...(prev || {}),
+        settings: prev?.settings || {},
+        provider_profiles: providerProfiles
+      };
+    });
+    setSaved("");
+  }
+
+  function addProviderProfile() {
+    setDraft((prev) => ({
+      ...(prev || {}),
+      settings: prev?.settings || {},
+      provider_profiles: [...(prev?.provider_profiles || []), blankProviderProfile()]
+    }));
+    setSaved("");
+  }
+
+  function removeProviderProfile(index: number) {
+    setDraft((prev) => ({
+      ...(prev || {}),
+      settings: prev?.settings || {},
+      provider_profiles: (prev?.provider_profiles || []).filter((_, itemIndex) => itemIndex !== index)
+    }));
+    setSaved("");
+  }
+
   const updatedBy = !state?.updated_by || state.updated_by === "bootstrap" ? t("common.system") : state.updated_by;
 
   return (
@@ -302,7 +386,20 @@ export function RulesPage() {
           <span>{t("rules.updatedBy", { value: updatedBy })}</span>
         </div>
       ) : null}
-      {!draft && !generalDraft ? <div className="panel">{t("common.loading")}</div> : null}
+      {!draft && !generalDraft ? (
+        <div className="detail-grid">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div className="panel skeleton-card" key={index}>
+              <div className="loading-stack">
+                <span className="skeleton-line medium" />
+                <span className="skeleton-line long" />
+                <span className="skeleton-line long" />
+                <span className="skeleton-line short" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {generalDraft ? (
         <div className="panel">
@@ -389,6 +486,122 @@ export function RulesPage() {
               </div>
             </div>
           ))}
+
+          <div className="panel">
+            <div className="panel-heading panel-heading-row">
+              <div>
+                <h2>{t("rulesMeta.sections.providers")}</h2>
+                <p className="muted">{t("rules.providerProfiles.description")}</p>
+              </div>
+              <button className="ghost" onClick={addProviderProfile}>
+                {t("rules.providerProfiles.add")}
+              </button>
+            </div>
+            <div className="provider-profiles">
+              {(draft.provider_profiles || []).map((profile, index) => (
+                <div className="provider-card" key={`${profile.key || "provider"}-${index}`}>
+                  <div className="provider-card-header">
+                    <div>
+                      <strong>
+                        {profile.key || t("rules.providerProfiles.cardTitle", { index: index + 1 })}
+                      </strong>
+                      <p className="muted">{t("rules.providerProfiles.cardSubtitle")}</p>
+                    </div>
+                    <button className="ghost small-button" onClick={() => removeProviderProfile(index)}>
+                      {t("rules.providerProfiles.remove")}
+                    </button>
+                  </div>
+                  <div className="form-grid">
+                    <div className="rule-field">
+                      <FieldLabel
+                        label={providerFieldMeta("key").label}
+                        description={providerFieldMeta("key").description}
+                      />
+                      <input
+                        value={profile.key}
+                        onChange={(event) => updateProviderProfile(index, { key: event.target.value })}
+                      />
+                    </div>
+                    <div className="rule-field">
+                      <FieldLabel
+                        label={providerFieldMeta("classification").label}
+                        description={providerFieldMeta("classification").description}
+                      />
+                      <select
+                        value={profile.classification}
+                        onChange={(event) =>
+                          updateProviderProfile(index, {
+                            classification: event.target.value as ProviderProfileDraft["classification"]
+                          })
+                        }
+                      >
+                        <option value="mixed">{t("rules.providerProfiles.classifications.mixed")}</option>
+                        <option value="mobile">{t("rules.providerProfiles.classifications.mobile")}</option>
+                        <option value="home">{t("rules.providerProfiles.classifications.home")}</option>
+                      </select>
+                    </div>
+                    <div className="rule-field rule-field-wide">
+                      <FieldLabel
+                        label={providerFieldMeta("aliases").label}
+                        description={providerFieldMeta("aliases").description}
+                      />
+                      <textarea
+                        className="note-box"
+                        value={listValuesToText(profile.aliases)}
+                        onChange={(event) =>
+                          updateProviderProfile(index, { aliases: parseListText(event.target.value) })
+                        }
+                      />
+                    </div>
+                    <div className="rule-field">
+                      <FieldLabel
+                        label={providerFieldMeta("mobile_markers").label}
+                        description={providerFieldMeta("mobile_markers").description}
+                      />
+                      <textarea
+                        className="note-box"
+                        value={listValuesToText(profile.mobile_markers)}
+                        onChange={(event) =>
+                          updateProviderProfile(index, { mobile_markers: parseListText(event.target.value) })
+                        }
+                      />
+                    </div>
+                    <div className="rule-field">
+                      <FieldLabel
+                        label={providerFieldMeta("home_markers").label}
+                        description={providerFieldMeta("home_markers").description}
+                      />
+                      <textarea
+                        className="note-box"
+                        value={listValuesToText(profile.home_markers)}
+                        onChange={(event) =>
+                          updateProviderProfile(index, { home_markers: parseListText(event.target.value) })
+                        }
+                      />
+                    </div>
+                    <div className="rule-field rule-field-wide">
+                      <FieldLabel
+                        label={providerFieldMeta("asns").label}
+                        description={providerFieldMeta("asns").description}
+                      />
+                      <textarea
+                        className="note-box"
+                        value={listValuesToText(profile.asns)}
+                        onChange={(event) =>
+                          updateProviderProfile(index, { asns: parseListText(event.target.value) })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {(draft.provider_profiles || []).length === 0 ? (
+                <div className="provider-empty">
+                  <span>{t("rules.providerProfiles.empty")}</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
 
           {SETTING_SECTIONS.map((section) => (
             <div className="panel" key={section}>

@@ -3,7 +3,14 @@ from __future__ import annotations
 from .models import DecisionBundle
 
 
+def _provider_review_required(bundle: DecisionBundle) -> bool:
+    evidence = bundle.signal_flags.get("provider_evidence")
+    return isinstance(evidence, dict) and bool(evidence.get("review_recommended"))
+
+
 def derive_punitive_eligibility(bundle: DecisionBundle) -> bool:
+    if _provider_review_required(bundle):
+        return False
     if bundle.verdict != "HOME":
         return False
     if bundle.confidence_band != "HIGH_HOME":
@@ -14,6 +21,8 @@ def derive_punitive_eligibility(bundle: DecisionBundle) -> bool:
 
 
 def review_reason_for_bundle(bundle: DecisionBundle) -> str | None:
+    if _provider_review_required(bundle):
+        return "provider_conflict"
     if bundle.verdict == "UNSURE" or bundle.confidence_band == "UNSURE":
         return "unsure"
     if bundle.confidence_band == "PROBABLE_HOME":

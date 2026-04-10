@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
 from mobguard_platform import DecisionBundle, derive_punitive_eligibility
-from mobguard_platform.runtime import RuntimeRuleView
+from mobguard_platform.runtime import ProviderProfile, RuntimeRuleView
 
 
 AsyncBehaviorAnalyzer = Callable[[str, str, str], Awaitable[dict[str, Any]]]
@@ -54,6 +54,13 @@ class MutableScoreState:
     isp_name: str = "Unknown ISP"
     asn: Optional[int] = None
     concurrency_immunity: bool = False
+    matched_provider: Optional[ProviderProfile] = None
+    matched_provider_aliases: list[str] = field(default_factory=list)
+    found_provider_mobile_markers: list[str] = field(default_factory=list)
+    found_provider_home_markers: list[str] = field(default_factory=list)
+    provider_service_hint: str = "unknown"
+    provider_service_conflict: bool = False
+    provider_review_recommended: bool = False
 
 
 def _finalize_bundle(state: MutableScoreState, rules: RuntimeRuleView, verdict: str, confidence: str, details: str) -> DecisionBundle:
@@ -87,7 +94,183 @@ def _provider_evidence(state: MutableScoreState, rules: RuntimeRuleView) -> dict
         "mobile_keywords": list(state.found_mobile_kw),
         "isp_name": state.isp_name,
         "hostname": state.hostname,
+        "provider_key": state.matched_provider.key if state.matched_provider else None,
+        "provider_classification": state.matched_provider.classification if state.matched_provider else "unknown",
+        "service_type_hint": state.provider_service_hint,
+        "service_conflict": state.provider_service_conflict,
+        "review_recommended": state.provider_review_recommended,
+        "matched_aliases": list(state.matched_provider_aliases),
+        "provider_mobile_markers": list(state.found_provider_mobile_markers),
+        "provider_home_markers": list(state.found_provider_home_markers),
     }
+
+
+def _refresh_provider_evidence(state: MutableScoreState, rules: RuntimeRuleView) -> None:
+    state.bundle.signal_flags["provider_evidence"] = _provider_evidence(state, rules)
+
+
+def _match_provider_profile(state: MutableScoreState, rules: RuntimeRuleView, searchable: str) -> tuple[Optional[ProviderProfile], list[str]]:
+    best_profile: Optional[ProviderProfile] = None
+    best_aliases: list[str] = []
+    best_score = 0
+    for profile in rules.detection.provider_profiles:
+        alias_hits = [alias for alias in profile.aliases if alias and alias in searchable]
+        asn_hit = state.asn is not None and state.asn in profile.asns
+        if not alias_hits and not asn_hit:
+            continue
+        score = (3 if asn_hit else 0) + len(alias_hits)
+        if score > best_score:
+            best_profile = profile
+            best_aliases = alias_hits
+            best_score = score
+    return best_profile, best_aliases
+
+
+def _provider_metadata(state: MutableScoreState) -> dict[str, Any]:
+    return {
+        "provider_key": state.matched_provider.key if state.matched_provider else "",
+        "provider_classification": state.matched_provider.classification if state.matched_provider else "unknown",
+        "matched_aliases": list(state.matched_provider_aliases),
+        "mobile_markers": list(state.found_provider_mobile_markers),
+        "home_markers": list(state.found_provider_home_markers),
+        "service_type_hint": state.provider_service_hint,
+    }
+
+
+def _apply_provider_profile_signal(state: MutableScoreState, rules: RuntimeRuleView, searchable: str) -> None:
+    profile, alias_hits = _match_provider_profile(state, rules, searchable)
+    if not profile:
+        _refresh_provider_evidence(state, rules)
+        return
+
+    state.matched_provider = profile
+    state.matched_provider_aliases = alias_hits
+    state.found_provider_mobile_markers = [
+        marker for marker in profile.mobile_markers if marker and marker in searchable
+    ]
+    state.found_provider_home_markers = [
+        marker for marker in profile.home_markers if marker and marker in searchable
+    ]
+    state.provider_service_conflict = bool(
+        state.found_provider_mobile_markers and state.found_provider_home_markers
+    )
+    if state.provider_service_conflict:
+        state.provider_service_hint = "conflict"
+        state.bundle.add_reason(
+            code="provider_conflict",
+            source="provider_profile",
+            weight=0,
+            kind="soft",
+            direction="NEUTRAL",
+            message=f"Mixed provider {profile.key} exposes both HOME and MOBILE service markers",
+            metadata=_provider_metadata(state),
+        )
+    elif state.found_provider_mobile_markers:
+        bonus = rules.weights.provider_mobile_marker_bonus
+        state.provider_service_hint = "mobile"
+        state.score += bonus
+        state.bundle.add_reason(
+            code="provider_mobile_marker",
+            source="provider_profile",
+            weight=bonus,
+            kind="soft",
+            direction="MOBILE",
+            message=f"Provider {profile.key} matched MOBILE service markers",
+            metadata=_provider_metadata(state),
+        )
+    elif state.found_provider_home_markers:
+        penalty = rules.weights.provider_home_marker_penalty
+        state.provider_service_hint = "home"
+        state.score += penalty
+        state.bundle.add_reason(
+            code="provider_home_marker",
+            source="provider_profile",
+            weight=penalty,
+            kind="soft",
+            direction="HOME",
+            message=f"Provider {profile.key} matched HOME service markers",
+            metadata=_provider_metadata(state),
+        )
+    else:
+        state.provider_service_hint = "unknown"
+        state.bundle.add_reason(
+            code="provider_marker_missing",
+            source="provider_profile",
+            weight=0,
+            kind="soft",
+            direction="NEUTRAL",
+            message=f"Provider {profile.key} matched without service markers",
+            metadata=_provider_metadata(state),
+        )
+    _refresh_provider_evidence(state, rules)
+
+
+def _apply_promoted_learning_reason(
+    state: MutableScoreState,
+    *,
+    code: str,
+    pattern_type: str,
+    pattern_value: str,
+    pattern: dict[str, Any],
+    scale: int,
+    min_weight: int,
+    max_weight: int,
+) -> None:
+    learned_weight = min(max(int(round(float(pattern["precision"]) * scale)), min_weight), max_weight)
+    direction = "MOBILE"
+    if pattern["decision"] == "HOME":
+        learned_weight = -learned_weight
+        direction = "HOME"
+    state.score += learned_weight
+    state.bundle.add_reason(
+        code=code,
+        source="learning",
+        weight=learned_weight,
+        kind="soft",
+        direction=direction,
+        message=f"Promoted {pattern_type} pattern {pattern_value}",
+        metadata={
+            "pattern_type": pattern_type,
+            "pattern_value": pattern_value,
+            "support": pattern["support"],
+            "precision": pattern["precision"],
+        },
+    )
+
+
+def _apply_provider_guardrail(
+    state: MutableScoreState,
+    rules: RuntimeRuleView,
+    provisional_verdict: str,
+) -> None:
+    state.provider_review_recommended = False
+    profile = state.matched_provider
+    if not profile or profile.classification != "mixed" or not rules.thresholds.provider_conflict_review_only:
+        _refresh_provider_evidence(state, rules)
+        return
+
+    if state.provider_service_conflict or state.provider_service_hint == "unknown":
+        state.provider_review_recommended = True
+    elif provisional_verdict in {"HOME", "MOBILE"} and state.provider_service_hint != provisional_verdict.lower():
+        state.provider_review_recommended = True
+    elif state.provider_service_hint in {"home", "mobile"}:
+        supporting_sources = state.bundle.sources_for_direction(state.provider_service_hint.upper()) - {
+            "provider_profile",
+            "generic_keyword",
+        }
+        state.provider_review_recommended = len(supporting_sources) == 0
+
+    if state.provider_review_recommended:
+        state.bundle.add_reason(
+            code="provider_review_guardrail",
+            source="provider_profile",
+            weight=0,
+            kind="soft",
+            direction="NEUTRAL",
+            message=f"Mixed provider {profile.key} requires manual review before automation",
+            metadata=_provider_metadata(state),
+        )
+    _refresh_provider_evidence(state, rules)
 
 
 async def evaluate_mobile_network(
@@ -144,13 +327,20 @@ async def evaluate_mobile_network(
     if state.hostname:
         state.log.append(f" Hostname: {state.hostname}")
 
+    searchable = f"{state.isp_name} {state.hostname}".lower()
+    _apply_provider_profile_signal(state, rules, searchable)
+    if state.matched_provider:
+        state.log.append(
+            f" Provider profile: {state.matched_provider.key} ({state.matched_provider.classification}, {state.provider_service_hint})"
+        )
+
     if deps.is_datacenter(state.org, state.hostname):
         penalty = -100
         state.score += penalty
         state.log.append(" Datacenter detected -> Hard block")
         state.bundle.add_reason(
             code="datacenter",
-            source="datacenter",
+            source="generic_keyword",
             weight=penalty,
             kind="hard",
             direction="HOME",
@@ -169,7 +359,7 @@ async def evaluate_mobile_network(
         state.log.append(f" Pure HOME ASN {state.asn} ({penalty} points)")
         state.bundle.add_reason(
             code="pure_home_asn",
-            source="asn_home",
+            source="asn",
             weight=penalty,
             kind="hard",
             direction="HOME",
@@ -185,7 +375,7 @@ async def evaluate_mobile_network(
         state.log.append(f" Pure MOBILE ASN {state.asn} (+{bonus})")
         state.bundle.add_reason(
             code="pure_mobile_asn",
-            source="asn_mobile",
+            source="asn",
             weight=bonus,
             kind="soft",
             direction="MOBILE",
@@ -193,24 +383,35 @@ async def evaluate_mobile_network(
             metadata={"asn": state.asn},
         )
     elif state.asn in rules.detection.mixed_asns:
-        bonus = rules.weights.mixed_asn_score
-        state.score += bonus
-        state.log.append(f" Mixed ASN {state.asn} (+{bonus})")
-        state.bundle.add_reason(
-            code="mixed_asn",
-            source="asn_mixed",
-            weight=bonus,
-            kind="soft",
-            direction="MOBILE",
-            message=f"Mixed ASN {state.asn}",
-            metadata={"asn": state.asn},
-        )
+        if state.matched_provider and state.matched_provider.classification == "mixed":
+            state.log.append(f" Mixed ASN {state.asn} guarded by provider profile")
+            state.bundle.add_reason(
+                code="mixed_asn_guarded",
+                source="asn",
+                weight=0,
+                kind="soft",
+                direction="NEUTRAL",
+                message=f"Mixed ASN {state.asn} recorded without score because provider profile is mixed",
+                metadata={"asn": state.asn},
+            )
+        else:
+            bonus = rules.weights.mixed_asn_score
+            state.score += bonus
+            state.log.append(f" Mixed ASN {state.asn} (+{bonus})")
+            state.bundle.add_reason(
+                code="mixed_asn",
+                source="asn",
+                weight=bonus,
+                kind="soft",
+                direction="MOBILE",
+                message=f"Mixed ASN {state.asn}",
+                metadata={"asn": state.asn},
+            )
     else:
         state.log.append(f" Unknown ASN {state.asn} (no bonus)")
     state.log.append(f" Score after ASN: {state.score}")
 
     state.log.append(" Keyword analysis")
-    searchable = f"{state.isp_name} {state.hostname}".lower()
     state.found_home_kw = [kw for kw in rules.detection.home_isp_keywords if kw in searchable]
     state.found_mobile_kw = [kw for kw in rules.detection.allowed_isp_keywords if kw in searchable]
     if state.found_home_kw:
@@ -218,7 +419,7 @@ async def evaluate_mobile_network(
         state.score += penalty
         state.bundle.add_reason(
             code="keyword_home",
-            source="keyword",
+            source="generic_keyword",
             weight=penalty,
             kind="soft",
             direction="HOME",
@@ -230,7 +431,7 @@ async def evaluate_mobile_network(
         state.score += bonus
         state.bundle.add_reason(
             code="keyword_mobile",
-            source="keyword",
+            source="generic_keyword",
             weight=bonus,
             kind="soft",
             direction="MOBILE",
@@ -251,7 +452,7 @@ async def evaluate_mobile_network(
         if behavior["churn_bonus"] > 0:
             state.bundle.add_reason(
                 code="behavior_churn",
-                source="behavior_churn",
+                source="behavior",
                 weight=behavior["churn_bonus"],
                 kind="soft",
                 direction="MOBILE",
@@ -261,7 +462,7 @@ async def evaluate_mobile_network(
         if behavior["lifetime_penalty"] < 0:
             state.bundle.add_reason(
                 code="behavior_lifetime",
-                source="behavior_lifetime",
+                source="behavior",
                 weight=behavior["lifetime_penalty"],
                 kind="soft",
                 direction="HOME",
@@ -271,7 +472,7 @@ async def evaluate_mobile_network(
         if behavior["subnet_bonus"] != 0:
             state.bundle.add_reason(
                 code="behavior_subnet_mobile" if behavior["subnet_bonus"] > 0 else "behavior_subnet_home",
-                source="behavior_subnet",
+                source="behavior",
                 weight=behavior["subnet_bonus"],
                 kind="soft",
                 direction="MOBILE" if behavior["subnet_bonus"] > 0 else "HOME",
@@ -286,47 +487,63 @@ async def evaluate_mobile_network(
     if state.asn is not None:
         combo_keywords = state.found_home_kw + state.found_mobile_kw
         combo_key = f"{state.asn}+{','.join(sorted(set(combo_keywords)))}" if combo_keywords else ""
+        provider_key = state.matched_provider.key if state.matched_provider else ""
+        provider_service_key = (
+            f"{provider_key}:{state.provider_service_hint}"
+            if provider_key and state.provider_service_hint in {"home", "mobile", "conflict"}
+            else ""
+        )
         promoted_combo = await deps.get_promoted_pattern("combo", combo_key) if combo_key else None
+        promoted_provider_service = (
+            await deps.get_promoted_pattern("provider_service", provider_service_key)
+            if provider_service_key
+            else None
+        )
+        promoted_provider = await deps.get_promoted_pattern("provider", provider_key) if provider_key else None
         promoted_asn = await deps.get_promoted_pattern("asn", str(state.asn))
         if promoted_combo:
-            learned_weight = min(max(int(round(promoted_combo["precision"] * 10)), 3), 8)
-            direction = "MOBILE"
-            if promoted_combo["decision"] == "HOME":
-                learned_weight = -learned_weight
-                direction = "HOME"
-            state.score += learned_weight
-            state.bundle.add_reason(
+            _apply_promoted_learning_reason(
+                state,
                 code="learning_combo",
-                source="learning_combo",
-                weight=learned_weight,
-                kind="soft",
-                direction=direction,
-                message=f"Promoted combo pattern {combo_key}",
-                metadata={
-                    "combo_key": combo_key,
-                    "support": promoted_combo["support"],
-                    "precision": promoted_combo["precision"],
-                },
+                pattern_type="combo",
+                pattern_value=combo_key,
+                pattern=promoted_combo,
+                scale=10,
+                min_weight=3,
+                max_weight=8,
+            )
+        elif promoted_provider_service:
+            _apply_promoted_learning_reason(
+                state,
+                code="learning_provider_service",
+                pattern_type="provider_service",
+                pattern_value=provider_service_key,
+                pattern=promoted_provider_service,
+                scale=9,
+                min_weight=3,
+                max_weight=7,
+            )
+        elif promoted_provider:
+            _apply_promoted_learning_reason(
+                state,
+                code="learning_provider",
+                pattern_type="provider",
+                pattern_value=provider_key,
+                pattern=promoted_provider,
+                scale=8,
+                min_weight=2,
+                max_weight=6,
             )
         elif promoted_asn:
-            learned_weight = min(max(int(round(promoted_asn["precision"] * 8)), 2), 6)
-            direction = "MOBILE"
-            if promoted_asn["decision"] == "HOME":
-                learned_weight = -learned_weight
-                direction = "HOME"
-            state.score += learned_weight
-            state.bundle.add_reason(
+            _apply_promoted_learning_reason(
+                state,
                 code="learning_asn",
-                source="learning_asn",
-                weight=learned_weight,
-                kind="soft",
-                direction=direction,
-                message=f"Promoted ASN pattern {state.asn}",
-                metadata={
-                    "asn": state.asn,
-                    "support": promoted_asn["support"],
-                    "precision": promoted_asn["precision"],
-                },
+                pattern_type="asn",
+                pattern_value=str(state.asn),
+                pattern=promoted_asn,
+                scale=8,
+                min_weight=2,
+                max_weight=6,
             )
         else:
             mobile_conf = await deps.get_legacy_confidence("asn", str(state.asn), "MOBILE")
@@ -336,7 +553,7 @@ async def evaluate_mobile_network(
                 state.score += bonus
                 state.bundle.add_reason(
                     code="legacy_learning_asn",
-                    source="legacy_learning_asn",
+                    source="learning",
                     weight=bonus,
                     kind="soft",
                     direction="MOBILE",
@@ -348,7 +565,7 @@ async def evaluate_mobile_network(
                 state.score += penalty
                 state.bundle.add_reason(
                     code="legacy_learning_asn",
-                    source="legacy_learning_asn",
+                    source="learning",
                     weight=penalty,
                     kind="soft",
                     direction="HOME",
@@ -370,7 +587,7 @@ async def evaluate_mobile_network(
             state.score += bonus
             state.bundle.add_reason(
                 code="ip_api_mobile",
-                source="ip_api",
+                source="fallback",
                 weight=bonus,
                 kind="soft",
                 direction="MOBILE",
@@ -407,6 +624,7 @@ async def evaluate_mobile_network(
         verdict = "UNSURE"
         confidence = "UNSURE"
 
+    _apply_provider_guardrail(state, rules, verdict)
     finalized = _finalize_bundle(state, rules, verdict, confidence, f"{state.isp_name} (Score {state.score})")
     if context.uuid and verdict in ("MOBILE", "HOME"):
         await deps.record_decision(context.ip, context.uuid, verdict)

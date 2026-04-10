@@ -2,20 +2,49 @@ import asyncio
 import unittest
 
 from mobguard_core.scoring import ScoringContext, ScoringDependencies, evaluate_mobile_network
+from mobguard_platform import review_reason_for_bundle
 
 
 BASE_CONFIG = {
     "pure_mobile_asns": [51547],
     "pure_home_asns": [9049],
     "mixed_asns": [8359, 12389, 3216],
-    "allowed_isp_keywords": ["mobile", "lte", "5g", "mts", "beeline"],
-    "home_isp_keywords": ["fiber", "ftth", "gpon", "rostelecom"],
+    "allowed_isp_keywords": ["mobile", "lte", "5g"],
+    "home_isp_keywords": ["fiber", "ftth", "gpon"],
     "exclude_isp_keywords": ["hosting"],
+    "provider_profiles": [
+        {
+            "key": "mts",
+            "classification": "mixed",
+            "aliases": ["mts", "mgts"],
+            "mobile_markers": ["mobile", "lte", "5g"],
+            "home_markers": ["fiber", "gpon"],
+            "asns": [8359, 12389],
+        },
+        {
+            "key": "beeline",
+            "classification": "mixed",
+            "aliases": ["beeline", "vimpelcom"],
+            "mobile_markers": ["mobile", "lte", "5g"],
+            "home_markers": ["fiber", "gpon", "home"],
+            "asns": [3216],
+        },
+        {
+            "key": "rostelecom",
+            "classification": "mixed",
+            "aliases": ["rostelecom", "onlime"],
+            "mobile_markers": ["mobile", "lte"],
+            "home_markers": ["fiber", "gpon", "onlime"],
+            "asns": [8359],
+        },
+    ],
     "settings": {
         "pure_asn_score": 60,
         "mixed_asn_score": 45,
         "ptr_home_penalty": -20,
         "mobile_kw_bonus": 20,
+        "provider_mobile_marker_bonus": 18,
+        "provider_home_marker_penalty": -18,
         "ip_api_mobile_bonus": 30,
         "pure_home_asn_penalty": -100,
         "score_subnet_mobile_bonus": 40,
@@ -29,6 +58,7 @@ BASE_CONFIG = {
         "threshold_mobile": 60,
         "auto_enforce_requires_hard_or_multi_signal": True,
         "probable_home_warning_only": True,
+        "provider_conflict_review_only": True,
     },
 }
 
@@ -43,6 +73,8 @@ class ScoringPipelineTests(unittest.TestCase):
         behavior=None,
         promoted_combo=None,
         promoted_asn=None,
+        promoted_provider=None,
+        promoted_provider_service=None,
         legacy_mobile=0,
         legacy_home=0,
         ip_api_mobile=None,
@@ -72,6 +104,10 @@ class ScoringPipelineTests(unittest.TestCase):
         async def get_promoted_pattern(pattern_type, pattern_value):
             if pattern_type == "combo":
                 return promoted_combo
+            if pattern_type == "provider":
+                return promoted_provider
+            if pattern_type == "provider_service":
+                return promoted_provider_service
             if pattern_type == "asn":
                 return promoted_asn
             return None
@@ -141,6 +177,19 @@ class ScoringPipelineTests(unittest.TestCase):
         self.assertIn("learning_asn", bundle.reason_codes)
         self.assertEqual(bundle.verdict, "HOME")
 
+    def test_promoted_provider_service_signal_is_applied(self):
+        deps, _ = self.make_deps(
+            org="AS12389 MTS",
+            hostname="lte.mts.mobile",
+            promoted_provider_service={"decision": "MOBILE", "support": 8, "precision": 0.97},
+            ip_api_mobile=True,
+        )
+        bundle = asyncio.run(
+            evaluate_mobile_network(ScoringContext(ip="4.4.4.5"), BASE_CONFIG, deps)
+        )
+        self.assertIn("learning_provider_service", bundle.reason_codes)
+        self.assertEqual(bundle.verdict, "MOBILE")
+
     def test_score_zero_degradation_remains_unsure(self):
         deps, _ = self.make_deps(org="Unknown ISP", hostname="")
         bundle = asyncio.run(
@@ -149,19 +198,41 @@ class ScoringPipelineTests(unittest.TestCase):
         self.assertEqual(bundle.score, 0)
         self.assertEqual(bundle.verdict, "HOME")
 
-    def test_ambiguity_metadata_is_collected_for_mixed_providers(self):
-        cases = [
-            ("AS8359 Rostelecom", "gpon.rostelecom", "HOME"),
-            ("AS12389 MTS", "lte.mts.mobile", "MOBILE"),
-            ("AS3216 Beeline", "home-gpon.beeline", "UNSURE"),
-        ]
-        for org, hostname, expected in cases:
-            with self.subTest(org=org, hostname=hostname):
-                deps, _ = self.make_deps(org=org, hostname=hostname)
-                bundle = asyncio.run(
-                    evaluate_mobile_network(ScoringContext(ip="6.6.6.6"), BASE_CONFIG, deps)
-                )
-                evidence = bundle.signal_flags["provider_evidence"]
-                self.assertEqual(evidence["asn_category"], "mixed")
-                self.assertTrue(evidence["home_keywords"] or evidence["mobile_keywords"])
-                self.assertEqual(bundle.verdict, expected)
+    def test_mixed_provider_cases_capture_extended_evidence(self):
+        deps, _ = self.make_deps(org="AS8359 Rostelecom", hostname="gpon.rostelecom")
+        bundle = asyncio.run(
+            evaluate_mobile_network(ScoringContext(ip="6.6.6.6"), BASE_CONFIG, deps)
+        )
+        evidence = bundle.signal_flags["provider_evidence"]
+        self.assertEqual(evidence["asn_category"], "mixed")
+        self.assertEqual(evidence["provider_key"], "rostelecom")
+        self.assertEqual(evidence["provider_classification"], "mixed")
+        self.assertEqual(evidence["service_type_hint"], "home")
+        self.assertTrue(evidence["review_recommended"])
+        self.assertEqual(review_reason_for_bundle(bundle), "provider_conflict")
+        self.assertEqual(bundle.verdict, "HOME")
+
+    def test_mixed_provider_conflict_requires_review_and_blocks_punitive(self):
+        deps, _ = self.make_deps(org="AS12389 MTS", hostname="lte.gpon.mts")
+        bundle = asyncio.run(
+            evaluate_mobile_network(ScoringContext(ip="6.6.6.7"), BASE_CONFIG, deps)
+        )
+        evidence = bundle.signal_flags["provider_evidence"]
+        self.assertTrue(evidence["service_conflict"])
+        self.assertTrue(evidence["review_recommended"])
+        self.assertFalse(bundle.punitive_eligible)
+        self.assertEqual(review_reason_for_bundle(bundle), "provider_conflict")
+
+    def test_mixed_provider_needs_second_non_keyword_signal_for_automation(self):
+        deps, _ = self.make_deps(
+            org="AS12389 MTS",
+            hostname="lte.mts.mobile",
+            ip_api_mobile=True,
+        )
+        bundle = asyncio.run(
+            evaluate_mobile_network(ScoringContext(ip="6.6.6.8"), BASE_CONFIG, deps)
+        )
+        evidence = bundle.signal_flags["provider_evidence"]
+        self.assertEqual(bundle.verdict, "MOBILE")
+        self.assertFalse(evidence["review_recommended"])
+        self.assertIsNone(review_reason_for_bundle(bundle))

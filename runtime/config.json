@@ -31,14 +31,54 @@
   "home_isp_keywords": [
     "fttb", "ftth", "dsl", "adsl", "pppoe",
     "fiber", "fixed", "cable", "dom", "static", "wire",
-    "ertelecom", "er-telecom", "dom.ru", "akado", "izet", 
-    "netbynet", "wifire", "gpon", "ethernet", "domru",
-    "onlime", "smit", "it-region"
+    "akado", "izet", "gpon", "ethernet", "smit", "it-region"
   ],
   "allowed_isp_keywords": [
     "mobile", "cellular", "lte", "gprs", "umts", "gsm",
     "hsdpa", "pgw", "3g", "4g", "5g", "tbank", "sberbank",
     "TBANK", "Mobile"
+  ],
+  "provider_profiles": [
+    {
+      "key": "mts",
+      "classification": "mixed",
+      "aliases": ["mts", "mgts"],
+      "mobile_markers": ["mobile", "lte", "5g", "pgw"],
+      "home_markers": ["fiber", "gpon", "fttb", "ftth"],
+      "asns": [8359, 12389]
+    },
+    {
+      "key": "beeline",
+      "classification": "mixed",
+      "aliases": ["beeline", "vimpelcom", "vimpel"],
+      "mobile_markers": ["mobile", "lte", "5g", "pgw"],
+      "home_markers": ["fiber", "gpon", "fttb", "home"],
+      "asns": [3216, 16345]
+    },
+    {
+      "key": "rostelecom",
+      "classification": "mixed",
+      "aliases": ["rostelecom", "onlime"],
+      "mobile_markers": ["mobile", "lte"],
+      "home_markers": ["fiber", "gpon", "fttb", "ftth", "onlime"],
+      "asns": [12389, 25159, 8359]
+    },
+    {
+      "key": "megafon",
+      "classification": "mixed",
+      "aliases": ["megafon", "megaphone"],
+      "mobile_markers": ["mobile", "lte", "5g", "pgw"],
+      "home_markers": ["fiber", "gpon", "fttb"],
+      "asns": [31163]
+    },
+    {
+      "key": "domru",
+      "classification": "mixed",
+      "aliases": ["dom.ru", "domru", "ertelecom", "er-telecom", "wifire", "netbynet"],
+      "mobile_markers": ["mobile", "lte"],
+      "home_markers": ["fiber", "gpon", "fttb", "ethernet"],
+      "asns": [8402, 12714]
+    }
   ],
   "mobile_tags": [
     "SELFSTEAL_RU-YANDEX_TCP",
@@ -72,6 +112,8 @@
     "mixed_asn_score": 45,
     "ptr_home_penalty": -20,
     "mobile_kw_bonus": 20,
+    "provider_mobile_marker_bonus": 18,
+    "provider_home_marker_penalty": -18,
     "ip_api_mobile_bonus": 30,
     "pure_home_asn_penalty": -100,
     "concurrency_threshold": 2,
@@ -94,6 +136,7 @@
     "shadow_mode": true,
     "probable_home_warning_only": true,
     "auto_enforce_requires_hard_or_multi_signal": true,
+    "provider_conflict_review_only": true,
     "review_ui_base_url": "https://mobguard.example.com",
     "learning_promote_asn_min_support": 10,
     "learning_promote_asn_min_precision": 0.95,

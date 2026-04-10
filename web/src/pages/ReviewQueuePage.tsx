@@ -26,6 +26,7 @@ type ReviewFilters = {
 
 export function ReviewQueuePage() {
   const { t, language } = useI18n();
+  const [loading, setLoading] = useState(true);
   const [list, setList] = useState<ReviewListResponse>({
     items: [],
     count: 0,
@@ -70,6 +71,10 @@ export function ReviewQueuePage() {
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : t("reviewQueue.errors.loadFailed"));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
     }
@@ -126,7 +131,7 @@ export function ReviewQueuePage() {
       </div>
 
       {showFilters ? (
-        <div className="panel filters">
+        <div className="panel filters reveal-panel">
           <input
             placeholder={t("reviewQueue.filters.username")}
             value={String(filters.username ?? "")}
@@ -211,6 +216,7 @@ export function ReviewQueuePage() {
             <option value="probable_home">probable_home</option>
             <option value="home_requires_review">home_requires_review</option>
             <option value="manual_review_mixed_home">manual_review_mixed_home</option>
+            <option value="provider_conflict">provider_conflict</option>
           </select>
           <select
             value={filters.severity}
@@ -246,7 +252,31 @@ export function ReviewQueuePage() {
 
       {error ? <div className="error-box">{error}</div> : null}
 
-      <div className="queue-grid">
+      {loading ? (
+        <div className="queue-grid">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div className="queue-card skeleton-card" key={index}>
+              <div className="queue-card-top">
+                <span className="skeleton-line medium" />
+                <span className="skeleton-chip" />
+              </div>
+              <div className="queue-card-identifiers">
+                <span className="skeleton-line long" />
+                <span className="skeleton-line medium" />
+                <span className="skeleton-line long" />
+              </div>
+              <div className="loading-stack">
+                <span className="skeleton-line long" />
+                <span className="skeleton-line medium" />
+                <span className="skeleton-line short" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {!loading ? (
+        <div className="queue-grid">
         {list.items.map((item) => (
           <Link key={item.id} to={`/reviews/${item.id}`} className="queue-card">
             <div className="queue-card-top">
@@ -306,7 +336,8 @@ export function ReviewQueuePage() {
             </div>
           </Link>
         ))}
-      </div>
+        </div>
+      ) : null}
 
       <div className="panel queue-footer">
         <button

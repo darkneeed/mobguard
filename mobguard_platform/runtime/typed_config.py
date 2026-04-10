@@ -5,6 +5,27 @@ from typing import Any
 
 
 @dataclass(frozen=True)
+class ProviderProfile:
+    key: str
+    classification: str
+    aliases: tuple[str, ...]
+    mobile_markers: tuple[str, ...]
+    home_markers: tuple[str, ...]
+    asns: tuple[int, ...]
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "ProviderProfile":
+        return cls(
+            key=str(payload.get("key", "")).strip().lower(),
+            classification=str(payload.get("classification", "mixed")).strip().lower(),
+            aliases=tuple(str(item).lower() for item in payload.get("aliases", [])),
+            mobile_markers=tuple(str(item).lower() for item in payload.get("mobile_markers", [])),
+            home_markers=tuple(str(item).lower() for item in payload.get("home_markers", [])),
+            asns=tuple(int(item) for item in payload.get("asns", [])),
+        )
+
+
+@dataclass(frozen=True)
 class DetectionRules:
     pure_mobile_asns: tuple[int, ...]
     pure_home_asns: tuple[int, ...]
@@ -12,6 +33,7 @@ class DetectionRules:
     allowed_isp_keywords: tuple[str, ...]
     home_isp_keywords: tuple[str, ...]
     exclude_isp_keywords: tuple[str, ...]
+    provider_profiles: tuple[ProviderProfile, ...]
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "DetectionRules":
@@ -22,6 +44,11 @@ class DetectionRules:
             allowed_isp_keywords=tuple(str(item).lower() for item in config.get("allowed_isp_keywords", [])),
             home_isp_keywords=tuple(str(item).lower() for item in config.get("home_isp_keywords", [])),
             exclude_isp_keywords=tuple(str(item).lower() for item in config.get("exclude_isp_keywords", [])),
+            provider_profiles=tuple(
+                ProviderProfile.from_payload(item)
+                for item in config.get("provider_profiles", [])
+                if isinstance(item, dict)
+            ),
         )
 
 
@@ -31,6 +58,8 @@ class ScoreWeights:
     mixed_asn_score: int
     ptr_home_penalty: int
     mobile_kw_bonus: int
+    provider_mobile_marker_bonus: int
+    provider_home_marker_penalty: int
     ip_api_mobile_bonus: int
     pure_home_asn_penalty: int
     score_subnet_mobile_bonus: int
@@ -47,6 +76,8 @@ class ScoreWeights:
             mixed_asn_score=int(settings.get("mixed_asn_score", 45)),
             ptr_home_penalty=int(settings.get("ptr_home_penalty", -20)),
             mobile_kw_bonus=int(settings.get("mobile_kw_bonus", 20)),
+            provider_mobile_marker_bonus=int(settings.get("provider_mobile_marker_bonus", 18)),
+            provider_home_marker_penalty=int(settings.get("provider_home_marker_penalty", -18)),
             ip_api_mobile_bonus=int(settings.get("ip_api_mobile_bonus", 30)),
             pure_home_asn_penalty=int(settings.get("pure_home_asn_penalty", -100)),
             score_subnet_mobile_bonus=int(settings.get("score_subnet_mobile_bonus", 40)),
@@ -65,6 +96,7 @@ class Thresholds:
     threshold_mobile: int
     auto_enforce_requires_hard_or_multi_signal: bool
     probable_home_warning_only: bool
+    provider_conflict_review_only: bool
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "Thresholds":
@@ -78,6 +110,7 @@ class Thresholds:
                 settings.get("auto_enforce_requires_hard_or_multi_signal", True)
             ),
             probable_home_warning_only=bool(settings.get("probable_home_warning_only", True)),
+            provider_conflict_review_only=bool(settings.get("provider_conflict_review_only", True)),
         )
 
 

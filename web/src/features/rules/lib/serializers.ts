@@ -1,4 +1,5 @@
 import {
+  ProviderProfileDraft,
   RULE_LIST_FIELDS,
   RULE_SETTING_FIELDS,
   RuleSettingFieldMeta,
@@ -29,6 +30,26 @@ export function normalizeRulesDraft(source: Record<string, unknown>): RulesDraft
       draft.settings![field.key] = rawValue;
     }
   }
+
+  draft.provider_profiles = Array.isArray(source.provider_profiles)
+    ? source.provider_profiles
+        .filter(isRecord)
+        .map<ProviderProfileDraft>((item) => ({
+          key: String(item.key ?? ""),
+          classification:
+            item.classification === "home" || item.classification === "mobile"
+              ? item.classification
+              : "mixed",
+          aliases: Array.isArray(item.aliases) ? item.aliases.map((entry) => String(entry)) : [],
+          mobile_markers: Array.isArray(item.mobile_markers)
+            ? item.mobile_markers.map((entry) => String(entry))
+            : [],
+          home_markers: Array.isArray(item.home_markers)
+            ? item.home_markers.map((entry) => String(entry))
+            : [],
+          asns: Array.isArray(item.asns) ? item.asns.map((entry) => String(entry)) : []
+        }))
+    : [];
 
   return draft;
 }
