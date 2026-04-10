@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from api import main
+from api.services.runtime_state import build_user_export_payload
 from mobguard_platform.panel_client import PanelClient
 
 
@@ -39,7 +40,10 @@ class FakeStore:
                 confidence_band TEXT,
                 score INTEGER,
                 isp TEXT,
-                asn INTEGER
+                asn INTEGER,
+                reasons_json TEXT,
+                signal_flags_json TEXT,
+                bundle_json TEXT
             );
             """
         )
@@ -69,8 +73,8 @@ class FakeStore:
             """
             INSERT INTO analysis_events (
                 id, uuid, username, system_id, telegram_id, created_at, ip, tag, verdict,
-                confidence_band, score, isp, asn
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                confidence_band, score, isp, asn, reasons_json, signal_flags_json, bundle_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 10,
@@ -86,6 +90,9 @@ class FakeStore:
                 75,
                 "ISP",
                 12345,
+                '[{"code":"provider_home_marker","source":"provider_profile","direction":"HOME","weight":-18}]',
+                '{"provider_evidence":{"provider_key":"beeline","provider_classification":"mixed","service_type_hint":"home","service_conflict":false,"review_recommended":true}}',
+                '{"reasons":[{"code":"provider_home_marker","source":"provider_profile","direction":"HOME","weight":-18}],"signal_flags":{"provider_evidence":{"provider_key":"beeline","provider_classification":"mixed","service_type_hint":"home","service_conflict":false,"review_recommended":true}}}',
             ),
         )
         self.conn.commit()
@@ -131,6 +138,24 @@ class AdminUserDataTests(unittest.TestCase):
         self.assertTrue(payload["flags"]["exempt_telegram_id"])
         self.assertEqual(payload["review_cases"][0]["id"], 1)
         self.assertEqual(payload["analysis_events"][0]["id"], 10)
+        self.assertEqual(payload["analysis_events"][0]["provider_evidence"]["provider_key"], "beeline")
+
+    def test_build_user_export_payload_adds_metadata_and_counts(self):
+        fake_store = FakeStore()
+        identity = {
+            "uuid": "a878b04c-31a9-4b81-9c2c-3d0b19a2e1ad",
+            "username": "alice",
+            "system_id": "42",
+            "telegram_id": "1001",
+            "panel_user": {"status": "active"},
+        }
+
+        payload = build_user_export_payload(fake_store, identity["uuid"], identity)
+
+        self.assertEqual(payload["export_meta"]["identifier"], identity["uuid"])
+        self.assertEqual(payload["export_meta"]["record_counts"]["review_cases"], 1)
+        self.assertEqual(payload["export_meta"]["record_counts"]["analysis_events"], 1)
+        self.assertEqual(payload["analysis_events"][0]["provider_evidence"]["service_type_hint"], "home")
 
 
 class PanelClientTests(unittest.TestCase):

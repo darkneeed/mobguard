@@ -2,20 +2,33 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api/client";
+import { useToast } from "../components/ToastProvider";
 import { useI18n } from "../localization";
+import { downloadBlob } from "../shared/api/request";
 import { formatDisplayDateTime } from "../utils/datetime";
 
-type DataTab = "users" | "violations" | "overrides" | "cache" | "learning" | "cases";
+type DataTab = "users" | "violations" | "overrides" | "cache" | "learning" | "cases" | "exports";
+type PendingKey =
+  | "userSearch"
+  | "userLoad"
+  | "userAction"
+  | "userExport"
+  | "exactOverride"
+  | "unsureOverride"
+  | "cacheSave"
+  | "calibrationExport";
 
 export function DataPage() {
   const { t, language } = useI18n();
+  const { pushToast } = useToast();
   const [tab, setTab] = useState<DataTab>("users");
-  const [error, setError] = useState("");
-  const [saved, setSaved] = useState("");
+  const [pageError, setPageError] = useState("");
+  const [pending, setPending] = useState<Partial<Record<PendingKey, boolean>>>({});
 
   const [userQuery, setUserQuery] = useState("");
   const [userSearch, setUserSearch] = useState<Record<string, unknown> | null>(null);
   const [userCard, setUserCard] = useState<Record<string, unknown> | null>(null);
+  const [userCardExport, setUserCardExport] = useState<Record<string, unknown> | null>(null);
   const [banMinutes, setBanMinutes] = useState("15");
   const [strikeCount, setStrikeCount] = useState("1");
   const [warningCount, setWarningCount] = useState("1");
@@ -33,102 +46,238 @@ export function DataPage() {
   const [selectedCacheIp, setSelectedCacheIp] = useState("");
   const [cacheDraft, setCacheDraft] = useState<Record<string, string>>({});
 
+  const [calibrationFilters, setCalibrationFilters] = useState<Record<string, string | boolean>>({
+    opened_from: "",
+    opened_to: "",
+    review_reason: "",
+    provider_key: "",
+    include_unknown: false,
+    status: "resolved_only"
+  });
+  const [lastCalibrationManifest, setLastCalibrationManifest] = useState<Record<string, unknown> | null>(null);
+  const [lastCalibrationFilename, setLastCalibrationFilename] = useState("");
+
   function displayValue(value: unknown): string {
     return value === null || value === undefined || value === "" ? t("common.notAvailable") : String(value);
   }
 
+  function setPendingKey(key: PendingKey, active: boolean) {
+    setPending((prev) => ({ ...prev, [key]: active }));
+  }
+
+  function isPending(...keys: PendingKey[]) {
+    return keys.some((key) => Boolean(pending[key]));
+  }
+
+  async function withPending<T>(key: PendingKey, action: () => Promise<T>): Promise<T> {
+    setPendingKey(key, true);
+    try {
+      return await action();
+    } finally {
+      setPendingKey(key, false);
+    }
+  }
+
+  function parseManifestHeader(header: string | null): Record<string, unknown> | null {
+    if (!header) return null;
+    try {
+      const binary = atob(header);
+      const bytes = Uint8Array.from(binary, (item) => item.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
   useEffect(() => {
+    let cancelled = false;
+    setPageError("");
+
     async function load() {
       try {
         if (tab === "violations") {
-          setViolations(await api.getViolations());
+          const payload = await api.getViolations();
+          if (!cancelled) setViolations(payload);
         } else if (tab === "overrides") {
-          setOverrides(await api.getOverrides());
+          const payload = await api.getOverrides();
+          if (!cancelled) setOverrides(payload);
         } else if (tab === "cache") {
-          setCache(await api.getCache());
+          const payload = await api.getCache();
+          if (!cancelled) setCache(payload);
         } else if (tab === "learning") {
-          setLearning(await api.getLearningAdmin());
+          const payload = await api.getLearningAdmin();
+          if (!cancelled) setLearning(payload);
         } else if (tab === "cases") {
-          setCases(await api.listCases({ page: 1, page_size: 50 }));
+          const payload = await api.listCases({ page: 1, page_size: 50 });
+          if (!cancelled) setCases(payload);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : t("data.errors.loadTabFailed"));
+        if (!cancelled) {
+          setPageError(err instanceof Error ? err.message : t("data.errors.loadTabFailed"));
+        }
       }
     }
 
     load();
+    return () => {
+      cancelled = true;
+    };
   }, [tab, t]);
 
   async function searchUsers() {
     try {
-      const payload = await api.searchUsers(userQuery);
+      const payload = await withPending("userSearch", () => api.searchUsers(userQuery));
       setUserSearch(payload);
-      setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("data.errors.searchUsersFailed"));
+      pushToast("error", err instanceof Error ? err.message : t("data.errors.searchUsersFailed"));
     }
   }
 
   async function loadUser(identifier: string) {
     try {
-      const payload = await api.getUserCard(identifier);
+      const payload = await withPending("userLoad", () => api.getUserCard(identifier));
       setUserCard(payload);
-      setSaved("");
-      setError("");
+      setUserCardExport(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("data.errors.loadUserFailed"));
+      pushToast("error", err instanceof Error ? err.message : t("data.errors.loadUserFailed"));
     }
   }
 
-  async function runUserAction(action: () => Promise<Record<string, unknown>>) {
+  async function runUserAction(action: () => Promise<Record<string, unknown>>, successMessage: string) {
     try {
-      const payload = await action();
+      const payload = await withPending("userAction", action);
       setUserCard(payload);
-      setSaved(t("data.saved.userUpdated"));
-      setError("");
+      pushToast("success", successMessage);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("data.errors.userActionFailed"));
-      setSaved("");
+      pushToast("error", err instanceof Error ? err.message : t("data.errors.userActionFailed"));
     }
   }
 
   async function saveExactOverride() {
     try {
-      await api.upsertExactOverride(exactOverrideIp, exactOverrideDecision);
+      await withPending("exactOverride", () => api.upsertExactOverride(exactOverrideIp, exactOverrideDecision));
       setOverrides(await api.getOverrides());
-      setSaved(t("data.saved.exactOverride"));
-      setError("");
+      pushToast("success", t("data.saved.exactOverride"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("data.errors.saveExactOverrideFailed"));
+      pushToast("error", err instanceof Error ? err.message : t("data.errors.saveExactOverrideFailed"));
     }
   }
 
   async function saveUnsureOverride() {
     try {
-      await api.upsertUnsureOverride(unsureOverrideIp, unsureOverrideDecision);
+      await withPending("unsureOverride", () => api.upsertUnsureOverride(unsureOverrideIp, unsureOverrideDecision));
       setOverrides(await api.getOverrides());
-      setSaved(t("data.saved.unsureOverride"));
-      setError("");
+      pushToast("success", t("data.saved.unsureOverride"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("data.errors.saveUnsureOverrideFailed"));
+      pushToast("error", err instanceof Error ? err.message : t("data.errors.saveUnsureOverrideFailed"));
     }
   }
 
   async function saveCachePatch() {
     if (!selectedCacheIp) return;
     try {
-      await api.patchCache(selectedCacheIp, {
-        status: cacheDraft.status,
-        confidence: cacheDraft.confidence,
-        details: cacheDraft.details,
-        asn: cacheDraft.asn ? Number(cacheDraft.asn) : null
-      });
+      await withPending("cacheSave", () =>
+        api.patchCache(selectedCacheIp, {
+          status: cacheDraft.status,
+          confidence: cacheDraft.confidence,
+          details: cacheDraft.details,
+          asn: cacheDraft.asn ? Number(cacheDraft.asn) : null
+        })
+      );
       setCache(await api.getCache());
-      setSaved(t("data.saved.cacheUpdated"));
-      setError("");
+      pushToast("success", t("data.saved.cacheUpdated"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("data.errors.saveCacheFailed"));
+      pushToast("error", err instanceof Error ? err.message : t("data.errors.saveCacheFailed"));
     }
+  }
+
+  async function buildUserExport(identifier: string) {
+    try {
+      const payload = await withPending("userExport", () => api.getUserCardExport(identifier));
+      setUserCardExport(payload);
+      pushToast("success", t("data.saved.exportReady"));
+    } catch (err) {
+      pushToast("error", err instanceof Error ? err.message : t("data.errors.exportUserFailed"));
+    }
+  }
+
+  function downloadUserExport() {
+    if (!userCardExport) return;
+    const meta = (userCardExport.export_meta as Record<string, unknown> | undefined) || {};
+    const identity = (userCardExport.identity as Record<string, unknown> | undefined) || {};
+    const baseName = String(identity.username || identity.uuid || identity.system_id || identity.telegram_id || "user-card").replace(/[^\w.-]+/g, "_");
+    const blob = new Blob([JSON.stringify(userCardExport, null, 2)], { type: "application/json" });
+    downloadBlob(`${baseName}-export.json`, blob);
+    pushToast("info", t("data.saved.exportDownloaded"));
+  }
+
+  async function generateCalibrationExport() {
+    try {
+      const response = await withPending("calibrationExport", () =>
+        api.exportCalibration(calibrationFilters as Record<string, string | number | boolean | undefined>)
+      );
+      setLastCalibrationManifest(parseManifestHeader(response.headers.get("X-MobGuard-Export-Manifest")));
+      setLastCalibrationFilename(response.filename);
+      downloadBlob(response.filename, response.blob);
+      pushToast("success", t("data.saved.calibrationExportReady"));
+    } catch (err) {
+      pushToast("error", err instanceof Error ? err.message : t("data.errors.exportCalibrationFailed"));
+    }
+  }
+
+  function renderProviderEvidence(providerEvidence: Record<string, unknown> | undefined) {
+    if (!providerEvidence || Object.keys(providerEvidence).length === 0) {
+      return <span>{t("common.notAvailable")}</span>;
+    }
+    return (
+      <div className="provider-evidence">
+        <span>{displayValue(providerEvidence.provider_key)} · {displayValue(providerEvidence.service_type_hint)}</span>
+        <span>{Boolean(providerEvidence.service_conflict) ? t("data.users.providerConflict") : t("data.users.providerClear")}</span>
+        <span>{Boolean(providerEvidence.review_recommended) ? t("data.users.reviewFirst") : t("data.users.autoReady")}</span>
+      </div>
+    );
+  }
+
+  function renderUserExportPreview() {
+    if (!userCardExport) return null;
+    const exportMeta = (userCardExport.export_meta as Record<string, unknown> | undefined) || {};
+    const recordCounts = (exportMeta.record_counts as Record<string, unknown> | undefined) || {};
+    const sections: Array<[string, unknown]> = [
+      [t("data.users.exportSections.identity"), userCardExport.identity],
+      [t("data.users.exportSections.flags"), userCardExport.flags],
+      [t("data.users.exportSections.panel"), userCardExport.panel_user],
+      [t("data.users.exportSections.reviewCases"), userCardExport.review_cases],
+      [t("data.users.exportSections.analysisEvents"), userCardExport.analysis_events],
+      [t("data.users.exportSections.history"), userCardExport.history],
+      [t("data.users.exportSections.activeTrackers"), userCardExport.active_trackers],
+      [t("data.users.exportSections.ipHistory"), userCardExport.ip_history]
+    ];
+
+    return (
+      <div className="panel">
+        <div className="panel-heading panel-heading-row">
+          <div>
+            <h2>{t("data.users.exportPreviewTitle")}</h2>
+            <p className="muted">{t("data.users.exportGeneratedAt", { value: formatDisplayDateTime(String(exportMeta.generated_at || ""), t("common.notAvailable"), language) })}</p>
+          </div>
+          <button className="ghost" onClick={downloadUserExport} disabled={isPending("userExport")}>{t("data.users.downloadExport")}</button>
+        </div>
+        <div className="stats-grid">
+          <div className="stat-card"><span>{t("data.users.exportCards.reviewCases")}</span><strong>{displayValue(recordCounts.review_cases)}</strong></div>
+          <div className="stat-card"><span>{t("data.users.exportCards.analysisEvents")}</span><strong>{displayValue(recordCounts.analysis_events)}</strong></div>
+          <div className="stat-card"><span>{t("data.users.exportCards.history")}</span><strong>{displayValue(recordCounts.history)}</strong></div>
+          <div className="stat-card"><span>{t("data.users.exportCards.ipHistory")}</span><strong>{displayValue(recordCounts.ip_history)}</strong></div>
+        </div>
+        <div className="export-sections">
+          {sections.map(([label, value]) => (
+            <details className="export-section" key={label} open={label === t("data.users.exportSections.identity")}>
+              <summary>{label}</summary>
+              <pre className="log-box">{JSON.stringify(value ?? null, null, 2)}</pre>
+            </details>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   function renderUsersTab() {
@@ -138,6 +287,7 @@ export function DataPage() {
     const flags = userCard?.flags as Record<string, unknown> | undefined;
     const reviewCases = (userCard?.review_cases as Array<Record<string, unknown>> | undefined) || [];
     const history = (userCard?.history as Array<Record<string, unknown>> | undefined) || [];
+    const analysisEvents = (userCard?.analysis_events as Array<Record<string, unknown>> | undefined) || [];
     const panelUser = userCard?.panel_user as Record<string, unknown> | undefined;
     const identifier = String(identity?.uuid || identity?.system_id || identity?.telegram_id || "");
 
@@ -145,12 +295,10 @@ export function DataPage() {
       <>
         <div className="panel">
           <div className="action-row">
-            <input
-              placeholder={t("data.users.searchPlaceholder")}
-              value={userQuery}
-              onChange={(event) => setUserQuery(event.target.value)}
-            />
-            <button onClick={searchUsers}>{t("data.users.search")}</button>
+            <input placeholder={t("data.users.searchPlaceholder")} value={userQuery} onChange={(event) => setUserQuery(event.target.value)} />
+            <button onClick={searchUsers} disabled={isPending("userSearch") || !userQuery.trim()}>
+              {isPending("userSearch") ? t("data.users.searching") : t("data.users.search")}
+            </button>
           </div>
           {panelMatch ? (
             <div className="tag">
@@ -162,7 +310,7 @@ export function DataPage() {
           <ul className="reason-list">
             {items.map((item) => (
               <li key={String(item.uuid || item.system_id || item.telegram_id)}>
-                <button className="ghost" onClick={() => loadUser(String(item.uuid || item.system_id || item.telegram_id))}>
+                <button className="ghost" disabled={isPending("userLoad")} onClick={() => loadUser(String(item.uuid || item.system_id || item.telegram_id))}>
                   {String(item.username || item.uuid || item.system_id)} · {t("data.users.systemLabel", { value: displayValue(item.system_id) })} · {t("data.users.telegramLabel", { value: displayValue(item.telegram_id) })}
                 </button>
               </li>
@@ -173,7 +321,15 @@ export function DataPage() {
         {identity ? (
           <div className="detail-grid">
             <div className="panel">
-              <h2>{t("data.users.cardTitle")}</h2>
+              <div className="panel-heading panel-heading-row">
+                <div>
+                  <h2>{t("data.users.cardTitle")}</h2>
+                  <p className="muted">{t("data.users.exportHint")}</p>
+                </div>
+                <button onClick={() => buildUserExport(identifier)} disabled={isPending("userExport") || !identifier}>
+                  {isPending("userExport") ? t("data.users.generatingExport") : t("data.users.buildExport")}
+                </button>
+              </div>
               <dl className="detail-list">
                 <div><dt>{t("data.users.fields.username")}</dt><dd>{displayValue(identity.username)}</dd></div>
                 <div><dt>{t("data.users.fields.uuid")}</dt><dd>{displayValue(identity.uuid)}</dd></div>
@@ -193,38 +349,53 @@ export function DataPage() {
                 <div className="rule-field">
                   <strong>{t("data.users.actions.banMinutes")}</strong>
                   <input value={banMinutes} onChange={(event) => setBanMinutes(event.target.value)} />
-                  <button onClick={() => runUserAction(() => api.banUser(identifier, Number(banMinutes)))}>{t("data.users.actions.startBan")}</button>
-                  <button className="ghost" onClick={() => runUserAction(() => api.unbanUser(identifier))}>{t("data.users.actions.unban")}</button>
+                  <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.banUser(identifier, Number(banMinutes)), t("data.saved.userUpdated"))}>{t("data.users.actions.startBan")}</button>
+                  <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.unbanUser(identifier), t("data.saved.userUpdated"))}>{t("data.users.actions.unban")}</button>
                 </div>
                 <div className="rule-field">
                   <strong>{t("data.users.actions.strikes")}</strong>
                   <input value={strikeCount} onChange={(event) => setStrikeCount(event.target.value)} />
                   <div className="action-row">
-                    <button className="ghost" onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "add", Number(strikeCount)))}>{t("data.users.actions.add")}</button>
-                    <button className="ghost" onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "remove", Number(strikeCount)))}>{t("data.users.actions.remove")}</button>
-                    <button onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "set", Number(strikeCount)))}>{t("data.users.actions.set")}</button>
+                    <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "add", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.add")}</button>
+                    <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "remove", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.remove")}</button>
+                    <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "set", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.set")}</button>
                   </div>
                 </div>
                 <div className="rule-field">
                   <strong>{t("data.users.actions.warnings")}</strong>
                   <input value={warningCount} onChange={(event) => setWarningCount(event.target.value)} />
                   <div className="action-row">
-                    <button onClick={() => runUserAction(() => api.updateUserWarnings(identifier, "set", Number(warningCount)))}>{t("data.users.actions.setWarning")}</button>
-                    <button className="ghost" onClick={() => runUserAction(() => api.updateUserWarnings(identifier, "clear", 0))}>{t("data.users.actions.clearWarning")}</button>
+                    <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserWarnings(identifier, "set", Number(warningCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.setWarning")}</button>
+                    <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserWarnings(identifier, "clear", 0), t("data.saved.userUpdated"))}>{t("data.users.actions.clearWarning")}</button>
                   </div>
                 </div>
                 <div className="rule-field">
                   <strong>{t("data.users.actions.exemptions")}</strong>
                   <div className="action-row">
-                    <button onClick={() => runUserAction(() => api.updateUserExempt(identifier, "system", true))}>{t("data.users.actions.exemptSystem")}</button>
-                    <button className="ghost" onClick={() => runUserAction(() => api.updateUserExempt(identifier, "system", false))}>{t("data.users.actions.unexemptSystem")}</button>
+                    <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "system", true), t("data.saved.userUpdated"))}>{t("data.users.actions.exemptSystem")}</button>
+                    <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "system", false), t("data.saved.userUpdated"))}>{t("data.users.actions.unexemptSystem")}</button>
                   </div>
                   <div className="action-row">
-                    <button onClick={() => runUserAction(() => api.updateUserExempt(identifier, "telegram", true))}>{t("data.users.actions.exemptTelegram")}</button>
-                    <button className="ghost" onClick={() => runUserAction(() => api.updateUserExempt(identifier, "telegram", false))}>{t("data.users.actions.unexemptTelegram")}</button>
+                    <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "telegram", true), t("data.saved.userUpdated"))}>{t("data.users.actions.exemptTelegram")}</button>
+                    <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "telegram", false), t("data.saved.userUpdated"))}>{t("data.users.actions.unexemptTelegram")}</button>
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div className="panel">
+              <h2>{t("data.users.analysisTitle")}</h2>
+              <ul className="reason-list">
+                {analysisEvents.length === 0 ? <li><span>{t("data.users.analysisEmpty")}</span></li> : null}
+                {analysisEvents.map((item) => (
+                  <li key={String(item.id)}>
+                    <strong>{displayValue(item.ip)} · {displayValue(item.verdict)} / {displayValue(item.confidence_band)}</strong>
+                    <span>{displayValue(item.isp)} · AS{displayValue(item.asn)}</span>
+                    {renderProviderEvidence(item.provider_evidence as Record<string, unknown> | undefined)}
+                    <span>{formatDisplayDateTime(String(item.created_at ?? ""), t("common.notAvailable"), language)}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <div className="panel">
@@ -254,6 +425,8 @@ export function DataPage() {
                 ))}
               </ul>
             </div>
+
+            {renderUserExportPreview()}
           </div>
         ) : null}
       </>
@@ -307,16 +480,21 @@ export function DataPage() {
               <option value="MOBILE">MOBILE</option>
               <option value="SKIP">SKIP</option>
             </select>
-            <button onClick={saveExactOverride}>{t("data.overrides.save")}</button>
+            <button disabled={isPending("exactOverride")} onClick={saveExactOverride}>{t("data.overrides.save")}</button>
           </div>
           <ul className="reason-list">
             {exactIp.map((item) => (
               <li key={String(item.ip)}>
                 <strong>{String(item.ip)}</strong>
                 <span>{String(item.decision)} · {t("data.overrides.expires", { value: formatDisplayDateTime(String(item.expires_at ?? ""), t("common.notAvailable"), language) })}</span>
-                <button className="ghost" onClick={async () => {
-                  await api.deleteExactOverride(String(item.ip));
-                  setOverrides(await api.getOverrides());
+                <button className="ghost" disabled={isPending("exactOverride")} onClick={async () => {
+                  try {
+                    await withPending("exactOverride", () => api.deleteExactOverride(String(item.ip)));
+                    setOverrides(await api.getOverrides());
+                    pushToast("success", t("data.saved.exactOverride"));
+                  } catch (err) {
+                    pushToast("error", err instanceof Error ? err.message : t("data.errors.saveExactOverrideFailed"));
+                  }
                 }}>{t("data.overrides.delete")}</button>
               </li>
             ))}
@@ -331,16 +509,21 @@ export function DataPage() {
               <option value="MOBILE">MOBILE</option>
               <option value="SKIP">SKIP</option>
             </select>
-            <button onClick={saveUnsureOverride}>{t("data.overrides.save")}</button>
+            <button disabled={isPending("unsureOverride")} onClick={saveUnsureOverride}>{t("data.overrides.save")}</button>
           </div>
           <ul className="reason-list">
             {unsure.map((item) => (
               <li key={String(item.ip_pattern)}>
                 <strong>{String(item.ip_pattern)}</strong>
                 <span>{String(item.decision)} · {formatDisplayDateTime(String(item.timestamp ?? ""), t("common.notAvailable"), language)}</span>
-                <button className="ghost" onClick={async () => {
-                  await api.deleteUnsureOverride(String(item.ip_pattern));
-                  setOverrides(await api.getOverrides());
+                <button className="ghost" disabled={isPending("unsureOverride")} onClick={async () => {
+                  try {
+                    await withPending("unsureOverride", () => api.deleteUnsureOverride(String(item.ip_pattern)));
+                    setOverrides(await api.getOverrides());
+                    pushToast("success", t("data.saved.unsureOverride"));
+                  } catch (err) {
+                    pushToast("error", err instanceof Error ? err.message : t("data.errors.saveUnsureOverrideFailed"));
+                  }
                 }}>{t("data.overrides.delete")}</button>
               </li>
             ))}
@@ -372,8 +555,13 @@ export function DataPage() {
                     });
                   }}>{t("data.cache.edit")}</button>
                   <button className="ghost" onClick={async () => {
-                    await api.deleteCache(String(item.ip));
-                    setCache(await api.getCache());
+                    try {
+                      await api.deleteCache(String(item.ip));
+                      setCache(await api.getCache());
+                      pushToast("success", t("data.saved.cacheUpdated"));
+                    } catch (err) {
+                      pushToast("error", err instanceof Error ? err.message : t("data.errors.saveCacheFailed"));
+                    }
                   }}>{t("data.cache.delete")}</button>
                 </div>
               </li>
@@ -387,7 +575,7 @@ export function DataPage() {
           <input placeholder={t("data.cache.confidence")} value={cacheDraft.confidence || ""} onChange={(event) => setCacheDraft((prev) => ({ ...prev, confidence: event.target.value }))} />
           <textarea className="note-box" placeholder={t("data.cache.details")} value={cacheDraft.details || ""} onChange={(event) => setCacheDraft((prev) => ({ ...prev, details: event.target.value }))} />
           <input placeholder={t("data.cache.asn")} value={cacheDraft.asn || ""} onChange={(event) => setCacheDraft((prev) => ({ ...prev, asn: event.target.value }))} />
-          <button onClick={saveCachePatch} disabled={!selectedCacheIp}>{t("data.cache.save")}</button>
+          <button onClick={saveCachePatch} disabled={!selectedCacheIp || isPending("cacheSave")}>{t("data.cache.save")}</button>
         </div>
       </div>
     );
@@ -397,14 +585,10 @@ export function DataPage() {
     const promotedActive = (learning?.promoted_active as Array<Record<string, unknown>> | undefined) || [];
     const promotedStats = (learning?.promoted_stats as Array<Record<string, unknown>> | undefined) || [];
     const legacy = (learning?.legacy as Array<Record<string, unknown>> | undefined) || [];
-    const promotedProviderActive =
-      (learning?.promoted_provider_active as Array<Record<string, unknown>> | undefined) || [];
-    const promotedProviderServiceActive =
-      (learning?.promoted_provider_service_active as Array<Record<string, unknown>> | undefined) || [];
-    const legacyProvider =
-      (learning?.legacy_provider as Array<Record<string, unknown>> | undefined) || [];
-    const legacyProviderService =
-      (learning?.legacy_provider_service as Array<Record<string, unknown>> | undefined) || [];
+    const promotedProviderActive = (learning?.promoted_provider_active as Array<Record<string, unknown>> | undefined) || [];
+    const promotedProviderServiceActive = (learning?.promoted_provider_service_active as Array<Record<string, unknown>> | undefined) || [];
+    const legacyProvider = (learning?.legacy_provider as Array<Record<string, unknown>> | undefined) || [];
+    const legacyProviderService = (learning?.legacy_provider_service as Array<Record<string, unknown>> | undefined) || [];
     return (
       <div className="detail-grid">
         <div className="panel">
@@ -438,12 +622,22 @@ export function DataPage() {
                 <span>{String(item.decision)} · {t("data.learning.confidence", { value: String(item.confidence) })}</span>
                 <div className="action-row">
                   <button className="ghost" onClick={async () => {
-                    await api.patchLegacyLearning(Number(item.id), { confidence: Number(item.confidence) + 1 });
-                    setLearning(await api.getLearningAdmin());
+                    try {
+                      await api.patchLegacyLearning(Number(item.id), { confidence: Number(item.confidence) + 1 });
+                      setLearning(await api.getLearningAdmin());
+                      pushToast("success", t("data.saved.learningUpdated"));
+                    } catch (err) {
+                      pushToast("error", err instanceof Error ? err.message : t("data.errors.loadTabFailed"));
+                    }
                   }}>{t("data.learning.plusOneConfidence")}</button>
                   <button className="ghost" onClick={async () => {
-                    await api.deleteLegacyLearning(Number(item.id));
-                    setLearning(await api.getLearningAdmin());
+                    try {
+                      await api.deleteLegacyLearning(Number(item.id));
+                      setLearning(await api.getLearningAdmin());
+                      pushToast("success", t("data.saved.learningUpdated"));
+                    } catch (err) {
+                      pushToast("error", err instanceof Error ? err.message : t("data.errors.loadTabFailed"));
+                    }
                   }}>{t("data.learning.delete")}</button>
                 </div>
               </li>
@@ -457,9 +651,7 @@ export function DataPage() {
             {promotedProviderActive.map((item) => (
               <li key={`${String(item.pattern_type)}:${String(item.pattern_value)}`}>
                 <strong>{String(item.pattern_value)}</strong>
-                <span>
-                  {String(item.decision)} · {t("data.learning.support", { value: String(item.support) })} · {t("data.learning.precision", { value: String(item.precision) })}
-                </span>
+                <span>{String(item.decision)} · {t("data.learning.support", { value: String(item.support) })} · {t("data.learning.precision", { value: String(item.precision) })}</span>
               </li>
             ))}
           </ul>
@@ -471,9 +663,7 @@ export function DataPage() {
             {promotedProviderServiceActive.map((item) => (
               <li key={`${String(item.pattern_type)}:${String(item.pattern_value)}`}>
                 <strong>{String(item.pattern_value)}</strong>
-                <span>
-                  {String(item.decision)} · {t("data.learning.support", { value: String(item.support) })} · {t("data.learning.precision", { value: String(item.precision) })}
-                </span>
+                <span>{String(item.decision)} · {t("data.learning.support", { value: String(item.support) })} · {t("data.learning.precision", { value: String(item.precision) })}</span>
               </li>
             ))}
           </ul>
@@ -512,6 +702,77 @@ export function DataPage() {
     );
   }
 
+  function renderExportsTab() {
+    const rowCounts = (lastCalibrationManifest?.row_counts as Record<string, unknown> | undefined) || {};
+    const filters = (lastCalibrationManifest?.filters as Record<string, unknown> | undefined) || {};
+    return (
+      <div className="detail-grid">
+        <div className="panel">
+          <div className="panel-heading panel-heading-row">
+            <div>
+              <h2>{t("data.exports.title")}</h2>
+              <p className="muted">{t("data.exports.description")}</p>
+            </div>
+            <button onClick={generateCalibrationExport} disabled={isPending("calibrationExport")}>
+              {isPending("calibrationExport") ? t("data.exports.generating") : t("data.exports.generate")}
+            </button>
+          </div>
+          <div className="form-grid">
+            <div className="rule-field">
+              <strong>{t("data.exports.filters.openedFrom")}</strong>
+              <input type="date" value={String(calibrationFilters.opened_from)} onChange={(event) => setCalibrationFilters((prev) => ({ ...prev, opened_from: event.target.value }))} />
+            </div>
+            <div className="rule-field">
+              <strong>{t("data.exports.filters.openedTo")}</strong>
+              <input type="date" value={String(calibrationFilters.opened_to)} onChange={(event) => setCalibrationFilters((prev) => ({ ...prev, opened_to: event.target.value }))} />
+            </div>
+            <div className="rule-field">
+              <strong>{t("data.exports.filters.reviewReason")}</strong>
+              <input value={String(calibrationFilters.review_reason)} onChange={(event) => setCalibrationFilters((prev) => ({ ...prev, review_reason: event.target.value }))} />
+            </div>
+            <div className="rule-field">
+              <strong>{t("data.exports.filters.providerKey")}</strong>
+              <input value={String(calibrationFilters.provider_key)} onChange={(event) => setCalibrationFilters((prev) => ({ ...prev, provider_key: event.target.value }))} />
+            </div>
+            <div className="rule-field">
+              <strong>{t("data.exports.filters.status")}</strong>
+              <select value={String(calibrationFilters.status)} onChange={(event) => setCalibrationFilters((prev) => ({ ...prev, status: event.target.value }))}>
+                <option value="resolved_only">{t("data.exports.status.resolvedOnly")}</option>
+                <option value="open_only">{t("data.exports.status.openOnly")}</option>
+                <option value="all">{t("data.exports.status.all")}</option>
+              </select>
+            </div>
+            <div className="rule-field">
+              <strong>{t("data.exports.filters.includeUnknown")}</strong>
+              <select value={String(calibrationFilters.include_unknown)} onChange={(event) => setCalibrationFilters((prev) => ({ ...prev, include_unknown: event.target.value === "true" }))}>
+                <option value="false">{t("common.no")}</option>
+                <option value="true">{t("common.yes")}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="panel">
+          <h2>{t("data.exports.lastManifestTitle")}</h2>
+          {!lastCalibrationManifest ? <p className="muted">{t("data.exports.noManifest")}</p> : null}
+          {lastCalibrationManifest ? (
+            <>
+              <div className="stats-grid">
+                <div className="stat-card"><span>{t("data.exports.cards.file")}</span><strong>{displayValue(lastCalibrationFilename)}</strong></div>
+                <div className="stat-card"><span>{t("data.exports.cards.rawRows")}</span><strong>{displayValue(rowCounts.raw_rows)}</strong></div>
+                <div className="stat-card"><span>{t("data.exports.cards.knownRows")}</span><strong>{displayValue(rowCounts.known_rows)}</strong></div>
+                <div className="stat-card"><span>{t("data.exports.cards.unknownRows")}</span><strong>{displayValue(rowCounts.unknown_rows)}</strong></div>
+              </div>
+              <details className="export-section" open>
+                <summary>{t("data.exports.filterSnapshot")}</summary>
+                <pre className="log-box">{JSON.stringify(filters, null, 2)}</pre>
+              </details>
+            </>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section className="page">
       <div className="page-header">
@@ -522,19 +783,14 @@ export function DataPage() {
       </div>
 
       <div className="panel tab-row">
-        {(["users", "violations", "overrides", "cache", "learning", "cases"] as DataTab[]).map((item) => (
-          <button
-            key={item}
-            className={tab === item ? "" : "ghost"}
-            onClick={() => setTab(item)}
-          >
+        {(["users", "violations", "overrides", "cache", "learning", "cases", "exports"] as DataTab[]).map((item) => (
+          <button key={item} className={tab === item ? "" : "ghost"} onClick={() => setTab(item)}>
             {t(`data.tabs.${item}`)}
           </button>
         ))}
       </div>
 
-      {error ? <div className="error-box">{error}</div> : null}
-      {saved ? <div className="ok-box">{saved}</div> : null}
+      {pageError ? <div className="error-box">{pageError}</div> : null}
 
       {tab === "users" ? renderUsersTab() : null}
       {tab === "violations" ? renderViolationsTab() : null}
@@ -542,6 +798,7 @@ export function DataPage() {
       {tab === "cache" ? renderCacheTab() : null}
       {tab === "learning" ? renderLearningTab() : null}
       {tab === "cases" ? renderCasesTab() : null}
+      {tab === "exports" ? renderExportsTab() : null}
     </section>
   );
 }

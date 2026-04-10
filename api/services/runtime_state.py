@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import HTTPException
@@ -238,6 +240,56 @@ def build_user_lookup_clause(identity: dict[str, Any]) -> tuple[str, list[Any]]:
     return " OR ".join(clauses), params
 
 
+def _parse_optional_json(raw: Any, fallback: Any) -> Any:
+    if raw in (None, ""):
+        return fallback
+    if isinstance(raw, (dict, list)):
+        return raw
+    try:
+        return json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return fallback
+
+
+def _analysis_event_select(conn: Any, store: Any) -> str:
+    analysis_event_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(analysis_events)").fetchall()
+    } if store._table_exists(conn, "analysis_events") else set()
+    fields = [
+        "id",
+        "created_at",
+        "ip",
+        "tag",
+        "verdict",
+        "confidence_band",
+        "score",
+        "isp",
+        "asn",
+    ]
+    for optional_column in ("reasons_json", "signal_flags_json", "bundle_json"):
+        if optional_column in analysis_event_columns:
+            fields.append(optional_column)
+        else:
+            fields.append(f"NULL AS {optional_column}")
+    return ", ".join(fields)
+
+
+def _enrich_analysis_event_row(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    reasons = _parse_optional_json(payload.pop("reasons_json", None), [])
+    signal_flags = _parse_optional_json(payload.pop("signal_flags_json", None), {})
+    bundle = _parse_optional_json(payload.pop("bundle_json", None), None)
+    payload["reasons"] = reasons
+    payload["signal_flags"] = signal_flags
+    payload["bundle"] = bundle
+    provider_evidence = signal_flags.get("provider_evidence") if isinstance(signal_flags, dict) else None
+    if isinstance(provider_evidence, dict):
+        payload["provider_evidence"] = provider_evidence
+    else:
+        payload["provider_evidence"] = {}
+    return payload
+
+
 def build_user_card(store: Any, identity: dict[str, Any]) -> dict[str, Any]:
     lookup_clause, lookup_params = build_user_lookup_clause(identity)
     rules_state = store.get_live_rules_state()
@@ -290,9 +342,10 @@ def build_user_card(store: Any, identity: dict[str, Any]) -> dict[str, Any]:
             """,
             lookup_params,
         ).fetchall()
+        analysis_event_select = _analysis_event_select(conn, store)
         recent_events = conn.execute(
             f"""
-            SELECT id, created_at, ip, tag, verdict, confidence_band, score, isp, asn
+            SELECT {analysis_event_select}
             FROM analysis_events
             WHERE {lookup_clause}
             ORDER BY created_at DESC
@@ -322,11 +375,35 @@ def build_user_card(store: Any, identity: dict[str, Any]) -> dict[str, Any]:
         "active_trackers": [dict(row) for row in trackers],
         "ip_history": [dict(row) for row in ip_history],
         "review_cases": [dict(row) for row in review_cases],
-        "analysis_events": [dict(row) for row in recent_events],
+        "analysis_events": [_enrich_analysis_event_row(dict(row)) for row in recent_events],
         "flags": {
             "exempt_system_id": coerce_optional_int(system_id) in exempt_system_ids if system_id not in (None, "") else False,
             "exempt_telegram_id": coerce_optional_int(telegram_id) in exempt_tg_ids if telegram_id not in (None, "") else False,
             "active_ban": bool(active_ban_count),
             "active_warning": bool(violation and violation["warning_time"]),
         },
+    }
+
+
+def build_user_export_payload(store: Any, identifier: str, identity: dict[str, Any]) -> dict[str, Any]:
+    card = build_user_card(store, identity)
+    lookup_fields = {
+        key: value
+        for key, value in card["identity"].items()
+        if value not in (None, "")
+    }
+    return {
+        "export_meta": {
+            "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+            "identifier": identifier,
+            "lookup_fields": lookup_fields,
+            "record_counts": {
+                "review_cases": len(card.get("review_cases", [])),
+                "analysis_events": len(card.get("analysis_events", [])),
+                "history": len(card.get("history", [])),
+                "active_trackers": len(card.get("active_trackers", [])),
+                "ip_history": len(card.get("ip_history", [])),
+            },
+        },
+        **card,
     }

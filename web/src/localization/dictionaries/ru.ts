@@ -106,7 +106,9 @@ export const ruDictionary: TranslationDictionary = {
     actions: {
       mobile: "Mobile",
       home: "Home",
-      skip: "Skip"
+      skip: "Skip",
+      processing: "Обработка…",
+      saved: "Решение по кейсу сохранено"
     },
     footer: {
       previous: "Назад",
@@ -124,6 +126,7 @@ export const ruDictionary: TranslationDictionary = {
     sections: {
       summary: "Сводка",
       reasons: "Причины",
+      providerEvidence: "Провайдерские сигналы",
       log: "Лог",
       history: "История решений",
       linkedContext: "Связанный контекст пользователя/IP",
@@ -155,7 +158,16 @@ export const ruDictionary: TranslationDictionary = {
       placeholder: "Комментарий для аудита",
       mobile: "Mark MOBILE",
       home: "Mark HOME",
-      skip: "Skip"
+      skip: "Skip",
+      saved: "Решение по кейсу сохранено"
+    },
+    providerEvidence: {
+      conflict: "Конфликт service markers",
+      clear: "Прямого конфликта markers нет",
+      reviewFirst: "Нужен review-first",
+      autoReady: "Сигналов уже хватает для автоматики",
+      homeSources: "Поддерживающие HOME-источники",
+      mobileSources: "Поддерживающие MOBILE-источники"
     }
   },
   rules: {
@@ -287,13 +299,16 @@ export const ruDictionary: TranslationDictionary = {
       overrides: "Overrides",
       cache: "Кэш",
       learning: "Обучение",
-      cases: "Кейсы"
+      cases: "Кейсы",
+      exports: "Выгрузки"
     },
     errors: {
       loadTabFailed: "Не удалось загрузить вкладку данных",
       searchUsersFailed: "Не удалось найти пользователей",
       loadUserFailed: "Не удалось загрузить карточку пользователя",
       userActionFailed: "Не удалось выполнить действие над пользователем",
+      exportUserFailed: "Не удалось собрать export-карточку пользователя",
+      exportCalibrationFailed: "Не удалось сформировать calibration export",
       saveExactOverrideFailed: "Не удалось сохранить exact override",
       saveUnsureOverrideFailed: "Не удалось сохранить unsure override",
       saveCacheFailed: "Не удалось обновить запись кэша"
@@ -302,20 +317,53 @@ export const ruDictionary: TranslationDictionary = {
       userUpdated: "Данные пользователя обновлены",
       exactOverride: "Exact override сохранён",
       unsureOverride: "Unsure override сохранён",
-      cacheUpdated: "Запись кэша обновлена"
+      cacheUpdated: "Запись кэша обновлена",
+      learningUpdated: "Данные обучения обновлены",
+      exportReady: "Export-карточка готова",
+      exportDownloaded: "Export-карточка скачана",
+      calibrationExportReady: "Calibration archive сформирован"
     },
     users: {
       searchPlaceholder: "Поиск по uuid / system id / telegram id / username",
       search: "Искать",
+      searching: "Ищу…",
       panelMatch: "Совпадение в панели: {value}",
       systemLabel: "sys:{value}",
       telegramLabel: "tg:{value}",
       cardTitle: "Карточка пользователя",
+      exportHint: "Соберите структурированную export-карточку для калибровки или ручного разбора.",
+      buildExport: "Собрать export-карточку",
+      generatingExport: "Генерирую…",
+      downloadExport: "Скачать JSON",
+      exportPreviewTitle: "Предпросмотр export-карточки",
+      exportGeneratedAt: "Сгенерировано {value}",
       actionsTitle: "Действия с пользователем",
+      analysisTitle: "Недавний анализ и provider evidence",
+      analysisEmpty: "Недавних analysis events нет",
       openCasesTitle: "Открытые / недавние кейсы ревью",
       openCasesEmpty: "Локальных кейсов ревью нет",
       historyTitle: "История нарушений",
       historyEmpty: "Истории нарушений нет",
+      providerConflict: "Есть конфликт provider markers",
+      providerClear: "Provider markers согласованы",
+      reviewFirst: "Только через review-first",
+      autoReady: "Есть второй независимый фактор",
+      exportCards: {
+        reviewCases: "Кейсы ревью",
+        analysisEvents: "События анализа",
+        history: "История",
+        ipHistory: "История IP"
+      },
+      exportSections: {
+        identity: "Identity",
+        flags: "Flags",
+        panel: "Panel user",
+        reviewCases: "Review cases",
+        analysisEvents: "Analysis events",
+        history: "History",
+        activeTrackers: "Active trackers",
+        ipHistory: "IP history"
+      },
       fields: {
         username: "Имя пользователя",
         uuid: "UUID",
@@ -391,6 +439,34 @@ export const ruDictionary: TranslationDictionary = {
     },
     cases: {
       title: "Кейсы"
+    },
+    exports: {
+      title: "Calibration export",
+      description: "Сформировать ZIP-архив с сырыми resolved rows и summary для настройки правил.",
+      generating: "Формирую…",
+      generate: "Собрать ZIP",
+      lastManifestTitle: "Manifest последней выгрузки",
+      noManifest: "Calibration export ещё не формировался",
+      filterSnapshot: "Применённые фильтры",
+      filters: {
+        openedFrom: "Открыт с",
+        openedTo: "Открыт по",
+        reviewReason: "Причина ревью",
+        providerKey: "Ключ провайдера",
+        status: "Статус датасета",
+        includeUnknown: "Включать unknown в агрегаты"
+      },
+      status: {
+        resolvedOnly: "Только resolved",
+        openOnly: "Только open",
+        all: "Все кейсы"
+      },
+      cards: {
+        file: "Архив",
+        rawRows: "Сырые rows",
+        knownRows: "Размеченные rows",
+        unknownRows: "Unknown rows"
+      }
     }
   },
   quality: {

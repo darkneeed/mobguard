@@ -106,7 +106,9 @@ export const enDictionary: TranslationDictionary = {
     actions: {
       mobile: "Mobile",
       home: "Home",
-      skip: "Skip"
+      skip: "Skip",
+      processing: "Processing…",
+      saved: "Review decision saved"
     },
     footer: {
       previous: "Prev",
@@ -124,6 +126,7 @@ export const enDictionary: TranslationDictionary = {
     sections: {
       summary: "Summary",
       reasons: "Reasons",
+      providerEvidence: "Provider evidence",
       log: "Log",
       history: "Resolution history",
       linkedContext: "Linked user/IP context",
@@ -155,7 +158,16 @@ export const enDictionary: TranslationDictionary = {
       placeholder: "Audit comment",
       mobile: "Mark MOBILE",
       home: "Mark HOME",
-      skip: "Skip"
+      skip: "Skip",
+      saved: "Review decision saved"
+    },
+    providerEvidence: {
+      conflict: "Conflicting service markers",
+      clear: "No direct marker conflict",
+      reviewFirst: "Review-first recommended",
+      autoReady: "Has enough signals for automation",
+      homeSources: "Supporting HOME sources",
+      mobileSources: "Supporting MOBILE sources"
     }
   },
   rules: {
@@ -287,13 +299,16 @@ export const enDictionary: TranslationDictionary = {
       overrides: "overrides",
       cache: "cache",
       learning: "learning",
-      cases: "cases"
+      cases: "cases",
+      exports: "exports"
     },
     errors: {
       loadTabFailed: "Failed to load data tab",
       searchUsersFailed: "User search failed",
       loadUserFailed: "Failed to load user card",
       userActionFailed: "User action failed",
+      exportUserFailed: "Failed to build user export card",
+      exportCalibrationFailed: "Failed to generate calibration export",
       saveExactOverrideFailed: "Failed to save exact override",
       saveUnsureOverrideFailed: "Failed to save unsure override",
       saveCacheFailed: "Failed to update cache entry"
@@ -302,20 +317,53 @@ export const enDictionary: TranslationDictionary = {
       userUpdated: "User data updated",
       exactOverride: "Exact override saved",
       unsureOverride: "Unsure override saved",
-      cacheUpdated: "Cache entry updated"
+      cacheUpdated: "Cache entry updated",
+      learningUpdated: "Learning data updated",
+      exportReady: "Export card is ready",
+      exportDownloaded: "Export card downloaded",
+      calibrationExportReady: "Calibration archive generated"
     },
     users: {
       searchPlaceholder: "Search uuid / system id / telegram id / username",
       search: "Search",
+      searching: "Searching…",
       panelMatch: "Panel match: {value}",
       systemLabel: "sys:{value}",
       telegramLabel: "tg:{value}",
       cardTitle: "User card",
+      exportHint: "Build a structured export snapshot for calibration or offline review.",
+      buildExport: "Build export card",
+      generatingExport: "Generating…",
+      downloadExport: "Download JSON",
+      exportPreviewTitle: "Export preview",
+      exportGeneratedAt: "Generated {value}",
       actionsTitle: "User actions",
+      analysisTitle: "Recent analysis & provider evidence",
+      analysisEmpty: "No recent analysis events",
       openCasesTitle: "Open / recent review cases",
       openCasesEmpty: "No local review cases",
       historyTitle: "Violation history",
       historyEmpty: "No violation history",
+      providerConflict: "Conflicting provider markers",
+      providerClear: "Provider markers are consistent",
+      reviewFirst: "Review-first",
+      autoReady: "Second factor present",
+      exportCards: {
+        reviewCases: "Review cases",
+        analysisEvents: "Analysis events",
+        history: "History",
+        ipHistory: "IP history"
+      },
+      exportSections: {
+        identity: "Identity",
+        flags: "Flags",
+        panel: "Panel user",
+        reviewCases: "Review cases",
+        analysisEvents: "Analysis events",
+        history: "History",
+        activeTrackers: "Active trackers",
+        ipHistory: "IP history"
+      },
       fields: {
         username: "Username",
         uuid: "UUID",
@@ -391,6 +439,34 @@ export const enDictionary: TranslationDictionary = {
     },
     cases: {
       title: "Cases"
+    },
+    exports: {
+      title: "Calibration export",
+      description: "Generate a ZIP archive with raw resolved rows and summaries for rule tuning.",
+      generating: "Generating…",
+      generate: "Generate ZIP",
+      lastManifestTitle: "Last export manifest",
+      noManifest: "No calibration export generated yet",
+      filterSnapshot: "Applied filters",
+      filters: {
+        openedFrom: "Opened from",
+        openedTo: "Opened to",
+        reviewReason: "Review reason",
+        providerKey: "Provider key",
+        status: "Dataset status",
+        includeUnknown: "Include unknown in aggregates"
+      },
+      status: {
+        resolvedOnly: "Resolved only",
+        openOnly: "Open only",
+        all: "All cases"
+      },
+      cards: {
+        file: "Archive",
+        rawRows: "Raw rows",
+        knownRows: "Known rows",
+        unknownRows: "Unknown rows"
+      }
     }
   },
   quality: {

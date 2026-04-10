@@ -2,6 +2,7 @@ import { MouseEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, ReviewItem, ReviewListResponse } from "../api/client";
+import { useToast } from "../components/ToastProvider";
 import { useI18n } from "../localization";
 import { formatDisplayDateTime } from "../utils/datetime";
 
@@ -26,6 +27,7 @@ type ReviewFilters = {
 
 export function ReviewQueuePage() {
   const { t, language } = useI18n();
+  const { pushToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<ReviewListResponse>({
     items: [],
@@ -34,6 +36,7 @@ export function ReviewQueuePage() {
     page_size: 25
   });
   const [error, setError] = useState("");
+  const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<ReviewFilters>({
     status: "OPEN",
@@ -95,11 +98,17 @@ export function ReviewQueuePage() {
     event.preventDefault();
     event.stopPropagation();
     try {
+      setResolvingId(item.id);
       await api.resolveReview(String(item.id), resolution, "quick action from queue");
       const payload = await api.listReviews(filters);
       setList(payload);
+      pushToast("success", t("reviewQueue.actions.saved"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("reviewQueue.errors.resolveFailed"));
+      const message = err instanceof Error ? err.message : t("reviewQueue.errors.resolveFailed");
+      setError(message);
+      pushToast("error", message);
+    } finally {
+      setResolvingId(null);
     }
   }
 
@@ -318,13 +327,13 @@ export function ReviewQueuePage() {
             </div>
             {item.status === "OPEN" ? (
               <div className="action-row">
-                <button className="small-button" onClick={(event) => quickResolve(event, item, "MOBILE")}>
-                  {t("reviewQueue.actions.mobile")}
+                <button className="small-button" disabled={resolvingId === item.id} onClick={(event) => quickResolve(event, item, "MOBILE")}>
+                  {resolvingId === item.id ? t("reviewQueue.actions.processing") : t("reviewQueue.actions.mobile")}
                 </button>
-                <button className="small-button" onClick={(event) => quickResolve(event, item, "HOME")}>
+                <button className="small-button" disabled={resolvingId === item.id} onClick={(event) => quickResolve(event, item, "HOME")}>
                   {t("reviewQueue.actions.home")}
                 </button>
-                <button className="small-button ghost" onClick={(event) => quickResolve(event, item, "SKIP")}>
+                <button className="small-button ghost" disabled={resolvingId === item.id} onClick={(event) => quickResolve(event, item, "SKIP")}>
                   {t("reviewQueue.actions.skip")}
                 </button>
               </div>

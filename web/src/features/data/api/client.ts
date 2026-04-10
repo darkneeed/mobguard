@@ -1,4 +1,4 @@
-import { buildSearchParams, request } from "../../../shared/api/request";
+import { buildSearchParams, request, requestBlob } from "../../../shared/api/request";
 import { ReviewListParams } from "../../../shared/api/types";
 
 export const dataApi = {
@@ -6,6 +6,8 @@ export const dataApi = {
     request<Record<string, unknown>>(`/admin/data/users/search?query=${encodeURIComponent(query)}`),
   getUserCard: (identifier: string) =>
     request<Record<string, unknown>>(`/admin/data/users/${encodeURIComponent(identifier)}`),
+  getUserCardExport: (identifier: string) =>
+    request<Record<string, unknown>>(`/admin/data/users/${encodeURIComponent(identifier)}/export`),
   banUser: (identifier: string, minutes: number) =>
     request<Record<string, unknown>>(`/admin/data/users/${encodeURIComponent(identifier)}/ban`, {
       method: "POST",
@@ -70,6 +72,8 @@ export const dataApi = {
     request<Record<string, unknown>>(`/admin/data/learning/legacy/${rowId}`, {
       method: "DELETE"
     }),
+  exportCalibration: (params: Record<string, string | number | boolean | undefined>) =>
+    requestBlob(`/admin/data/exports/calibration?${buildSearchParams(params)}`),
   listCases: (params: ReviewListParams) =>
     request<Record<string, unknown>>(`/admin/data/cases?${buildSearchParams(params)}`),
   getQuality: () => request<Record<string, unknown>>("/admin/metrics/quality"),

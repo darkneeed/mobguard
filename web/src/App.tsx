@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AppRouter } from "./app/AppRouter";
 import { useSession } from "./app/useSession";
 import { BrandLogo } from "./components/BrandLogo";
+import { ToastProvider } from "./components/ToastProvider";
 import { LanguageProvider, Language, useI18n } from "./localization";
 import { LoginPage } from "./pages/LoginPage";
 
@@ -67,7 +68,9 @@ export default function App() {
   if (state === "loading") {
     return (
       <LanguageProvider language={language} setLanguage={setLanguage}>
-        <LoadingScreen />
+        <ToastProvider>
+          <LoadingScreen />
+        </ToastProvider>
       </LanguageProvider>
     );
   }
@@ -75,27 +78,31 @@ export default function App() {
   if (!session) {
     return (
       <LanguageProvider language={language} setLanguage={setLanguage}>
-        <LoginPage
-          onAuthenticated={(nextSession) => {
-            setSession(nextSession);
-            setState("ready");
-          }}
-        />
+        <ToastProvider>
+          <LoginPage
+            onAuthenticated={(nextSession) => {
+              setSession(nextSession);
+              setState("ready");
+            }}
+          />
+        </ToastProvider>
       </LanguageProvider>
     );
   }
 
   return (
     <LanguageProvider language={language} setLanguage={setLanguage}>
-      <AppRouter
-        session={session}
-        language={language}
-        setLanguage={setLanguage}
-        theme={theme}
-        setTheme={setTheme}
-        setSession={setSession}
-        setState={setState}
-      />
+      <ToastProvider>
+        <AppRouter
+          session={session}
+          language={language}
+          setLanguage={setLanguage}
+          theme={theme}
+          setTheme={setTheme}
+          setSession={setSession}
+          setState={setState}
+        />
+      </ToastProvider>
     </LanguageProvider>
   );
 }

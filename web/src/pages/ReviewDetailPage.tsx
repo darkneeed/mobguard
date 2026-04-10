@@ -2,12 +2,17 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { api } from "../api/client";
+import { useToast } from "../components/ToastProvider";
 import { useI18n } from "../localization";
 import { formatDisplayDateTime } from "../utils/datetime";
 
 type ReviewReason = {
   code?: string;
   message?: string;
+  source?: string;
+  weight?: number;
+  direction?: string;
+  metadata?: Record<string, unknown>;
 };
 
 type ReviewResolution = {
@@ -42,12 +47,14 @@ type ReviewPayload = Record<string, unknown> & {
 
 export function ReviewDetailPage() {
   const { t, language } = useI18n();
+  const { pushToast } = useToast();
   const { caseId = "" } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState<ReviewPayload | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [resolving, setResolving] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -64,15 +71,25 @@ export function ReviewDetailPage() {
 
   async function resolve(resolution: string) {
     try {
+      setResolving(true);
       await api.resolveReview(caseId, resolution, note);
+      pushToast("success", t("reviewDetail.resolution.saved"));
       navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("reviewDetail.errors.resolveFailed"));
+      const message = err instanceof Error ? err.message : t("reviewDetail.errors.resolveFailed");
+      setError(message);
+      pushToast("error", message);
+    } finally {
+      setResolving(false);
     }
   }
 
   const bundle = data?.latest_event?.bundle;
   const reasons = (Array.isArray(bundle?.reasons) ? bundle?.reasons : []) as ReviewReason[];
+  const signalFlags = (bundle?.signal_flags as Record<string, unknown> | undefined) || {};
+  const providerEvidence = (signalFlags.provider_evidence as Record<string, unknown> | undefined) || {};
+  const homeSources = Array.from(new Set(reasons.filter((reason) => String(reason.direction).toUpperCase() === "HOME" && Number(reason.weight || 0) < 0).map((reason) => String(reason.source || ""))));
+  const mobileSources = Array.from(new Set(reasons.filter((reason) => String(reason.direction).toUpperCase() === "MOBILE" && Number(reason.weight || 0) > 0).map((reason) => String(reason.source || ""))));
   const relatedCases = Array.isArray(data?.related_cases) ? data.related_cases : [];
   const resolutions = Array.isArray(data?.resolutions) ? data.resolutions : [];
 
@@ -129,8 +146,29 @@ export function ReviewDetailPage() {
                 <li key={`${String(reason.code)}-${index}`}>
                   <strong>{formatValue(reason.code)}</strong>
                   <span>{formatValue(reason.message)}</span>
+                  <span>{formatValue(reason.source)} · {formatValue(reason.direction)} · {formatValue(reason.weight)}</span>
                 </li>
               ))}
+            </ul>
+          </div>
+
+          <div className="panel">
+            <h2>{t("reviewDetail.sections.providerEvidence")}</h2>
+            <ul className="reason-list">
+              <li>
+                <strong>{formatValue(providerEvidence.provider_key as string | number | null | undefined)}</strong>
+                <span>{formatValue(providerEvidence.provider_classification as string | number | null | undefined)} · {formatValue(providerEvidence.service_type_hint as string | number | null | undefined)}</span>
+                <span>{Boolean(providerEvidence.service_conflict) ? t("reviewDetail.providerEvidence.conflict") : t("reviewDetail.providerEvidence.clear")}</span>
+                <span>{Boolean(providerEvidence.review_recommended) ? t("reviewDetail.providerEvidence.reviewFirst") : t("reviewDetail.providerEvidence.autoReady")}</span>
+              </li>
+              <li>
+                <strong>{t("reviewDetail.providerEvidence.homeSources")}</strong>
+                <span>{homeSources.length > 0 ? homeSources.join(", ") : t("common.notAvailable")}</span>
+              </li>
+              <li>
+                <strong>{t("reviewDetail.providerEvidence.mobileSources")}</strong>
+                <span>{mobileSources.length > 0 ? mobileSources.join(", ") : t("common.notAvailable")}</span>
+              </li>
             </ul>
           </div>
 
@@ -183,9 +221,9 @@ export function ReviewDetailPage() {
               onChange={(event) => setNote(event.target.value)}
             />
             <div className="action-row">
-              <button onClick={() => resolve("MOBILE")}>{t("reviewDetail.resolution.mobile")}</button>
-              <button onClick={() => resolve("HOME")}>{t("reviewDetail.resolution.home")}</button>
-              <button className="ghost" onClick={() => resolve("SKIP")}>
+              <button disabled={resolving} onClick={() => resolve("MOBILE")}>{t("reviewDetail.resolution.mobile")}</button>
+              <button disabled={resolving} onClick={() => resolve("HOME")}>{t("reviewDetail.resolution.home")}</button>
+              <button className="ghost" disabled={resolving} onClick={() => resolve("SKIP")}>
                 {t("reviewDetail.resolution.skip")}
               </button>
             </div>

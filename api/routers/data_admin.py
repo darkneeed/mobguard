@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from ..dependencies import get_container, get_session
 from ..schemas.data_admin import (
@@ -29,6 +29,11 @@ def search_users(query: str = Query(min_length=1), _: dict[str, Any] = Depends(g
 @router.get("/users/{identifier}")
 def get_user_card(identifier: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
     return data_service.get_user_card(container, identifier)
+
+
+@router.get("/users/{identifier}/export")
+def export_user_card(identifier: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+    return data_service.get_user_card_export(container, identifier)
 
 
 @router.post("/users/{identifier}/ban")
@@ -142,6 +147,38 @@ def patch_cache(
 @router.delete("/cache/{ip}")
 def delete_cache(ip: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
     return data_service.delete_cache(container, ip)
+
+
+@router.get("/exports/calibration")
+def export_calibration(
+    opened_from: Optional[str] = None,
+    opened_to: Optional[str] = None,
+    review_reason: Optional[str] = None,
+    provider_key: Optional[str] = None,
+    include_unknown: bool = False,
+    status: str = Query(default="resolved_only"),
+    _: dict[str, Any] = Depends(get_session),
+    container=Depends(get_container),
+) -> Response:
+    payload = data_service.build_calibration_export(
+        container,
+        {
+            "opened_from": opened_from,
+            "opened_to": opened_to,
+            "review_reason": review_reason,
+            "provider_key": provider_key,
+            "include_unknown": include_unknown,
+            "status": status,
+        },
+    )
+    return Response(
+        content=payload["content"],
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{payload["filename"]}"',
+            "X-MobGuard-Export-Manifest": payload["manifest_header"],
+        },
+    )
 
 
 @router.get("/learning")
