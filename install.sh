@@ -371,20 +371,49 @@ print_next_steps() {
   printf '%s\n' "Следующие шаги:"
   printf '%s\n' "1. Проверьте .env: $ENV_FILE"
   printf '%s\n' "2. Проверьте runtime/config.json: $CONFIG_FILE"
-  printf '%s\n' "3. Откройте README.md и выполните дальнейшие шаги по настройке DNS и Caddy"
+  printf '%s\n' "3. Для быстрого повторного старта используйте ./install.sh или docker compose up -d"
+  printf '%s\n' "4. Если менялся код или Dockerfile, выполните docker compose up -d --build"
+  printf '%s\n' "5. Откройте README.md и выполните дальнейшие шаги по настройке DNS и Caddy"
+}
+
+compose_images_ready() {
+  image_names="$(
+    cd "$ROOT_DIR" &&
+    docker compose config --images
+  )" || return 1
+
+  [ -n "$image_names" ] || return 1
+
+  for image_name in $image_names; do
+    if ! docker image inspect "$image_name" >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+
+  return 0
 }
 
 start_stack() {
-  info "Запускаю docker compose"
+  if compose_images_ready; then
+    info "Найдены готовые образы docker compose. Выполняю быстрый запуск без пересборки."
+    compose_args="-d"
+  else
+    info "Готовые образы не найдены. Выполняю первый запуск с пересборкой."
+    compose_args="-d --build"
+  fi
+
+  info "Запускаю docker compose up $compose_args"
   (
     cd "$ROOT_DIR"
-    docker compose up -d --build
+    # Warm-start uses existing images; rebuild stays an explicit manual action.
+    docker compose up $compose_args
   )
   info "Контейнеры запущены"
   (
     cd "$ROOT_DIR"
     docker compose ps
   )
+  info "Если менялся код или Dockerfile, пересоберите вручную: docker compose up -d --build"
 }
 
 main() {

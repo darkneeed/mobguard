@@ -10,6 +10,11 @@ from ..dependencies import get_container
 router = APIRouter(tags=["health"])
 
 
+@router.get("/ready")
+def ready() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @router.get("/health")
 def health(container=Depends(get_container)) -> dict[str, Any]:
     return container.store.get_health_snapshot()

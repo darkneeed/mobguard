@@ -14,9 +14,6 @@ services:
       - ./.env:/opt/mobguard/.env
       - ./runtime:/opt/mobguard/runtime
       - ${REMNANODE_ACCESS_LOG:-/var/log/remnanode/access.log}:/var/log/remnanode/access.log:ro
-    depends_on:
-      mobguard-api:
-        condition: service_healthy
 
   mobguard-api:
     build:
@@ -33,11 +30,11 @@ services:
       - ./.env:/opt/mobguard/.env
       - ./runtime:/opt/mobguard/runtime
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10)"]
-      interval: 15s
-      timeout: 15s
-      retries: 8
-      start_period: 45s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
 
   mobguard-web:
     build:
@@ -45,9 +42,6 @@ services:
       dockerfile: Dockerfile
     container_name: mobguard-web
     restart: unless-stopped
-    depends_on:
-      mobguard-api:
-        condition: service_healthy
     ports:
       - "127.0.0.1:8080:80"
     healthcheck:
