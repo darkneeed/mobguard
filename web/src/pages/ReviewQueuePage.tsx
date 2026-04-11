@@ -13,6 +13,7 @@ type ReviewFilters = {
   review_reason: string;
   severity: string;
   punitive_eligible: string;
+  module_id: string;
   q: string;
   username: string;
   system_id: string;
@@ -32,6 +33,7 @@ const DEFAULT_FILTERS: ReviewFilters = {
   review_reason: "",
   severity: "",
   punitive_eligible: "",
+  module_id: "",
   q: "",
   username: "",
   system_id: "",
@@ -52,6 +54,7 @@ function normalizeFilters(searchParams: URLSearchParams): ReviewFilters {
     review_reason: searchParams.get("review_reason") ?? "",
     severity: searchParams.get("severity") ?? "",
     punitive_eligible: searchParams.get("punitive_eligible") ?? "",
+    module_id: searchParams.get("module_id") ?? "",
     q: searchParams.get("q") ?? "",
     username: searchParams.get("username") ?? "",
     system_id: searchParams.get("system_id") ?? "",
@@ -268,6 +271,13 @@ export function ReviewQueuePage() {
 
       <div className="panel filters reveal-panel">
         <input
+          placeholder={t("reviewQueue.filters.moduleId")}
+          value={String(filters.module_id ?? "")}
+          onChange={(event) =>
+            setFilters((prev) => ({ ...prev, module_id: event.target.value, page: 1 }))
+          }
+        />
+        <input
           placeholder={t("reviewQueue.filters.username")}
           value={String(filters.username ?? "")}
           onChange={(event) =>
@@ -468,6 +478,7 @@ export function ReviewQueuePage() {
               <span className={`status-badge status-${item.status.toLowerCase()}`}>{item.status}</span>
             </div>
             <div className="queue-card-identifiers">
+              <span>{formatIdentifier(t("reviewQueue.identifiers.module"), item.module_name || item.module_id)}</span>
               <span>{formatIdentifier(t("reviewQueue.identifiers.system"), item.system_id)}</span>
               <span>{formatIdentifier(t("reviewQueue.identifiers.telegram"), item.telegram_id)}</span>
               <span>{formatIdentifier(t("reviewQueue.identifiers.uuid"), item.uuid)}</span>

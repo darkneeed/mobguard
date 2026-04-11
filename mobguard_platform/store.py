@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 import os
 import sqlite3
@@ -96,6 +97,10 @@ DEFAULT_SETTINGS = {
 
 def _utcnow() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat()
+
+
+def _sha256_hex(value: str) -> str:
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
 
 
 def _ensure_list_of_type(key: str, value: Any, item_type: type) -> list[Any]:
@@ -399,9 +404,63 @@ class PlatformStore:
         with self._connect() as conn:
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS modules (
+                    module_id TEXT PRIMARY KEY,
+                    module_name TEXT NOT NULL,
+                    token_hash TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'online',
+                    version TEXT,
+                    protocol_version TEXT NOT NULL DEFAULT 'v1',
+                    config_revision_applied INTEGER NOT NULL DEFAULT 0,
+                    first_seen_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS module_heartbeats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    module_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    version TEXT,
+                    protocol_version TEXT NOT NULL DEFAULT 'v1',
+                    config_revision_applied INTEGER NOT NULL DEFAULT 0,
+                    details_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ingested_raw_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_uid TEXT NOT NULL UNIQUE,
+                    module_id TEXT NOT NULL,
+                    module_name TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    log_offset INTEGER,
+                    subject_uuid TEXT,
+                    username TEXT,
+                    system_id INTEGER,
+                    telegram_id TEXT,
+                    ip TEXT NOT NULL,
+                    tag TEXT,
+                    raw_payload_json TEXT NOT NULL,
+                    processed_at TEXT,
+                    analysis_event_id INTEGER,
+                    review_case_id INTEGER
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS analysis_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at TEXT NOT NULL,
+                    module_id TEXT,
+                    module_name TEXT,
                     uuid TEXT,
                     username TEXT,
                     system_id INTEGER,
@@ -427,6 +486,8 @@ class PlatformStore:
                     unique_key TEXT NOT NULL UNIQUE,
                     status TEXT NOT NULL,
                     review_reason TEXT NOT NULL,
+                    module_id TEXT,
+                    module_name TEXT,
                     uuid TEXT,
                     username TEXT,
                     system_id INTEGER,
@@ -585,6 +646,10 @@ class PlatformStore:
             analysis_event_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(analysis_events)").fetchall()
             }
+            if analysis_event_columns and "module_id" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN module_id TEXT")
+            if analysis_event_columns and "module_name" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN module_name TEXT")
             if analysis_event_columns and "system_id" not in analysis_event_columns:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN system_id INTEGER")
             if analysis_event_columns and "score" not in analysis_event_columns:
@@ -612,6 +677,10 @@ class PlatformStore:
             review_case_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(review_cases)").fetchall()
             }
+            if review_case_columns and "module_id" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN module_id TEXT")
+            if review_case_columns and "module_name" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN module_name TEXT")
             if review_case_columns and "punitive_eligible" not in review_case_columns:
                 conn.execute("ALTER TABLE review_cases ADD COLUMN punitive_eligible INTEGER NOT NULL DEFAULT 0")
             if review_case_columns and "system_id" not in review_case_columns:
@@ -623,10 +692,22 @@ class PlatformStore:
                 conn.execute("ALTER TABLE live_rules ADD COLUMN revision INTEGER NOT NULL DEFAULT 1")
 
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_modules_last_seen ON modules(last_seen_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_module_heartbeats_module_id ON module_heartbeats(module_id, created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ingested_raw_events_module_id ON ingested_raw_events(module_id, occurred_at DESC)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_review_cases_status ON review_cases(status, updated_at)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_review_cases_opened_at ON review_cases(opened_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_review_cases_module_id ON review_cases(module_id, updated_at)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_review_cases_system_id ON review_cases(system_id)"
@@ -636,6 +717,9 @@ class PlatformStore:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analysis_events_system_id ON analysis_events(system_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analysis_events_module_id ON analysis_events(module_id, created_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analysis_events_ip ON analysis_events(ip, created_at)"
@@ -659,6 +743,263 @@ class PlatformStore:
                     """,
                     (json.dumps(seed_rules, ensure_ascii=False), _utcnow(), "system"),
                 )
+            conn.commit()
+
+    def get_module(self, module_id: str) -> Optional[dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT module_id, module_name, status, version, protocol_version,
+                       config_revision_applied, first_seen_at, last_seen_at, metadata_json
+                FROM modules
+                WHERE module_id = ?
+                """,
+                (module_id,),
+            ).fetchone()
+        if not row:
+            return None
+        payload = dict(row)
+        payload["metadata"] = json.loads(payload.pop("metadata_json") or "{}")
+        return payload
+
+    def register_module(
+        self,
+        module_id: str,
+        token: str,
+        *,
+        module_name: str = "",
+        version: str = "",
+        protocol_version: str = "v1",
+        metadata: Optional[dict[str, Any]] = None,
+        config_revision_applied: int = 0,
+        auto_create: bool = True,
+    ) -> dict[str, Any]:
+        normalized_id = str(module_id or "").strip()
+        normalized_name = str(module_name or normalized_id).strip() or normalized_id
+        if not normalized_id:
+            raise ValueError("module_id is required")
+        if not token:
+            raise ValueError("module token is required")
+        now = _utcnow()
+        token_hash = _sha256_hex(token)
+        metadata_json = json.dumps(metadata or {}, ensure_ascii=False)
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT token_hash FROM modules WHERE module_id = ?",
+                (normalized_id,),
+            ).fetchone()
+            if existing:
+                if str(existing["token_hash"]) != token_hash:
+                    raise ValueError("Invalid module token")
+                conn.execute(
+                    """
+                    UPDATE modules
+                    SET module_name = ?, status = 'online', version = ?, protocol_version = ?,
+                        config_revision_applied = ?, last_seen_at = ?, metadata_json = ?
+                    WHERE module_id = ?
+                    """,
+                    (
+                        normalized_name,
+                        str(version or "").strip(),
+                        str(protocol_version or "v1").strip() or "v1",
+                        int(config_revision_applied or 0),
+                        now,
+                        metadata_json,
+                        normalized_id,
+                    ),
+                )
+            else:
+                if not auto_create:
+                    raise ValueError("Module is not registered")
+                conn.execute(
+                    """
+                    INSERT INTO modules (
+                        module_id, module_name, token_hash, status, version, protocol_version,
+                        config_revision_applied, first_seen_at, last_seen_at, metadata_json
+                    ) VALUES (?, ?, ?, 'online', ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        normalized_id,
+                        normalized_name,
+                        token_hash,
+                        str(version or "").strip(),
+                        str(protocol_version or "v1").strip() or "v1",
+                        int(config_revision_applied or 0),
+                        now,
+                        now,
+                        metadata_json,
+                    ),
+                )
+            conn.commit()
+        module = self.get_module(normalized_id)
+        if not module:
+            raise ValueError("Failed to persist module")
+        return module
+
+    def authenticate_module(self, module_id: str, token: str) -> dict[str, Any]:
+        normalized_id = str(module_id or "").strip()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT module_id, module_name, token_hash, status, version, protocol_version,
+                       config_revision_applied, first_seen_at, last_seen_at, metadata_json
+                FROM modules
+                WHERE module_id = ?
+                """,
+                (normalized_id,),
+            ).fetchone()
+        if not row or str(row["token_hash"]) != _sha256_hex(token):
+            raise ValueError("Invalid module credentials")
+        payload = dict(row)
+        payload.pop("token_hash", None)
+        payload["metadata"] = json.loads(payload.pop("metadata_json") or "{}")
+        return payload
+
+    def record_module_heartbeat(
+        self,
+        module_id: str,
+        *,
+        status: str = "online",
+        version: str = "",
+        protocol_version: str = "v1",
+        config_revision_applied: int = 0,
+        details: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        normalized_id = str(module_id or "").strip()
+        now = _utcnow()
+        details_json = json.dumps(details or {}, ensure_ascii=False)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT module_name FROM modules WHERE module_id = ?",
+                (normalized_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError("Module is not registered")
+            conn.execute(
+                """
+                UPDATE modules
+                SET status = ?, version = ?, protocol_version = ?, config_revision_applied = ?, last_seen_at = ?
+                WHERE module_id = ?
+                """,
+                (
+                    str(status or "online").strip() or "online",
+                    str(version or "").strip(),
+                    str(protocol_version or "v1").strip() or "v1",
+                    int(config_revision_applied or 0),
+                    now,
+                    normalized_id,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO module_heartbeats (
+                    module_id, status, version, protocol_version, config_revision_applied, details_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    normalized_id,
+                    str(status or "online").strip() or "online",
+                    str(version or "").strip(),
+                    str(protocol_version or "v1").strip() or "v1",
+                    int(config_revision_applied or 0),
+                    details_json,
+                    now,
+                ),
+            )
+            conn.commit()
+        module = self.get_module(normalized_id)
+        if not module:
+            raise ValueError("Module is not registered")
+        return module
+
+    def list_modules(self, stale_after_seconds: int = 180) -> list[dict[str, Any]]:
+        now = datetime.utcnow().replace(microsecond=0)
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT m.module_id, m.module_name, m.status, m.version, m.protocol_version,
+                       m.config_revision_applied, m.first_seen_at, m.last_seen_at, m.metadata_json,
+                       (
+                           SELECT COUNT(*)
+                           FROM review_cases rc
+                           WHERE rc.module_id = m.module_id AND rc.status = 'OPEN'
+                       ) AS open_review_cases,
+                       (
+                           SELECT COUNT(*)
+                           FROM analysis_events ae
+                           WHERE ae.module_id = m.module_id
+                       ) AS analysis_events_count
+                FROM modules m
+                ORDER BY m.last_seen_at DESC, m.module_id ASC
+                """
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        stale_delta = timedelta(seconds=stale_after_seconds)
+        for row in rows:
+            payload = dict(row)
+            last_seen_raw = str(payload.get("last_seen_at") or "")
+            last_seen = datetime.fromisoformat(last_seen_raw) if last_seen_raw else None
+            payload["metadata"] = json.loads(payload.pop("metadata_json") or "{}")
+            payload["healthy"] = bool(last_seen and now - last_seen <= stale_delta)
+            items.append(payload)
+        return items
+
+    def ingest_raw_event(
+        self,
+        module_id: str,
+        module_name: str,
+        event_uid: str,
+        occurred_at: str,
+        payload: dict[str, Any],
+    ) -> bool:
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT 1 FROM ingested_raw_events WHERE event_uid = ?",
+                (event_uid,),
+            ).fetchone()
+            if existing:
+                return False
+            conn.execute(
+                """
+                INSERT INTO ingested_raw_events (
+                    event_uid, module_id, module_name, occurred_at, log_offset,
+                    subject_uuid, username, system_id, telegram_id, ip, tag, raw_payload_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_uid,
+                    module_id,
+                    module_name,
+                    occurred_at,
+                    payload.get("log_offset"),
+                    payload.get("uuid"),
+                    payload.get("username"),
+                    payload.get("system_id"),
+                    payload.get("telegram_id"),
+                    payload.get("ip"),
+                    payload.get("tag"),
+                    json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+            conn.commit()
+            return True
+
+    def mark_raw_event_processed(
+        self,
+        event_uid: str,
+        *,
+        analysis_event_id: Optional[int] = None,
+        review_case_id: Optional[int] = None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE ingested_raw_events
+                SET processed_at = ?, analysis_event_id = ?, review_case_id = ?
+                WHERE event_uid = ?
+                """,
+                (_utcnow(), analysis_event_id, review_case_id, event_uid),
+            )
             conn.commit()
 
     def get_live_rules(self) -> dict[str, Any]:
@@ -801,17 +1142,21 @@ class PlatformStore:
     ) -> int:
         now = _utcnow()
         payload = bundle.to_dict()
+        module_id = str((user or {}).get("module_id") or "").strip() or None
+        module_name = str((user or {}).get("module_name") or "").strip() or module_id
         with self._connect() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO analysis_events (
-                    created_at, uuid, username, system_id, telegram_id, ip, tag,
+                    created_at, module_id, module_name, uuid, username, system_id, telegram_id, ip, tag,
                     verdict, confidence_band, score, isp, asn, punitive_eligible,
                     reasons_json, signal_flags_json, bundle_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     now,
+                    module_id,
+                    module_name,
                     (user or {}).get("uuid"),
                     (user or {}).get("username"),
                     _coerce_optional_int((user or {}).get("id")),
@@ -850,12 +1195,14 @@ class PlatformStore:
         review_reason: str,
     ) -> ReviewCaseSummary:
         now = _utcnow()
-        unique_key = f"{(user or {}).get('uuid', 'unknown')}:{ip}:{tag}"
+        module_id = str((user or {}).get("module_id") or "").strip()
+        module_name = str((user or {}).get("module_name") or "").strip() or module_id
+        unique_key = f"{module_id or 'legacy'}:{(user or {}).get('uuid', 'unknown')}:{ip}:{tag}"
         reason_codes = json.dumps(bundle.reason_codes, ensure_ascii=False)
         with self._connect() as conn:
             existing = conn.execute(
-                "SELECT id, repeat_count FROM review_cases WHERE unique_key = ?",
-                (unique_key,),
+                "SELECT id, repeat_count FROM review_cases WHERE unique_key = ? AND module_id = ?",
+                (unique_key, module_id),
             ).fetchone()
             if existing:
                 conn.execute(
@@ -863,6 +1210,7 @@ class PlatformStore:
                     UPDATE review_cases
                     SET status = 'OPEN',
                         review_reason = ?,
+                        module_name = ?,
                         username = ?,
                         system_id = ?,
                         telegram_id = ?,
@@ -880,6 +1228,7 @@ class PlatformStore:
                     """,
                     (
                         review_reason,
+                        module_name,
                         (user or {}).get("username"),
                         _coerce_optional_int((user or {}).get("id")),
                         str((user or {}).get("telegramId")) if (user or {}).get("telegramId") is not None else None,
@@ -901,14 +1250,17 @@ class PlatformStore:
                 cursor = conn.execute(
                     """
                     INSERT INTO review_cases (
-                        unique_key, status, review_reason, uuid, username, system_id, telegram_id, ip, tag,
+                        unique_key, status, review_reason, module_id, module_name, uuid, username, system_id, telegram_id, ip, tag,
                         verdict, confidence_band, score, isp, asn, punitive_eligible, latest_event_id, repeat_count,
                         reason_codes_json, opened_at, updated_at
-                    ) VALUES (?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         unique_key,
+                        "OPEN",
                         review_reason,
+                        module_id,
+                        module_name,
                         (user or {}).get("uuid"),
                         (user or {}).get("username"),
                         _coerce_optional_int((user or {}).get("id")),
@@ -922,6 +1274,7 @@ class PlatformStore:
                         bundle.asn,
                         int(bundle.punitive_eligible),
                         event_id,
+                        1,
                         reason_codes,
                         now,
                         now,
@@ -934,6 +1287,8 @@ class PlatformStore:
             id=summary["id"],
             status=summary["status"],
             review_reason=summary["review_reason"],
+            module_id=summary.get("module_id") or "",
+            module_name=summary.get("module_name") or "",
             uuid=summary.get("uuid") or "",
             username=summary.get("username") or "",
             system_id=summary.get("system_id"),
@@ -966,7 +1321,7 @@ class PlatformStore:
         }
         order_by = sort_map.get(sort, "updated_at DESC")
         query = [
-            """SELECT id, status, review_reason, uuid, username, system_id, telegram_id, ip, tag, verdict, confidence_band,
+            """SELECT id, status, review_reason, module_id, module_name, uuid, username, system_id, telegram_id, ip, tag, verdict, confidence_band,
                score, isp, asn, punitive_eligible, repeat_count, reason_codes_json, opened_at, updated_at,
                CASE
                    WHEN punitive_eligible = 1 THEN 'critical'
@@ -990,6 +1345,9 @@ class PlatformStore:
         if filters.get("username"):
             clauses.append("username LIKE ?")
             params.append(f"%{filters['username']}%")
+        if filters.get("module_id"):
+            clauses.append("module_id = ?")
+            params.append(str(filters["module_id"]))
         if filters.get("system_id") not in (None, ""):
             clauses.append("system_id = ?")
             params.append(int(filters["system_id"]))
@@ -1077,7 +1435,7 @@ class PlatformStore:
             ).fetchall()
             related_cases = conn.execute(
                 """
-                SELECT id, status, ip, verdict, confidence_band, updated_at, username, uuid, system_id, telegram_id
+                SELECT id, status, module_id, module_name, ip, verdict, confidence_band, updated_at, username, uuid, system_id, telegram_id
                 FROM review_cases
                 WHERE id != ? AND (uuid = ? OR ip = ?)
                 ORDER BY updated_at DESC
@@ -1303,7 +1661,7 @@ class PlatformStore:
         self.promote_learning_patterns()
         return self.get_review_case(case_id)
 
-    def get_quality_metrics(self) -> dict[str, Any]:
+    def get_quality_metrics(self, module_id: str | None = None) -> dict[str, Any]:
         live_rules_state = self.get_live_rules_state()
         runtime_dir = os.path.dirname(self.config_path) if self.config_path else os.path.dirname(self.db_path)
         asn_source = detect_asn_source(runtime_dir, self.base_config.get("settings", {}).get("geoip_db"))
@@ -1321,30 +1679,48 @@ class PlatformStore:
                 live_rules_state["rules"].get("settings", {}).get("learning_promote_combo_min_precision", 0.90)
             ),
         }
+        module_filter = str(module_id or "").strip()
+        review_case_where = "WHERE module_id = ?" if module_filter else ""
+        review_case_params: tuple[Any, ...] = (module_filter,) if module_filter else ()
+        open_case_where = "WHERE status = 'OPEN' AND module_id = ?" if module_filter else "WHERE status = 'OPEN'"
+        open_case_params: tuple[Any, ...] = (module_filter,) if module_filter else ()
+        resolution_join = (
+            "FROM review_resolutions rr JOIN review_cases rc ON rc.id = rr.case_id WHERE rc.module_id = ?"
+            if module_filter
+            else "FROM review_resolutions"
+        )
+        resolution_params: tuple[Any, ...] = (module_filter,) if module_filter else ()
         with self._connect() as conn:
             open_cases = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM review_cases WHERE status = 'OPEN'"
+                f"SELECT COUNT(*) AS cnt FROM review_cases {open_case_where}",
+                open_case_params,
             ).fetchone()["cnt"]
             total_cases = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM review_cases"
+                f"SELECT COUNT(*) AS cnt FROM review_cases {review_case_where}",
+                review_case_params,
             ).fetchone()["cnt"]
             resolved_home = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM review_resolutions WHERE resolution = 'HOME'"
+                f"SELECT COUNT(*) AS cnt {resolution_join} AND resolution = 'HOME'" if module_filter else "SELECT COUNT(*) AS cnt FROM review_resolutions WHERE resolution = 'HOME'",
+                resolution_params if module_filter else (),
             ).fetchone()["cnt"]
             resolved_mobile = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM review_resolutions WHERE resolution = 'MOBILE'"
+                f"SELECT COUNT(*) AS cnt {resolution_join} AND resolution = 'MOBILE'" if module_filter else "SELECT COUNT(*) AS cnt FROM review_resolutions WHERE resolution = 'MOBILE'",
+                resolution_params if module_filter else (),
             ).fetchone()["cnt"]
             skipped = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM review_resolutions WHERE resolution = 'SKIP'"
+                f"SELECT COUNT(*) AS cnt {resolution_join} AND resolution = 'SKIP'" if module_filter else "SELECT COUNT(*) AS cnt FROM review_resolutions WHERE resolution = 'SKIP'",
+                resolution_params if module_filter else (),
             ).fetchone()["cnt"]
             top_noisy = conn.execute(
                 """
                 SELECT COALESCE(CAST(asn AS TEXT), 'unknown') AS asn_key, COUNT(*) AS cnt
                 FROM review_cases
+                {where_sql}
                 GROUP BY asn_key
                 ORDER BY cnt DESC
                 LIMIT 10
-                """
+                """.format(where_sql=review_case_where),
+                review_case_params,
             ).fetchall()
             active_patterns = conn.execute(
                 "SELECT COUNT(*) AS cnt FROM learning_patterns_active"
@@ -1402,6 +1778,15 @@ class PlatformStore:
                 FROM review_cases rc
                 JOIN analysis_events ae ON ae.id = rc.latest_event_id
                 WHERE rc.status = 'OPEN'
+                {module_sql}
+                """.format(module_sql="AND rc.module_id = ?" if module_filter else ""),
+                open_case_params,
+            ).fetchall()
+            module_rows = conn.execute(
+                """
+                SELECT module_id, module_name, status, version, protocol_version, config_revision_applied, last_seen_at
+                FROM modules
+                ORDER BY last_seen_at DESC, module_id ASC
                 """
             ).fetchall()
         mixed_provider_open_cases = 0
@@ -1466,7 +1851,9 @@ class PlatformStore:
             "live_rules_updated_at": live_rules_state["updated_at"],
             "live_rules_updated_by": live_rules_state["updated_by"],
             "active_sessions": active_sessions,
+            "selected_module_id": module_filter or None,
             "asn_source": asn_source,
+            "modules": [dict(row) for row in module_rows],
             "mixed_providers": {
                 "open_cases": mixed_provider_open_cases,
                 "conflict_cases": mixed_provider_conflict_cases,

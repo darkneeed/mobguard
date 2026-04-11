@@ -1,20 +1,4 @@
 services:
-  mobguard-core:
-    build:
-      context: .
-      dockerfile: Dockerfile.core
-    container_name: mobguard-core
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      BAN_SYSTEM_DIR: /opt/mobguard/runtime
-      MOBGUARD_ENV_FILE: /opt/mobguard/.env
-    volumes:
-      - ./.env:/opt/mobguard/.env
-      - ./runtime:/opt/mobguard/runtime
-      - ${REMNANODE_ACCESS_LOG:-/var/log/remnanode/access.log}:/var/log/remnanode/access.log:ro
-
   mobguard-api:
     build:
       context: .

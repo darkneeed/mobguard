@@ -42,6 +42,7 @@ export const enDictionary: TranslationDictionary = {
     },
     nav: {
       overview: "Overview",
+      modules: "Modules",
       queue: "Queue",
       rules: "Detection Rules",
       telegram: "Telegram",
@@ -160,6 +161,7 @@ export const enDictionary: TranslationDictionary = {
       punitive: "Punitive"
     },
     filters: {
+      moduleId: "Module ID",
       username: "Username",
       systemId: "System ID",
       telegramId: "Telegram ID",
@@ -183,6 +185,7 @@ export const enDictionary: TranslationDictionary = {
     },
     identifiers: {
       user: "User",
+      module: "Module",
       system: "System",
       telegram: "TG",
       uuid: "UUID"
@@ -217,6 +220,28 @@ export const enDictionary: TranslationDictionary = {
       previous: "Prev",
       next: "Next",
       pageSummary: "Page {page} · showing {shown} of {total}"
+    }
+  },
+  modules: {
+    eyebrow: "Fleet",
+    title: "Connected MobGuard Modules",
+    description: "Registration, heartbeat, and collector node posture in one place.",
+    count: "{count} modules",
+    loadFailed: "Failed to load modules",
+    listTitle: "Module status",
+    listDescription: "Latest heartbeat and linkage into the central review queue.",
+    healthy: "healthy",
+    stale: "stale",
+    lastSeen: "Last heartbeat",
+    appliedRevision: "Applied revision",
+    openCases: "Open cases",
+    analysisEvents: "Analysis events",
+    version: "Version {value}",
+    protocol: "Protocol {value}",
+    cards: {
+      total: "Total modules",
+      healthy: "Healthy",
+      openCases: "Open cases"
     }
   },
   reviewDetail: {
@@ -647,6 +672,7 @@ export const enDictionary: TranslationDictionary = {
     eyebrow: "Quality",
     title: "Noisy ASN, review volume, and active patterns",
     description: "Charts and ranked cards for resolution mix, noisy ASN pressure, and learning health.",
+    allModules: "All modules",
     loadFailed: "Failed to load quality metrics",
     cards: {
       openCases: "Open cases",

@@ -6,6 +6,7 @@ import { Layout } from "../components/Layout";
 import { Language } from "../localization";
 import { AccessPage } from "../pages/AccessPage";
 import { DataPage } from "../pages/DataPage";
+import { ModulesPage } from "../pages/ModulesPage";
 import { OverviewPage } from "../pages/OverviewPage";
 import { QualityPage } from "../pages/QualityPage";
 import { ReviewDetailPage } from "../pages/ReviewDetailPage";
@@ -59,6 +60,7 @@ export function AppRouter({
       >
         <Route path="/" element={<Navigate to="/overview" replace />} />
         <Route path="/overview" element={<OverviewPage />} />
+        <Route path="/modules" element={<ModulesPage />} />
         <Route path="/queue" element={<ReviewQueuePage />} />
         <Route path="/reviews/:caseId" element={<ReviewDetailPage />} />
         <Route path="/rules" element={<Navigate to="/rules/thresholds" replace />} />

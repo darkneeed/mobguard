@@ -42,6 +42,7 @@ export const ruDictionary: TranslationDictionary = {
     },
     nav: {
       overview: "Обзор",
+      modules: "Модули",
       queue: "Очередь",
       rules: "Правила детекта",
       telegram: "Telegram",
@@ -160,6 +161,7 @@ export const ruDictionary: TranslationDictionary = {
       punitive: "Punitive"
     },
     filters: {
+      moduleId: "Module ID",
       username: "Имя пользователя",
       systemId: "System ID",
       telegramId: "Telegram ID",
@@ -183,6 +185,7 @@ export const ruDictionary: TranslationDictionary = {
     },
     identifiers: {
       user: "Пользователь",
+      module: "Модуль",
       system: "System",
       telegram: "TG",
       uuid: "UUID"
@@ -217,6 +220,28 @@ export const ruDictionary: TranslationDictionary = {
       previous: "Назад",
       next: "Дальше",
       pageSummary: "Страница {page} · показано {shown} из {total}"
+    }
+  },
+  modules: {
+    eyebrow: "Fleet",
+    title: "Подключённые MobGuard Module",
+    description: "Регистрация, heartbeat и базовые показатели collector-нод.",
+    count: "{count} модулей",
+    loadFailed: "Не удалось загрузить список модулей",
+    listTitle: "Состояние модулей",
+    listDescription: "Последние heartbeat и привязка к центральной ревью-очереди.",
+    healthy: "healthy",
+    stale: "stale",
+    lastSeen: "Последний heartbeat",
+    appliedRevision: "Применённая ревизия",
+    openCases: "Открытые кейсы",
+    analysisEvents: "Analysis events",
+    version: "Версия {value}",
+    protocol: "Протокол {value}",
+    cards: {
+      total: "Всего модулей",
+      healthy: "Healthy",
+      openCases: "Открытые кейсы"
     }
   },
   reviewDetail: {
@@ -647,6 +672,7 @@ export const ruDictionary: TranslationDictionary = {
     eyebrow: "Качество",
     title: "Шумные ASN, объём ревью и активные паттерны",
     description: "Графики и ranked cards для resolution mix, шумных ASN и здоровья learning.",
+    allModules: "Все модули",
     loadFailed: "Не удалось загрузить метрики качества",
     cards: {
       openCases: "Открытые кейсы",

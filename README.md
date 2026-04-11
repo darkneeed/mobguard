@@ -2,11 +2,19 @@
 
 MobGuard — это система, которая отслеживает некорректное использование мобильных конфигов прокси-сервиса, считает score, создаёт кейсы для ручной модерации и, при необходимости, применяет ограничения к пользователям.
 
-Проект состоит из трёх внутренних частей, но остаётся **одним репозиторием и одним продуктом**:
+Текущий репозиторий теперь является **MobGuard Panel**:
 
-- `mobguard-core` — читает лог, анализирует подключения, считает score, создаёт предупреждения и блокировки, отправляет Telegram-уведомления
-- `mobguard-api` — обслуживает админ-панель, Telegram-аутентификацию, редактирование правил, проверку состояния и очередь модерации
-- `mobguard-web` — веб-панель для модерации, просмотра метрик и редактирования правил
+- `mobguard-api` — central control plane, ingestion API, review workflow, audit и enforcement в Remnawave
+- `mobguard-web` — веб-панель для модерации, просмотра метрик, состояния module-нод и редактирования правил
+- `mobguard_core.scoring` — panel-side scoring pipeline, вызываемый после ingestion raw events от module-нод
+
+Collector вынесен в отдельный sibling-репозиторий `mobguard-module`, который:
+
+- читает локальный access log
+- буферизует raw events в локальный spool
+- регистрируется в panel, шлёт heartbeat, получает config revision и отправляет batched events
+
+Legacy all-in-one сценарий больше не является основным режимом развёртывания.
 
 Целевой сценарий для боевого развёртывания:
 
@@ -921,9 +929,14 @@ python -m unittest discover -s tests
 
 ```bash
 cd web
-npm install
+npm ci
 npm run build
 ```
+
+Если менялись frontend-зависимости:
+
+- коммитьте `web/package.json` и `web/package-lock.json` вместе
+- проверяйте именно `npm ci`, потому что Docker build использует его, а не `npm install`
 
 ---
 

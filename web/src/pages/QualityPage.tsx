@@ -63,6 +63,16 @@ type QualityPayload = {
     label: string;
     files: string[];
   };
+  selected_module_id?: string | null;
+  modules: Array<{
+    module_id: string;
+    module_name: string;
+    status: string;
+    version: string;
+    protocol_version: string;
+    config_revision_applied: number;
+    last_seen_at: string;
+  }>;
   mixed_providers: {
     open_cases: number;
     conflict_cases: number;
@@ -101,13 +111,14 @@ export function QualityPage() {
   const { t, language } = useI18n();
   const [data, setData] = useState<QualityPayload | null>(null);
   const [error, setError] = useState("");
+  const [moduleId, setModuleId] = useState("");
 
   useEffect(() => {
     api
-      .getQuality()
+      .getQuality(moduleId ? { module_id: moduleId } : {})
       .then((payload) => setData(payload as QualityPayload))
       .catch((err: Error) => setError(err.message || t("quality.loadFailed")));
-  }, [t]);
+  }, [moduleId, t]);
 
   const updatedBy = !data?.live_rules_updated_by || data.live_rules_updated_by === "bootstrap"
     ? t("common.system")
@@ -142,6 +153,16 @@ export function QualityPage() {
           <span className="eyebrow">{t("quality.eyebrow")}</span>
           <h1>{t("quality.title")}</h1>
           <p className="page-lede">{t("quality.description")}</p>
+        </div>
+        <div className="action-row">
+          <select value={moduleId} onChange={(event) => setModuleId(event.target.value)}>
+            <option value="">{t("quality.allModules")}</option>
+            {(data?.modules || []).map((item) => (
+              <option key={item.module_id} value={item.module_id}>
+                {item.module_name || item.module_id}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
       {error ? <div className="error-box">{error}</div> : null}

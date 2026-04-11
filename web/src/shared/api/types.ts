@@ -27,6 +27,8 @@ export type ReviewItem = {
   id: number;
   status: string;
   review_reason: string;
+  module_id: string | null;
+  module_name: string | null;
   uuid: string | null;
   username: string | null;
   system_id: number | null;
@@ -52,6 +54,20 @@ export type ReviewListResponse = {
   count: number;
   page: number;
   page_size: number;
+};
+
+export type ModuleRecord = {
+  module_id: string;
+  module_name: string;
+  status: string;
+  version: string;
+  protocol_version: string;
+  config_revision_applied: number;
+  first_seen_at?: string;
+  last_seen_at: string;
+  healthy?: boolean;
+  open_review_cases?: number;
+  analysis_events_count?: number;
 };
 
 export type RulesState = {

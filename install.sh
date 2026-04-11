@@ -100,7 +100,7 @@ require_base_dependencies() {
 get_missing_required_env() {
   missing=""
 
-  for key in TG_MAIN_BOT_TOKEN TG_ADMIN_BOT_TOKEN TG_ADMIN_BOT_USERNAME PANEL_TOKEN IPINFO_TOKEN; do
+  for key in TG_MAIN_BOT_TOKEN TG_ADMIN_BOT_TOKEN TG_ADMIN_BOT_USERNAME IPINFO_TOKEN; do
     eval "value=\${$key:-}"
     if [ -z "$value" ]; then
       if [ -n "$missing" ]; then
@@ -109,6 +109,13 @@ get_missing_required_env() {
       missing="${missing}${key}"
     fi
   done
+
+  if [ -z "${REMNAWAVE_API_TOKEN:-${PANEL_TOKEN:-}}" ]; then
+    if [ -n "$missing" ]; then
+      missing="$missing "
+    fi
+    missing="${missing}REMNAWAVE_API_TOKEN"
+  fi
 
   printf '%s' "$missing"
 }

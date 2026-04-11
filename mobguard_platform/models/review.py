@@ -9,6 +9,8 @@ class ReviewCaseSummary:
     id: int
     status: str
     review_reason: str
+    module_id: str
+    module_name: str
     uuid: str
     username: str
     system_id: Optional[int]

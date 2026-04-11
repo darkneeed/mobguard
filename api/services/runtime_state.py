@@ -139,9 +139,10 @@ def write_runtime_settings(
 def panel_client(container: APIContainer) -> PanelClient:
     runtime_config = load_runtime_config(container)
     env_values = load_env_values(container)
-    panel_url = str(runtime_config.get("settings", {}).get("panel_url", "")).strip()
-    panel_token = env_values.get("PANEL_TOKEN", "")
-    return PanelClient(panel_url, panel_token)
+    settings = runtime_config.get("settings", {})
+    remnawave_url = str(settings.get("remnawave_api_url") or settings.get("panel_url") or "").strip()
+    remnawave_token = env_values.get("REMNAWAVE_API_TOKEN") or env_values.get("PANEL_TOKEN", "")
+    return PanelClient(remnawave_url, remnawave_token)
 
 
 def get_runtime_user_match(store: Any, identifier: str) -> Optional[dict[str, Any]]:
@@ -266,6 +267,11 @@ def _analysis_event_select(conn: Any, store: Any) -> str:
         "isp",
         "asn",
     ]
+    for optional_column in ("module_id", "module_name"):
+        if optional_column in analysis_event_columns:
+            fields.append(optional_column)
+        else:
+            fields.append(f"NULL AS {optional_column}")
     for optional_column in ("reasons_json", "signal_flags_json", "bundle_json"):
         if optional_column in analysis_event_columns:
             fields.append(optional_column)
@@ -294,6 +300,28 @@ def _violation_select(conn: Any, store: Any) -> str:
         "applied_traffic_limit_bytes",
     ):
         if optional_column in violation_columns:
+            fields.append(optional_column)
+        else:
+            fields.append(f"NULL AS {optional_column}")
+    return ", ".join(fields)
+
+
+def _review_case_select(conn: Any, store: Any) -> str:
+    review_case_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(review_cases)").fetchall()
+    } if store._table_exists(conn, "review_cases") else set()
+    fields = [
+        "id",
+        "status",
+        "review_reason",
+        "ip",
+        "verdict",
+        "confidence_band",
+        "opened_at",
+        "updated_at",
+    ]
+    for optional_column in ("module_id", "module_name"):
+        if optional_column in review_case_columns:
             fields.append(optional_column)
         else:
             fields.append(f"NULL AS {optional_column}")
@@ -358,9 +386,10 @@ def build_user_card(store: Any, identity: dict[str, Any]) -> dict[str, Any]:
             """,
             (identity.get("uuid"),),
         ).fetchall() if identity.get("uuid") and has_ip_history else []
+        review_case_select = _review_case_select(conn, store)
         review_cases = conn.execute(
             f"""
-            SELECT id, status, review_reason, ip, verdict, confidence_band, opened_at, updated_at
+            SELECT {review_case_select}
             FROM review_cases
             WHERE {lookup_clause}
             ORDER BY updated_at DESC

@@ -6,6 +6,7 @@ import { settingsApi } from "../features/settings/api/client";
 export type {
   AuthCapabilities,
   EnvFieldState,
+  ModuleRecord,
   ReviewItem,
   ReviewListParams,
   ReviewListResponse,

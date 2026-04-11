@@ -14,6 +14,7 @@ export const primaryNavigation: NavigationGroup[] = [
     titleKey: "layout.groups.monitor",
     items: [
       { to: "/overview", labelKey: "layout.nav.overview" },
+      { to: "/modules", labelKey: "layout.nav.modules" },
       { to: "/queue", labelKey: "layout.nav.queue" },
       { to: "/quality", labelKey: "layout.nav.quality" }
     ]

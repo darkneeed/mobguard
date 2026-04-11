@@ -73,7 +73,7 @@ def get_traffic_cap_threshold_gb(raw_settings: Mapping[str, Any] | None) -> int:
     )
 
 
-class PanelClient:
+class RemnawaveClient:
     def __init__(self, base_url: str, token: str):
         self.base_url = base_url.rstrip("/")
         self.token = token
@@ -251,3 +251,6 @@ class PanelClient:
         if isinstance(response, dict):
             return response
         return None
+
+
+PanelClient = RemnawaveClient

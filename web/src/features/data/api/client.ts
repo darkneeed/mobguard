@@ -85,6 +85,8 @@ export const dataApi = {
     requestBlob(`/admin/data/exports/calibration?${buildSearchParams(params)}`),
   listCases: (params: ReviewListParams) =>
     request<Record<string, unknown>>(`/admin/data/cases?${buildSearchParams(params)}`),
-  getQuality: () => request<Record<string, unknown>>("/admin/metrics/quality"),
+  getQuality: (params: Record<string, string | number | boolean | undefined> = {}) =>
+    request<Record<string, unknown>>(`/admin/metrics/quality?${buildSearchParams(params)}`),
+  getModules: () => request<Record<string, unknown>>("/admin/modules"),
   getHealth: () => request<Record<string, unknown>>("/health")
 };
