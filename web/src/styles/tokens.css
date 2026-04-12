@@ -24,6 +24,48 @@
   --skeleton-glow: rgba(255, 255, 255, 0.52);
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1418;
+  --bg-panel: rgba(18, 25, 30, 0.9);
+  --bg-panel-strong: rgba(18, 25, 30, 0.96);
+  --surface-soft: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(255, 255, 255, 0.03);
+  --ink: #eff8f1;
+  --muted: #9ab0a4;
+  --line: rgba(239, 248, 241, 0.12);
+  --accent: #53d4c5;
+  --accent-strong: #69bff2;
+  --accent-soft: rgba(83, 212, 197, 0.14);
+  --danger: #ff8a80;
+  --warning: #ffc266;
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+  --button-bg: #53d4c5;
+  --button-bg-hover: #73e4d8;
+  --button-fg: #071115;
+  --button-ghost-hover: rgba(239, 248, 241, 0.08);
+  --skeleton-base: rgba(239, 248, 241, 0.09);
+  --skeleton-glow: rgba(255, 255, 255, 0.16);
+}
+
+:root[data-palette="green"] {
+  --accent: #0f766e;
+  --accent-strong: #155e75;
+  --accent-soft: rgba(15, 118, 110, 0.12);
+  --button-bg: #15211a;
+  --button-bg-hover: #223129;
+  --button-fg: #ffffff;
+}
+
+:root[data-theme="dark"][data-palette="green"] {
+  --accent: #53d4c5;
+  --accent-strong: #69bff2;
+  --accent-soft: rgba(83, 212, 197, 0.14);
+  --button-bg: #53d4c5;
+  --button-bg-hover: #73e4d8;
+  --button-fg: #071115;
+}
+
 :root[data-palette="orange"] {
   --accent: #c66a10;
   --accent-strong: #ef8b17;
@@ -58,30 +100,6 @@
   --button-bg: #c24646;
   --button-bg-hover: #e16666;
   --button-fg: #ffffff;
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0e1418;
-  --bg-panel: rgba(18, 25, 30, 0.9);
-  --bg-panel-strong: rgba(18, 25, 30, 0.96);
-  --surface-soft: rgba(255, 255, 255, 0.05);
-  --surface-strong: rgba(255, 255, 255, 0.03);
-  --ink: #eff8f1;
-  --muted: #9ab0a4;
-  --line: rgba(239, 248, 241, 0.12);
-  --accent: #53d4c5;
-  --accent-strong: #69bff2;
-  --accent-soft: rgba(83, 212, 197, 0.14);
-  --danger: #ff8a80;
-  --warning: #ffc266;
-  --shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
-  --button-bg: #53d4c5;
-  --button-bg-hover: #73e4d8;
-  --button-fg: #071115;
-  --button-ghost-hover: rgba(239, 248, 241, 0.08);
-  --skeleton-base: rgba(239, 248, 241, 0.09);
-  --skeleton-glow: rgba(255, 255, 255, 0.16);
 }
 
 @keyframes panel-enter {
