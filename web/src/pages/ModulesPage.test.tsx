@@ -41,12 +41,12 @@ describe("ModulesPage", () => {
         config_revision_applied: 0,
         install_state: "pending_install",
         managed: true,
-        host: "node-alpha.example.com",
-        port: 2222,
-        access_log_path: "/var/log/remnanode/access.log",
-        config_profiles: ["Default-Profile"],
-        provider: "hetzner",
-        notes: "primary collector",
+        inbound_tags: ["DEFAULT-INBOUND"],
+        health_status: "warn",
+        error_text: "",
+        last_validation_at: "2026-04-12T00:00:00",
+        spool_depth: 0,
+        access_log_exists: false,
         token_reveal_available: true,
         first_seen_at: "2026-04-12T00:00:00",
         last_seen_at: "",
@@ -63,22 +63,13 @@ describe("ModulesPage", () => {
     renderWithProviders(<ModulesPage />);
 
     await userEvent.type(await screen.findByLabelText("Display name"), "Node Alpha");
-    await userEvent.type(screen.getByLabelText("Host or address"), "node-alpha.example.com");
-    await userEvent.clear(screen.getByLabelText("Provider"));
-    await userEvent.type(screen.getByLabelText("Provider"), "hetzner");
-    await userEvent.clear(screen.getByLabelText("Notes"));
-    await userEvent.type(screen.getByLabelText("Notes"), "primary collector");
+    await userEvent.type(screen.getByLabelText("INBOUND tags"), "DEFAULT-INBOUND");
     await userEvent.click(screen.getAllByRole("button", { name: "Create module" })[1]);
 
     await waitFor(() => {
       expect(api.createModule).toHaveBeenCalledWith({
         module_name: "Node Alpha",
-        host: "node-alpha.example.com",
-        port: 2222,
-        access_log_path: "/var/log/remnanode/access.log",
-        config_profiles: ["Default-Profile"],
-        provider: "hetzner",
-        notes: "primary collector"
+        inbound_tags: ["DEFAULT-INBOUND"]
       });
     });
 
@@ -98,12 +89,12 @@ describe("ModulesPage", () => {
           config_revision_applied: 3,
           install_state: "online",
           managed: true,
-          host: "node-alpha.example.com",
-          port: 2222,
-          access_log_path: "/var/log/remnanode/access.log",
-          config_profiles: ["Default-Profile"],
-          provider: "",
-          notes: "",
+          inbound_tags: ["DEFAULT-INBOUND"],
+          health_status: "error",
+          error_text: "Access log path not found",
+          last_validation_at: "2026-04-12T00:02:00",
+          spool_depth: 4,
+          access_log_exists: false,
           first_seen_at: "2026-04-12T00:00:00",
           last_seen_at: "2026-04-12T00:01:00",
           healthy: true,
@@ -123,12 +114,12 @@ describe("ModulesPage", () => {
         config_revision_applied: 3,
         install_state: "online",
         managed: true,
-        host: "node-alpha.example.com",
-        port: 2222,
-        access_log_path: "/var/log/remnanode/access.log",
-        config_profiles: ["Default-Profile"],
-        provider: "",
-        notes: "",
+        inbound_tags: ["DEFAULT-INBOUND"],
+        health_status: "error",
+        error_text: "Access log path not found",
+        last_validation_at: "2026-04-12T00:02:00",
+        spool_depth: 4,
+        access_log_exists: false,
         token_reveal_available: true,
         first_seen_at: "2026-04-12T00:00:00",
         last_seen_at: "2026-04-12T00:01:00",
@@ -154,5 +145,6 @@ describe("ModulesPage", () => {
       expect(api.revealModuleToken).toHaveBeenCalledWith("module-abc123");
     });
     expect(await screen.findByText("revealed-token")).toBeInTheDocument();
+    expect(screen.getAllByText("Access log path not found")).toHaveLength(2);
   });
 });

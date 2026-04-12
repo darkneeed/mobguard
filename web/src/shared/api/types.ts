@@ -65,12 +65,12 @@ export type ModuleRecord = {
   config_revision_applied: number;
   install_state: string;
   managed: boolean;
-  host: string;
-  port: number;
-  access_log_path: string;
-  config_profiles: string[];
-  provider: string;
-  notes: string;
+  inbound_tags: string[];
+  health_status: "ok" | "warn" | "error";
+  error_text: string;
+  last_validation_at: string;
+  spool_depth: number;
+  access_log_exists: boolean;
   token_reveal_available?: boolean;
   first_seen_at?: string;
   last_seen_at: string;
@@ -96,12 +96,7 @@ export type ModuleDetailResponse = {
 
 export type ModuleProvisioningPayload = {
   module_name: string;
-  host: string;
-  port: number;
-  access_log_path: string;
-  config_profiles: string[];
-  provider: string;
-  notes: string;
+  inbound_tags: string[];
 };
 
 export type RulesState = {

@@ -115,23 +115,92 @@ def _module_metadata_from_json(raw_value: Any) -> dict[str, Any]:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
+def _normalize_module_inbound_tags(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _coerce_module_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+def _coerce_module_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_module_health_status(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"ok", "warn", "error"}:
+        return normalized
+    return "warn"
+
+
 def _apply_module_metadata(payload: dict[str, Any], metadata_raw: Any) -> dict[str, Any]:
     metadata = _module_metadata_from_json(metadata_raw)
     payload["metadata"] = metadata
-    payload["host"] = str(metadata.get("host") or "").strip()
-    payload["port"] = int(metadata.get("port") or 0) if str(metadata.get("port") or "").strip() else 0
-    payload["access_log_path"] = str(metadata.get("access_log_path") or "").strip()
-    payload["config_profiles"] = [
-        str(item).strip()
-        for item in list(metadata.get("config_profiles") or [])
-        if str(item).strip()
-    ]
-    payload["provider"] = str(metadata.get("provider") or "").strip()
-    payload["notes"] = str(metadata.get("notes") or "").strip()
+    payload["inbound_tags"] = _normalize_module_inbound_tags(
+        metadata.get("inbound_tags")
+        if "inbound_tags" in metadata
+        else metadata.get("config_profiles", [])
+    )
     payload["install_state"] = str(payload.get("install_state") or "online").strip() or "online"
     payload["managed"] = bool(payload.get("managed"))
+    payload["health_status"] = _normalize_module_health_status(payload.get("health_status"))
+    payload["error_text"] = str(payload.get("error_text") or "").strip()
+    payload["last_validation_at"] = str(payload.get("last_validation_at") or "").strip()
+    payload["spool_depth"] = _coerce_module_int(payload.get("spool_depth"), 0)
+    payload["access_log_exists"] = _coerce_module_bool(payload.get("access_log_exists"))
     payload["token_reveal_available"] = bool(str(payload.pop("token_ciphertext", "") or "").strip())
     return payload
+
+
+def _module_health_snapshot(
+    details: Optional[dict[str, Any]],
+    *,
+    current_status: Any = "warn",
+    current_error_text: Any = "",
+    current_last_validation_at: Any = "",
+    current_spool_depth: Any = 0,
+    current_access_log_exists: Any = 0,
+) -> tuple[str, str, str, int, int]:
+    payload = details if isinstance(details, dict) else {}
+    health_status = (
+        _normalize_module_health_status(payload.get("health_status"))
+        if "health_status" in payload
+        else _normalize_module_health_status(current_status)
+    )
+    error_text = (
+        str(payload.get("error_text") or "").strip()
+        if "error_text" in payload
+        else str(current_error_text or "").strip()
+    )
+    if health_status == "ok":
+        error_text = ""
+    last_validation_at = (
+        str(payload.get("last_validation_at") or "").strip()
+        if "last_validation_at" in payload
+        else str(current_last_validation_at or "").strip()
+    )
+    spool_depth = (
+        _coerce_module_int(payload.get("spool_depth"), 0)
+        if "spool_depth" in payload
+        else _coerce_module_int(current_spool_depth, 0)
+    )
+    if "access_log_exists" in payload:
+        access_log_exists = 1 if _coerce_module_bool(payload.get("access_log_exists")) else 0
+    else:
+        access_log_exists = 1 if _coerce_module_bool(current_access_log_exists) else 0
+    return health_status, error_text, last_validation_at, spool_depth, access_log_exists
 
 
 def _ensure_list_of_type(key: str, value: Any, item_type: type) -> list[Any]:
@@ -448,6 +517,11 @@ class PlatformStore:
                     last_seen_at TEXT NOT NULL,
                     install_state TEXT NOT NULL DEFAULT 'online',
                     managed INTEGER NOT NULL DEFAULT 0,
+                    health_status TEXT NOT NULL DEFAULT 'warn',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    last_validation_at TEXT NOT NULL DEFAULT '',
+                    spool_depth INTEGER NOT NULL DEFAULT 0,
+                    access_log_exists INTEGER NOT NULL DEFAULT 0,
                     metadata_json TEXT NOT NULL DEFAULT '{}'
                 )
                 """
@@ -733,6 +807,16 @@ class PlatformStore:
                 conn.execute("ALTER TABLE modules ADD COLUMN install_state TEXT NOT NULL DEFAULT 'online'")
             if module_columns and "managed" not in module_columns:
                 conn.execute("ALTER TABLE modules ADD COLUMN managed INTEGER NOT NULL DEFAULT 0")
+            if module_columns and "health_status" not in module_columns:
+                conn.execute("ALTER TABLE modules ADD COLUMN health_status TEXT NOT NULL DEFAULT 'warn'")
+            if module_columns and "error_text" not in module_columns:
+                conn.execute("ALTER TABLE modules ADD COLUMN error_text TEXT NOT NULL DEFAULT ''")
+            if module_columns and "last_validation_at" not in module_columns:
+                conn.execute("ALTER TABLE modules ADD COLUMN last_validation_at TEXT NOT NULL DEFAULT ''")
+            if module_columns and "spool_depth" not in module_columns:
+                conn.execute("ALTER TABLE modules ADD COLUMN spool_depth INTEGER NOT NULL DEFAULT 0")
+            if module_columns and "access_log_exists" not in module_columns:
+                conn.execute("ALTER TABLE modules ADD COLUMN access_log_exists INTEGER NOT NULL DEFAULT 0")
 
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_modules_last_seen ON modules(last_seen_at)"
@@ -797,6 +881,7 @@ class PlatformStore:
                 """
                 SELECT module_id, module_name, status, version, protocol_version,
                        config_revision_applied, first_seen_at, last_seen_at, install_state, managed,
+                       health_status, error_text, last_validation_at, spool_depth, access_log_exists,
                        metadata_json, token_ciphertext
                 FROM modules
                 WHERE module_id = ?
@@ -991,7 +1076,9 @@ class PlatformStore:
             row = conn.execute(
                 """
                 SELECT module_id, module_name, token_hash, token_ciphertext, status, version, protocol_version,
-                       config_revision_applied, first_seen_at, last_seen_at, install_state, managed, metadata_json
+                       config_revision_applied, first_seen_at, last_seen_at, install_state, managed,
+                       health_status, error_text, last_validation_at, spool_depth, access_log_exists,
+                       metadata_json
                 FROM modules
                 WHERE module_id = ?
                 """,
@@ -1015,18 +1102,31 @@ class PlatformStore:
     ) -> dict[str, Any]:
         normalized_id = str(module_id or "").strip()
         now = _utcnow()
-        details_json = json.dumps(details or {}, ensure_ascii=False)
+        details_payload = dict(details or {})
+        details_json = json.dumps(details_payload, ensure_ascii=False)
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT module_name FROM modules WHERE module_id = ?",
+                """
+                SELECT module_name, health_status, error_text, last_validation_at, spool_depth, access_log_exists
+                FROM modules WHERE module_id = ?
+                """,
                 (normalized_id,),
             ).fetchone()
             if not row:
                 raise ValueError("Module is not registered")
+            health_status, error_text, last_validation_at, spool_depth, access_log_exists = _module_health_snapshot(
+                details_payload,
+                current_status=row["health_status"] if row else "warn",
+                current_error_text=row["error_text"] if row else "",
+                current_last_validation_at=row["last_validation_at"] if row else "",
+                current_spool_depth=row["spool_depth"] if row else 0,
+                current_access_log_exists=row["access_log_exists"] if row else 0,
+            )
             conn.execute(
                 """
                 UPDATE modules
-                SET status = ?, version = ?, protocol_version = ?, config_revision_applied = ?, last_seen_at = ?, install_state = 'online'
+                SET status = ?, version = ?, protocol_version = ?, config_revision_applied = ?, last_seen_at = ?, install_state = 'online',
+                    health_status = ?, error_text = ?, last_validation_at = ?, spool_depth = ?, access_log_exists = ?
                 WHERE module_id = ?
                 """,
                 (
@@ -1035,6 +1135,11 @@ class PlatformStore:
                     str(protocol_version or "v1").strip() or "v1",
                     int(config_revision_applied or 0),
                     now,
+                    health_status,
+                    error_text,
+                    last_validation_at,
+                    spool_depth,
+                    access_log_exists,
                     normalized_id,
                 ),
             )
@@ -1067,7 +1172,8 @@ class PlatformStore:
                 """
                 SELECT m.module_id, m.module_name, m.status, m.version, m.protocol_version,
                        m.config_revision_applied, m.first_seen_at, m.last_seen_at, m.install_state,
-                       m.managed, m.metadata_json,
+                       m.managed, m.health_status, m.error_text, m.last_validation_at,
+                       m.spool_depth, m.access_log_exists, m.metadata_json,
                        (
                            SELECT COUNT(*)
                            FROM review_cases rc

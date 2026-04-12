@@ -43,12 +43,7 @@ class EventBatchRequest(BaseModel):
 
 class ModuleProvisioningRequest(BaseModel):
     module_name: str
-    host: str
-    port: int
-    access_log_path: str = "/var/log/remnanode/access.log"
-    config_profiles: list[str] = Field(default_factory=list)
-    provider: str = ""
-    notes: str = ""
+    inbound_tags: list[str] = Field(default_factory=list)
 
 
 class ModuleTokenRevealRequest(BaseModel):

@@ -52,12 +52,7 @@ class ModuleProtocolTests(unittest.TestCase):
             "encrypted-token-a",
             module_name="Node A",
             metadata={
-                "host": "node-a.example.com",
-                "port": 2222,
-                "access_log_path": "/var/log/remnanode/access.log",
-                "config_profiles": ["Default-Profile"],
-                "provider": "hetzner",
-                "notes": "",
+                "inbound_tags": ["SELFSTEAL_RU-YANDEX_TCP"],
             },
         )
         module = module_service.register_module(
@@ -72,6 +67,8 @@ class ModuleProtocolTests(unittest.TestCase):
         )
         self.assertEqual(module["module"]["module_id"], "node-a")
         self.assertEqual(module["config"]["config_revision"], 3)
+        self.assertEqual(module["config"]["rules"]["inbound_tags"], ["SELFSTEAL_RU-YANDEX_TCP"])
+        self.assertEqual(module["config"]["rules"]["mobile_tags"], ["SELFSTEAL_RU-YANDEX_TCP"])
 
         heartbeat = module_service.record_module_heartbeat(
             self.container,
@@ -81,6 +78,13 @@ class ModuleProtocolTests(unittest.TestCase):
                 "version": "1.0.1",
                 "protocol_version": "v1",
                 "config_revision_applied": 3,
+                "details": {
+                    "health_status": "warn",
+                    "error_text": "Access log path not found",
+                    "last_validation_at": "2026-04-11T10:01:00",
+                    "spool_depth": 2,
+                    "access_log_exists": False,
+                },
             },
             "token-a",
         )
@@ -89,6 +93,10 @@ class ModuleProtocolTests(unittest.TestCase):
         payload = module_service.list_modules(self.container)
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["items"][0]["module_name"], "Node A")
+        self.assertEqual(payload["items"][0]["health_status"], "warn")
+        self.assertEqual(payload["items"][0]["error_text"], "Access log path not found")
+        self.assertEqual(payload["items"][0]["spool_depth"], 2)
+        self.assertFalse(payload["items"][0]["access_log_exists"])
 
     def test_event_batch_deduplicates_by_event_uid(self):
         self.store.create_managed_module(
@@ -97,12 +105,7 @@ class ModuleProtocolTests(unittest.TestCase):
             "encrypted-token-a",
             module_name="Node A",
             metadata={
-                "host": "node-a.example.com",
-                "port": 2222,
-                "access_log_path": "/var/log/remnanode/access.log",
-                "config_profiles": ["Default-Profile"],
-                "provider": "",
-                "notes": "",
+                "inbound_tags": ["SELFSTEAL_RU-YANDEX_TCP"],
             },
         )
         module_service.register_module(

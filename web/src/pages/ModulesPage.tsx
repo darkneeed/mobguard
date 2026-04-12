@@ -13,52 +13,28 @@ import { formatDisplayDateTime } from "../utils/datetime";
 
 type ModuleDraft = {
   module_name: string;
-  host: string;
-  port: string;
-  access_log_path: string;
-  config_profiles: string;
-  provider: string;
-  notes: string;
+  inbound_tags: string;
 };
 
 const EMPTY_DRAFT: ModuleDraft = {
   module_name: "",
-  host: "",
-  port: "2222",
-  access_log_path: "/var/log/remnanode/access.log",
-  config_profiles: "Default-Profile",
-  provider: "",
-  notes: ""
+  inbound_tags: ""
 };
 
 function draftFromModule(module: ModuleRecord): ModuleDraft {
   return {
     module_name: module.module_name || "",
-    host: module.host || "",
-    port: String(module.port || 2222),
-    access_log_path: module.access_log_path || "/var/log/remnanode/access.log",
-    config_profiles: (module.config_profiles || []).join("\n"),
-    provider: module.provider || "",
-    notes: module.notes || ""
+    inbound_tags: (module.inbound_tags || []).join("\n")
   };
 }
 
 function toProvisioningPayload(draft: ModuleDraft): ModuleProvisioningPayload {
-  const port = Number(draft.port);
-  if (!Number.isFinite(port)) {
-    throw new Error("Port must be a number");
-  }
   return {
     module_name: draft.module_name.trim(),
-    host: draft.host.trim(),
-    port,
-    access_log_path: draft.access_log_path.trim(),
-    config_profiles: draft.config_profiles
+    inbound_tags: draft.inbound_tags
       .split(/\r?\n|,/)
       .map((item) => item.trim())
-      .filter(Boolean),
-    provider: draft.provider.trim(),
-    notes: draft.notes.trim()
+      .filter(Boolean)
   };
 }
 
@@ -66,7 +42,32 @@ function statusVariant(module: ModuleRecord): string {
   if (module.install_state === "pending_install") {
     return "review-only";
   }
-  return module.healthy ? "status-resolved" : "severity-high";
+  if (!module.healthy) {
+    return "severity-high";
+  }
+  if (module.health_status === "error") {
+    return "punitive";
+  }
+  if (module.health_status === "warn") {
+    return "severity-high";
+  }
+  return "status-resolved";
+}
+
+function statusLabelKey(module: ModuleRecord): string {
+  if (module.install_state === "pending_install") {
+    return "modules.pendingInstall";
+  }
+  if (!module.healthy) {
+    return "modules.stale";
+  }
+  if (module.health_status === "error") {
+    return "modules.health.error";
+  }
+  if (module.health_status === "warn") {
+    return "modules.health.warn";
+  }
+  return "modules.health.ok";
 }
 
 export function ModulesPage() {
@@ -110,9 +111,10 @@ export function ModulesPage() {
           return;
         }
 
-        const targetId = selectedId && listPayload.items.some((item) => item.module_id === selectedId)
-          ? selectedId
-          : listPayload.items[0].module_id;
+        const targetId =
+          selectedId && listPayload.items.some((item) => item.module_id === selectedId)
+            ? selectedId
+            : listPayload.items[0].module_id;
         setSelectedId(targetId);
         setMode("detail");
         setLoadingDetail(true);
@@ -231,12 +233,6 @@ export function ModulesPage() {
 
   function renderModuleCard(item: ModuleRecord) {
     const isActive = mode === "detail" && selectedId === item.module_id;
-    const statusKey =
-      item.install_state === "pending_install"
-        ? "modules.pendingInstall"
-        : item.healthy
-          ? "modules.online"
-          : "modules.stale";
 
     return (
       <article
@@ -245,12 +241,12 @@ export function ModulesPage() {
       >
         <div className="queue-card-top">
           <strong>{item.module_name}</strong>
-          <span className={`status-badge ${statusVariant(item)}`}>{t(statusKey)}</span>
+          <span className={`status-badge ${statusVariant(item)}`}>{t(statusLabelKey(item))}</span>
         </div>
         <div className="queue-card-identifiers">
           <span>{t("modules.moduleId", { value: item.module_id })}</span>
-          <span>{t("modules.host", { value: item.host || t("common.notAvailable") })}</span>
-          <span>{t("modules.port", { value: item.port || t("common.notAvailable") })}</span>
+          <span>{t("modules.version", { value: item.version || t("common.notAvailable") })}</span>
+          <span>{t("modules.protocol", { value: item.protocol_version || "v1" })}</span>
         </div>
         <div className="queue-card-stack">
           <div className="queue-card-meta">
@@ -258,18 +254,19 @@ export function ModulesPage() {
             <strong>{formatDisplayDateTime(item.last_seen_at, t("common.notAvailable"), language)}</strong>
           </div>
           <div className="queue-card-meta">
-            <span>{t("modules.configProfiles")}</span>
-            <strong>{item.config_profiles?.length ? item.config_profiles.join(", ") : t("common.notAvailable")}</strong>
+            <span>{t("modules.inboundTags")}</span>
+            <strong>{item.inbound_tags.length ? item.inbound_tags.join(", ") : t("common.notAvailable")}</strong>
           </div>
           <div className="queue-card-meta">
-            <span>{t("modules.openCases")}</span>
-            <strong>{item.open_review_cases ?? 0}</strong>
+            <span>{t("modules.spoolDepth")}</span>
+            <strong>{item.spool_depth}</strong>
           </div>
           <div className="queue-card-meta">
-            <span>{t("modules.analysisEvents")}</span>
-            <strong>{item.analysis_events_count ?? 0}</strong>
+            <span>{t("modules.accessLogExists")}</span>
+            <strong>{item.access_log_exists ? t("common.yes") : t("common.no")}</strong>
           </div>
         </div>
+        {item.error_text ? <div className="error-box">{item.error_text}</div> : null}
         <div className="action-row">
           <button className="ghost" onClick={() => openModule(item.module_id)}>
             {t("modules.open")}
@@ -305,8 +302,8 @@ export function ModulesPage() {
           <strong>{data ? data.items.filter((item) => item.install_state === "pending_install").length : "—"}</strong>
         </div>
         <div className="stat-card">
-          <span>{t("modules.cards.online")}</span>
-          <strong>{data ? data.items.filter((item) => item.install_state !== "pending_install" && item.healthy).length : "—"}</strong>
+          <span>{t("modules.cards.error")}</span>
+          <strong>{data ? data.items.filter((item) => item.install_state !== "pending_install" && item.healthy && item.health_status === "error").length : "—"}</strong>
         </div>
         <div className="stat-card">
           <span>{t("modules.cards.stale")}</span>
@@ -326,9 +323,7 @@ export function ModulesPage() {
             </div>
             <div className="queue-grid">
               {(data?.items || []).map(renderModuleCard)}
-              {!data?.items.length ? (
-                <div className="provider-empty">{t("modules.empty")}</div>
-              ) : null}
+              {!data?.items.length ? <div className="provider-empty">{t("modules.empty")}</div> : null}
             </div>
           </div>
         </div>
@@ -370,58 +365,46 @@ export function ModulesPage() {
                   readOnly
                 />
               </div>
-              <div className="rule-field">
-                <label htmlFor="module-host">{t("modules.fields.host")}</label>
-                <input
-                  id="module-host"
-                  value={draft.host}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, host: event.target.value }))}
-                />
-              </div>
-              <div className="rule-field">
-                <label htmlFor="module-port">{t("modules.fields.port")}</label>
-                <input
-                  id="module-port"
-                  type="number"
-                  value={draft.port}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, port: event.target.value }))}
-                />
-              </div>
-              <div className="rule-field">
-                <label htmlFor="module-log-path">{t("modules.fields.accessLogPath")}</label>
-                <input
-                  id="module-log-path"
-                  value={draft.access_log_path}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, access_log_path: event.target.value }))}
-                />
-              </div>
-              <div className="rule-field">
-                <label htmlFor="module-provider">{t("modules.fields.provider")}</label>
-                <input
-                  id="module-provider"
-                  value={draft.provider}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, provider: event.target.value }))}
-                />
-              </div>
               <div className="rule-field rule-field-wide">
-                <label htmlFor="module-config-profiles">{t("modules.fields.configProfiles")}</label>
+                <label htmlFor="module-inbound-tags">{t("modules.fields.inboundTags")}</label>
                 <textarea
-                  id="module-config-profiles"
+                  id="module-inbound-tags"
                   className="note-box"
-                  value={draft.config_profiles}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, config_profiles: event.target.value }))}
-                />
-              </div>
-              <div className="rule-field rule-field-wide">
-                <label htmlFor="module-notes">{t("modules.fields.notes")}</label>
-                <textarea
-                  id="module-notes"
-                  className="note-box"
-                  value={draft.notes}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                  value={draft.inbound_tags}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, inbound_tags: event.target.value }))}
                 />
               </div>
             </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-heading">
+              <h2>{t("modules.healthTitle")}</h2>
+              <p className="muted">{t("modules.healthDescription")}</p>
+            </div>
+            {activeModule ? (
+              <div className="detail-list">
+                <div>
+                  <dt>{t("modules.healthStatus")}</dt>
+                  <dd>{t(statusLabelKey(activeModule))}</dd>
+                </div>
+                <div>
+                  <dt>{t("modules.lastValidationAt")}</dt>
+                  <dd>{formatDisplayDateTime(activeModule.last_validation_at, t("common.notAvailable"), language)}</dd>
+                </div>
+                <div>
+                  <dt>{t("modules.spoolDepth")}</dt>
+                  <dd>{activeModule.spool_depth}</dd>
+                </div>
+                <div>
+                  <dt>{t("modules.accessLogExists")}</dt>
+                  <dd>{activeModule.access_log_exists ? t("common.yes") : t("common.no")}</dd>
+                </div>
+              </div>
+            ) : (
+              <div className="provider-empty">{t("modules.healthEmpty")}</div>
+            )}
+            {activeModule?.error_text ? <div className="error-box">{activeModule.error_text}</div> : null}
           </div>
 
           <div className="panel">

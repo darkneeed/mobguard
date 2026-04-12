@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import os
 import secrets
@@ -122,59 +123,34 @@ def _yaml_string(value: Any) -> str:
     return '"' + str(value or "").replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _normalize_config_profiles(values: Any) -> list[str]:
+def _normalize_inbound_tags(values: Any) -> list[str]:
     if not isinstance(values, list):
-        raise ValueError("config_profiles must be a list")
-    profiles = [str(item or "").strip() for item in values]
-    cleaned = [item for item in profiles if item]
-    if not cleaned:
-        raise ValueError("config_profiles must contain at least one profile name")
-    return cleaned
+        raise ValueError("inbound_tags must be a list")
+    return [str(item or "").strip() for item in values if str(item or "").strip()]
 
 
 def _module_metadata_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     module_name = str(payload.get("module_name") or "").strip()
-    host = str(payload.get("host") or "").strip()
-    access_log_path = str(payload.get("access_log_path") or DEFAULT_ACCESS_LOG_PATH).strip()
-    provider = str(payload.get("provider") or "").strip()
-    notes = str(payload.get("notes") or "").strip()
     if not module_name:
         raise ValueError("module_name is required")
-    if not host:
-        raise ValueError("host is required")
-    try:
-        port = int(payload.get("port") or 0)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("port must be an integer") from exc
-    if port <= 0 or port > 65535:
-        raise ValueError("port must be between 1 and 65535")
-    if not access_log_path:
-        raise ValueError("access_log_path is required")
     return {
         "module_name": module_name,
         "metadata": {
-            "host": host,
-            "port": port,
-            "access_log_path": access_log_path,
-            "config_profiles": _normalize_config_profiles(payload.get("config_profiles") or []),
-            "provider": provider,
-            "notes": notes,
+            "inbound_tags": _normalize_inbound_tags(payload.get("inbound_tags") or []),
         },
     }
 
 
 def _module_install_payload(container: APIContainer, module: dict[str, Any]) -> dict[str, Any]:
-    config_profiles = module.get("config_profiles") or []
-    access_log_path = module.get("access_log_path") or DEFAULT_ACCESS_LOG_PATH
-    log_mount = f"{access_log_path}:{access_log_path}:ro"
+    inbound_tags = module.get("inbound_tags") or []
+    log_mount = f"{DEFAULT_ACCESS_LOG_PATH}:{DEFAULT_ACCESS_LOG_PATH}:ro"
     compose_yaml = textwrap.dedent(
         f"""\
         # MobGuard module install bundle
         # Module: {module.get("module_name") or module.get("module_id")}
-        # Host metadata: {module.get("host") or "n/a"}
-        # Port metadata: {module.get("port") or "n/a"}
-        # Config profiles: {", ".join(config_profiles) if config_profiles else "n/a"}
+        # INBOUND tags: {", ".join(inbound_tags) if inbound_tags else "n/a"}
         # Copy the token from the panel and replace {MODULE_TOKEN_PLACEHOLDER} before start.
+        # If your node uses a different access log path, edit ACCESS_LOG_PATH locally before start.
         services:
           mobguard-module:
             build:
@@ -186,7 +162,7 @@ def _module_install_payload(container: APIContainer, module: dict[str, Any]) -> 
               PANEL_BASE_URL: {_yaml_string(_panel_base_url(container))}
               MODULE_ID: {_yaml_string(module.get("module_id") or "")}
               MODULE_TOKEN: {_yaml_string(MODULE_TOKEN_PLACEHOLDER)}
-              ACCESS_LOG_PATH: {_yaml_string(access_log_path)}
+              ACCESS_LOG_PATH: {_yaml_string(DEFAULT_ACCESS_LOG_PATH)}
               STATE_DIR: {_yaml_string(DEFAULT_STATE_DIR)}
               SPOOL_DIR: {_yaml_string(DEFAULT_SPOOL_DIR)}
             volumes:
@@ -576,12 +552,16 @@ def record_module_heartbeat(container: APIContainer, payload: dict[str, Any], to
 def get_module_config(container: APIContainer, module: dict[str, Any] | None) -> dict[str, Any]:
     rules_state = container.store.get_live_rules_state()
     settings = rules_state["rules"].get("settings", {})
+    rules = copy.deepcopy(rules_state["rules"])
+    inbound_tags = list((module or {}).get("inbound_tags") or [])
+    rules["inbound_tags"] = inbound_tags
+    rules["mobile_tags"] = list(inbound_tags)
     return {
         "config": {
             "protocol_version": PROTOCOL_VERSION,
             "config_revision": rules_state["revision"],
             "updated_at": rules_state["updated_at"],
-            "rules": rules_state["rules"],
+            "rules": rules,
             "module_runtime": _module_runtime(settings),
         },
         "module": module,

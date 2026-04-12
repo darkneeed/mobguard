@@ -54,12 +54,7 @@ class ModuleProvisioningTests(unittest.TestCase):
             self.container,
             {
                 "module_name": "Node Alpha",
-                "host": "node-alpha.example.com",
-                "port": 2222,
-                "access_log_path": "/var/log/remnanode/access.log",
-                "config_profiles": ["Default-Profile", "Canary-Profile"],
-                "provider": "hetzner",
-                "notes": "primary collector",
+                "inbound_tags": ["DEFAULT-INBOUND", "CANARY-INBOUND"],
             },
         )
 
@@ -70,13 +65,13 @@ class ModuleProvisioningTests(unittest.TestCase):
         self.assertEqual(module["install_state"], "pending_install")
         self.assertTrue(module["managed"])
         self.assertTrue(module["token_reveal_available"])
+        self.assertEqual(module["inbound_tags"], ["DEFAULT-INBOUND", "CANARY-INBOUND"])
         self.assertIn(MODULE_TOKEN_PLACEHOLDER := "__PASTE_TOKEN__", install["compose_yaml"])
         self.assertNotIn(install["module_token"], install["compose_yaml"])
         self.assertIn("https://mobguard.example.com/api", install["compose_yaml"])
 
         detail = module_service.get_module_detail(self.container, module["module_id"])
-        self.assertEqual(detail["module"]["host"], "node-alpha.example.com")
-        self.assertEqual(detail["module"]["config_profiles"], ["Default-Profile", "Canary-Profile"])
+        self.assertEqual(detail["module"]["inbound_tags"], ["DEFAULT-INBOUND", "CANARY-INBOUND"])
         self.assertTrue(detail["module"]["token_reveal_available"])
         self.assertIn(MODULE_TOKEN_PLACEHOLDER, detail["install"]["compose_yaml"])
 
@@ -103,12 +98,7 @@ class ModuleProvisioningTests(unittest.TestCase):
                 self.container,
                 {
                     "module_name": "Node Alpha",
-                    "host": "node-alpha.example.com",
-                    "port": 2222,
-                    "access_log_path": "/var/log/remnanode/access.log",
-                    "config_profiles": ["Default-Profile"],
-                    "provider": "",
-                    "notes": "",
+                    "inbound_tags": ["DEFAULT-INBOUND"],
                 },
             )
 
@@ -132,10 +122,11 @@ class ModuleProvisioningTests(unittest.TestCase):
             module_name="Legacy Node",
             version="0.9.0",
             protocol_version="v1",
-            metadata={"host": "legacy.example.com"},
+            metadata={"config_profiles": ["LEGACY-INBOUND"]},
             auto_create=True,
         )
         self.assertFalse(legacy["managed"])
+        self.assertEqual(legacy["inbound_tags"], ["LEGACY-INBOUND"])
 
         registered = module_service.register_module(
             self.container,
@@ -151,6 +142,7 @@ class ModuleProvisioningTests(unittest.TestCase):
         self.assertEqual(registered["module"]["module_id"], "legacy-node")
         self.assertEqual(registered["module"]["install_state"], "online")
         self.assertFalse(registered["module"]["managed"])
+        self.assertEqual(registered["module"]["inbound_tags"], ["LEGACY-INBOUND"])
 
 
 if __name__ == "__main__":
