@@ -44,12 +44,24 @@ if (-not (Test-Path -LiteralPath 'runtime\config.json')) {
 }
 
 Get-Command docker | Out-Null
-Get-Command python | Out-Null
 
 docker compose build
-@'
+$pythonCommand = $null
+foreach ($candidate in @('python', 'py')) {
+    try {
+        $pythonCommand = Get-Command $candidate -ErrorAction Stop
+        break
+    } catch {
+    }
+}
+
+if ($null -ne $pythonCommand) {
+    @'
 from api.app import app
 print(app.title)
-'@ | python -
-
-Write-Host '[OK] Panel build and smoke-check passed'
+'@ | & $pythonCommand.Source -
+    Write-Host '[OK] Panel build and smoke-check passed'
+} else {
+    Write-Warning 'Python interpreter not found on host, skipped optional smoke-check'
+    Write-Host '[OK] Panel docker build passed'
+}
