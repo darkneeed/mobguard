@@ -26,6 +26,9 @@ services:
       dockerfile: Dockerfile
     container_name: mobguard-web
     restart: unless-stopped
+    depends_on:
+      mobguard-api:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8080:80"
     healthcheck:

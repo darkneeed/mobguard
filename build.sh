@@ -32,3 +32,4 @@ command -v docker >/dev/null 2>&1 || { printf '%s\n' "[ERROR] docker not found" 
 docker compose build
 docker compose run --rm --no-deps mobguard-api python -c "from api.app import app; print(app.title)"
 printf '%s\n' "[OK] Panel build and container smoke-check passed"
+printf '%s\n' "[INFO] Build does not start containers. Run: docker compose up -d"

@@ -48,3 +48,4 @@ Get-Command docker | Out-Null
 docker compose build
 docker compose run --rm --no-deps mobguard-api python -c "from api.app import app; print(app.title)"
 Write-Host '[OK] Panel build and container smoke-check passed'
+Write-Host '[INFO] Build does not start containers. Run: docker compose up -d'

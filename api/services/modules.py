@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from behavioral_analyzers import BehavioralEngine
-from ipinfo_api import ipinfo_api
 from mobguard_core.scoring import ScoringContext, ScoringDependencies, evaluate_mobile_network
 from mobguard_platform import (
     DecisionBundle,
@@ -24,6 +23,16 @@ from ..context import APIContainer
 
 
 PROTOCOL_VERSION = "v1"
+
+
+def _ipinfo_client():
+    try:
+        from ipinfo_api import ipinfo_api
+    except ImportError as exc:
+        raise RuntimeError(
+            "Module ingestion dependencies are missing in mobguard-api image: install aiohttp and rebuild the API image"
+        ) from exc
+    return ipinfo_api
 
 
 def _bool_env(name: str, default: bool) -> bool:
@@ -123,6 +132,8 @@ async def _analyze_event(
     payload: dict[str, Any],
     rules: dict[str, Any],
 ) -> DecisionBundle:
+    ipinfo = _ipinfo_client()
+
     async def get_manual_override(target_ip: str) -> Optional[str]:
         manual_decision = await container.store.async_get_ip_override(target_ip)
         if manual_decision:
@@ -149,10 +160,10 @@ async def _analyze_event(
         config=rules,
         deps=ScoringDependencies(
             get_manual_override=get_manual_override,
-            get_ip_info=ipinfo_api.get_ip_info,
-            parse_asn=ipinfo_api.parse_asn,
-            normalize_isp_name=ipinfo_api.normalize_isp_name,
-            is_datacenter=ipinfo_api.is_datacenter,
+            get_ip_info=ipinfo.get_ip_info,
+            parse_asn=ipinfo.parse_asn,
+            normalize_isp_name=ipinfo.normalize_isp_name,
+            is_datacenter=ipinfo.is_datacenter,
             analyze_behavior=analyze_behavior,
             get_promoted_pattern=container.store.async_get_promoted_pattern,
             get_legacy_confidence=container.analysis_store.get_learning_confidence,
