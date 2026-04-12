@@ -50,7 +50,7 @@ What the build script does:
 2. validates required env keys are present
 3. ensures `runtime/` and `runtime/health/` exist
 4. runs `docker compose build`
-5. if host `python`/`python3` exists, runs a short optional smoke-check for `api.app`
+5. runs a short smoke-check inside the built `mobguard-api` container
 
 ## Run
 
