@@ -144,6 +144,15 @@ class ModuleProvisioningTests(unittest.TestCase):
         self.assertFalse(registered["module"]["managed"])
         self.assertEqual(registered["module"]["inbound_tags"], ["LEGACY-INBOUND"])
 
+    def test_remnawave_client_reads_runtime_config_and_env_file(self):
+        self.env_path.write_text("REMNAWAVE_API_TOKEN=runtime-token\n", encoding="utf-8")
+
+        client = module_service._remnawave_client(self.container)
+
+        self.assertEqual(client.base_url, "https://panel.example.com")
+        self.assertEqual(client.token, "runtime-token")
+        self.assertTrue(client.enabled)
+
 
 if __name__ == "__main__":
     unittest.main()

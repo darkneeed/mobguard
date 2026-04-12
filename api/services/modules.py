@@ -67,11 +67,24 @@ def _module_runtime(settings: dict[str, Any]) -> dict[str, Any]:
 
 
 def _remnawave_client(container: APIContainer) -> PanelClient:
+    runtime_settings = {}
+    runtime_config = getattr(container.runtime, "config", None)
+    if isinstance(runtime_config, dict):
+        runtime_settings = runtime_config.get("settings", {}) if isinstance(runtime_config.get("settings", {}), dict) else {}
     settings = _runtime_settings(container)
-    base_url = str(settings.get("remnawave_api_url") or settings.get("panel_url") or "").strip()
+    env_values = read_env_file(str(container.runtime.env_path))
+    base_url = str(
+        runtime_settings.get("remnawave_api_url")
+        or runtime_settings.get("panel_url")
+        or settings.get("remnawave_api_url")
+        or settings.get("panel_url")
+        or ""
+    ).strip()
     token = (
         os.getenv("REMNAWAVE_API_TOKEN")
+        or env_values.get("REMNAWAVE_API_TOKEN")
         or os.getenv("PANEL_TOKEN")
+        or env_values.get("PANEL_TOKEN")
         or ""
     )
     return PanelClient(base_url, token)
