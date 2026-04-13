@@ -130,6 +130,7 @@ class AnalysisStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_trackers_last_seen ON active_trackers(last_seen)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_decisions_expires ON ip_decisions(expires)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ip_history_uuid ON ip_history(uuid)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ip_history_uuid_timestamp ON ip_history(uuid, timestamp)")
             conn.commit()
 
     async def _run(self, fn, *args):
@@ -250,6 +251,33 @@ class AnalysisStore:
             (uuid, cutoff),
         )
         return int(row["cnt"]) if row else 0
+
+    async def get_recent_ip_history(
+        self,
+        uuid: str,
+        days: int,
+        *,
+        limit: int = 1000,
+    ) -> list[dict[str, str]]:
+        cutoff = (datetime.now() - timedelta(days=max(days, 1))).isoformat()
+        rows = await self.fetch_all(
+            """
+            SELECT ip, timestamp
+            FROM ip_history
+            WHERE uuid = ? AND timestamp >= ?
+            ORDER BY timestamp ASC
+            LIMIT ?
+            """,
+            (uuid, cutoff, max(int(limit), 1)),
+        )
+        return [
+            {
+                "ip": str(row["ip"] or "").strip(),
+                "timestamp": str(row["timestamp"] or "").strip(),
+            }
+            for row in rows
+            if str(row["ip"] or "").strip() and str(row["timestamp"] or "").strip()
+        ]
 
     async def get_session_lifetime(self, uuid: str, ip: str) -> float:
         row = await self.fetch_one(

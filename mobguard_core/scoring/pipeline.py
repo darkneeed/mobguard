@@ -249,8 +249,18 @@ def _apply_provider_guardrail(
         _refresh_provider_evidence(state, rules)
         return
 
-    if state.provider_service_conflict or state.provider_service_hint == "unknown":
+    if state.provider_service_conflict:
         state.provider_review_recommended = True
+    elif state.provider_service_hint == "unknown":
+        mobile_sources = state.bundle.sources_for_direction("MOBILE") - {
+            "provider_profile",
+            "generic_keyword",
+        }
+        state.provider_review_recommended = not (
+            provisional_verdict == "MOBILE"
+            and "behavior" in mobile_sources
+            and len(mobile_sources) >= 2
+        )
     elif provisional_verdict in {"HOME", "MOBILE"} and state.provider_service_hint != provisional_verdict.lower():
         state.provider_review_recommended = True
     elif state.provider_service_hint in {"home", "mobile"}:
@@ -458,6 +468,39 @@ async def evaluate_mobile_network(
                 direction="MOBILE",
                 message=f"High churn: {behavior['churn_rate']} IPs",
                 metadata={"churn_rate": behavior["churn_rate"]},
+            )
+        if int(behavior.get("history_mobile_bonus") or 0) > 0:
+            history_summary = behavior.get("history_summary", {})
+            state.bundle.add_reason(
+                code="behavior_history_mobile",
+                source="behavior",
+                weight=int(behavior.get("history_mobile_bonus") or 0),
+                kind="soft",
+                direction="MOBILE",
+                message="Historical subnet rotation",
+                metadata={
+                    "subnet": history_summary.get("top_subnet"),
+                    "distinct_ips": history_summary.get("top_subnet_distinct_ips"),
+                    "lookback_days": history_summary.get("lookback_days"),
+                    "min_gap_minutes": history_summary.get("min_gap_minutes"),
+                },
+            )
+        if int(behavior.get("history_home_penalty") or 0) < 0:
+            history_summary = behavior.get("history_summary", {})
+            state.bundle.add_reason(
+                code="behavior_history_home",
+                source="behavior",
+                weight=int(behavior.get("history_home_penalty") or 0),
+                kind="soft",
+                direction="HOME",
+                message="Stable same IP over time",
+                metadata={
+                    "ip": history_summary.get("top_same_ip"),
+                    "sample_count": history_summary.get("top_same_ip_count"),
+                    "span_hours": history_summary.get("top_same_ip_span_hours"),
+                    "lookback_days": history_summary.get("lookback_days"),
+                    "min_gap_minutes": history_summary.get("min_gap_minutes"),
+                },
             )
         if behavior["lifetime_penalty"] < 0:
             state.bundle.add_reason(

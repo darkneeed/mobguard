@@ -41,6 +41,13 @@ class StoreReviewFlowTests(unittest.TestCase):
                 "threshold_home": 15,
                 "threshold_probable_home": 30,
                 "threshold_probable_mobile": 50,
+                "history_lookback_days": 14,
+                "history_min_gap_minutes": 30,
+                "history_mobile_same_subnet_min_distinct_ips": 8,
+                "history_mobile_bonus": 40,
+                "history_home_same_ip_min_records": 5,
+                "history_home_same_ip_min_span_hours": 24,
+                "history_home_penalty": -25,
                 "provider_mobile_marker_bonus": 18,
                 "provider_home_marker_penalty": -18,
                 "provider_conflict_review_only": True,
@@ -149,6 +156,79 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertEqual(reopened.id, summary.id)
         self.assertEqual(reopened.status, "OPEN")
         self.assertEqual(reopened.repeat_count, 2)
+
+    def test_recheck_review_case_can_auto_skip_when_manual_review_is_no_longer_needed(self):
+        user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42, "module_id": "node-a", "module_name": "Node A"}
+        original_bundle = DecisionBundle(
+            ip="10.10.10.12",
+            verdict="HOME",
+            confidence_band="PROBABLE_HOME",
+            score=18,
+            asn=12345,
+            isp="MTS",
+        )
+        original_bundle.signal_flags["provider_evidence"] = {
+            "provider_key": "mts",
+            "provider_classification": "mixed",
+            "service_type_hint": "unknown",
+            "service_conflict": False,
+            "review_recommended": True,
+        }
+        event_id = self.store.record_analysis_event(user, original_bundle.ip, "TAG", original_bundle)
+        summary = self.store.ensure_review_case(user, original_bundle.ip, "TAG", original_bundle, event_id, "provider_conflict")
+
+        refreshed_bundle = DecisionBundle(
+            ip="10.10.10.12",
+            verdict="MOBILE",
+            confidence_band="HIGH_MOBILE",
+            score=72,
+            asn=12345,
+            isp="MTS",
+        )
+        refreshed_bundle.signal_flags["provider_evidence"] = {
+            "provider_key": "mts",
+            "provider_classification": "mixed",
+            "service_type_hint": "unknown",
+            "service_conflict": False,
+            "review_recommended": False,
+        }
+        refreshed_bundle.add_reason(
+            "behavior_history_mobile",
+            "behavior",
+            40,
+            "soft",
+            "MOBILE",
+            "Historical subnet rotation",
+            {"subnet": "188.120.1", "distinct_ips": 9},
+        )
+        refreshed_bundle.add_reason(
+            "learning_provider",
+            "learning",
+            6,
+            "soft",
+            "MOBILE",
+            "Promoted provider pattern mts",
+            {"pattern_type": "provider", "pattern_value": "mts", "support": 12, "precision": 1.0},
+        )
+
+        updated = self.store.recheck_review_case(
+            summary.id,
+            user,
+            refreshed_bundle.ip,
+            "TAG",
+            refreshed_bundle,
+            None,
+            "system",
+            1001,
+            "auto recheck",
+        )
+
+        self.assertEqual(updated["status"], "SKIPPED")
+        self.assertEqual(updated["verdict"], "MOBILE")
+        self.assertEqual(updated["confidence_band"], "HIGH_MOBILE")
+        self.assertEqual(updated["latest_event"]["verdict"], "MOBILE")
+        self.assertIn("behavior_history_mobile", updated["reason_codes"])
+        self.assertEqual(updated["resolutions"][0]["resolution"], "SKIP")
 
     def test_live_rules_revision_conflict_is_rejected(self):
         state = self.store.get_live_rules_state()

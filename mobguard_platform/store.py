@@ -53,6 +53,13 @@ EDITABLE_SETTINGS_KEYS = {
     "concurrency_threshold": int,
     "churn_window_hours": int,
     "churn_mobile_threshold": int,
+    "history_lookback_days": int,
+    "history_min_gap_minutes": int,
+    "history_mobile_same_subnet_min_distinct_ips": int,
+    "history_mobile_bonus": (int, float),
+    "history_home_same_ip_min_records": int,
+    "history_home_same_ip_min_span_hours": (int, float),
+    "history_home_penalty": (int, float),
     "lifetime_stationary_hours": (int, float),
     "subnet_mobile_ttl_days": int,
     "subnet_home_ttl_days": int,
@@ -87,6 +94,14 @@ DEFAULT_SETTINGS = {
     "review_ui_base_url": "",
     "provider_mobile_marker_bonus": 18,
     "provider_home_marker_penalty": -18,
+    "score_subnet_home_penalty": 0,
+    "history_lookback_days": 14,
+    "history_min_gap_minutes": 30,
+    "history_mobile_same_subnet_min_distinct_ips": 8,
+    "history_mobile_bonus": 40,
+    "history_home_same_ip_min_records": 5,
+    "history_home_same_ip_min_span_hours": 24,
+    "history_home_penalty": -25,
     "learning_promote_asn_min_support": 10,
     "learning_promote_asn_min_precision": 0.95,
     "learning_promote_combo_min_support": 5,
@@ -1587,6 +1602,104 @@ class PlatformStore:
             review_url=summary.get("review_url", ""),
         )
 
+    def recheck_review_case(
+        self,
+        case_id: int,
+        user: Optional[dict[str, Any]],
+        ip: str,
+        tag: str,
+        bundle: DecisionBundle,
+        review_reason: str | None,
+        actor: str,
+        actor_tg_id: Optional[int] = None,
+        note: str = "",
+    ) -> dict[str, Any]:
+        now = _utcnow()
+        reason_codes = json.dumps(bundle.reason_codes, ensure_ascii=False)
+
+        with self._connect() as conn:
+            case_row = conn.execute(
+                "SELECT id, review_reason, repeat_count FROM review_cases WHERE id = ?",
+                (case_id,),
+            ).fetchone()
+            if not case_row:
+                raise KeyError(f"Review case {case_id} not found")
+        event_id = self.record_analysis_event(user, ip, tag, bundle)
+
+        with self._connect() as conn:
+            next_status = "OPEN" if review_reason else "SKIPPED"
+            stored_review_reason = str(review_reason or case_row["review_reason"] or "unsure")
+            conn.execute(
+                """
+                UPDATE review_cases
+                SET status = ?,
+                    review_reason = ?,
+                    module_id = ?,
+                    module_name = ?,
+                    uuid = ?,
+                    username = ?,
+                    system_id = ?,
+                    telegram_id = ?,
+                    tag = ?,
+                    verdict = ?,
+                    confidence_band = ?,
+                    score = ?,
+                    isp = ?,
+                    asn = ?,
+                    punitive_eligible = ?,
+                    latest_event_id = ?,
+                    reason_codes_json = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    next_status,
+                    stored_review_reason,
+                    str((user or {}).get("module_id") or "").strip(),
+                    str((user or {}).get("module_name") or "").strip() or str((user or {}).get("module_id") or "").strip(),
+                    (user or {}).get("uuid"),
+                    (user or {}).get("username"),
+                    _coerce_optional_int((user or {}).get("id")),
+                    str((user or {}).get("telegramId")) if (user or {}).get("telegramId") is not None else None,
+                    tag,
+                    bundle.verdict,
+                    bundle.confidence_band,
+                    bundle.score,
+                    bundle.isp,
+                    bundle.asn,
+                    int(bundle.punitive_eligible),
+                    event_id,
+                    reason_codes,
+                    now,
+                    case_id,
+                ),
+            )
+            if next_status == "SKIPPED":
+                conn.execute(
+                    """
+                    INSERT INTO review_resolutions (case_id, event_id, resolution, actor, actor_tg_id, note, created_at)
+                    VALUES (?, ?, 'SKIP', ?, ?, ?, ?)
+                    """,
+                    (case_id, event_id, actor, actor_tg_id, note, now),
+                )
+                conn.execute(
+                    """
+                    DELETE FROM exact_ip_overrides
+                    WHERE ip = ? AND source = 'review_resolution'
+                    """,
+                    (ip,),
+                )
+                conn.execute(
+                    """
+                    DELETE FROM review_labels
+                    WHERE case_id = ?
+                    """,
+                    (case_id,),
+                )
+            conn.commit()
+
+        return self.get_review_case(case_id)
+
     def list_review_cases(self, filters: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         filters = filters or {}
         page = max(int(filters.get("page", 1) or 1), 1)
@@ -2270,6 +2383,33 @@ class PlatformStore:
             bundle,
             event_id,
             review_reason,
+        )
+
+    async def async_recheck_review_case(
+        self,
+        case_id: int,
+        user: Optional[dict[str, Any]],
+        ip: str,
+        tag: str,
+        bundle: DecisionBundle,
+        review_reason: str | None,
+        actor: str,
+        actor_tg_id: Optional[int] = None,
+        note: str = "",
+    ) -> dict[str, Any]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            self.recheck_review_case,
+            case_id,
+            user,
+            ip,
+            tag,
+            bundle,
+            review_reason,
+            actor,
+            actor_tg_id,
+            note,
         )
 
     async def async_promote_learning_patterns(self) -> None:

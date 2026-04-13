@@ -68,6 +68,24 @@ class LiveRulesValidationTests(unittest.TestCase):
             ],
         )
 
+    def test_history_settings_are_accepted(self):
+        payload = validate_live_rules_patch(
+            {
+                "settings": {
+                    "history_lookback_days": 14,
+                    "history_min_gap_minutes": 30,
+                    "history_mobile_same_subnet_min_distinct_ips": 8,
+                    "history_mobile_bonus": 40,
+                    "history_home_same_ip_min_records": 5,
+                    "history_home_same_ip_min_span_hours": 24,
+                    "history_home_penalty": -25,
+                }
+            }
+        )
+        self.assertEqual(payload["settings"]["history_lookback_days"], 14)
+        self.assertEqual(payload["settings"]["history_mobile_bonus"], 40)
+        self.assertEqual(payload["settings"]["history_home_penalty"], -25)
+
 
 if __name__ == "__main__":
     unittest.main()

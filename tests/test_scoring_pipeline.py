@@ -92,6 +92,9 @@ class ScoringPipelineTests(unittest.TestCase):
             "concurrency_immunity": False,
             "churn_bonus": 0,
             "churn_rate": 0,
+            "history_summary": {},
+            "history_mobile_bonus": 0,
+            "history_home_penalty": 0,
             "lifetime_penalty": 0,
             "lifetime_hours": 0,
             "subnet_bonus": 0,
@@ -243,6 +246,41 @@ class ScoringPipelineTests(unittest.TestCase):
         evidence = bundle.signal_flags["provider_evidence"]
         self.assertEqual(bundle.verdict, "MOBILE")
         self.assertFalse(evidence["review_recommended"])
+        self.assertIsNone(review_reason_for_bundle(bundle))
+
+    def test_mixed_provider_without_markers_can_auto_mobile_with_behavior_and_learning(self):
+        deps, _ = self.make_deps(
+            org="AS12389 MTS",
+            hostname="gw.mts.example",
+            promoted_provider={"decision": "MOBILE", "support": 20, "precision": 1.0},
+            behavior={
+                "logs": ["+40 Historical subnet rotation"],
+                "total_behavior_score": 55,
+                "concurrency_immunity": False,
+                "churn_bonus": 15,
+                "churn_rate": 2,
+                "history_summary": {
+                    "top_subnet": "188.120.1",
+                    "top_subnet_distinct_ips": 9,
+                    "lookback_days": 14,
+                    "min_gap_minutes": 30,
+                },
+                "history_mobile_bonus": 40,
+                "history_home_penalty": 0,
+                "lifetime_penalty": 0,
+                "lifetime_hours": 0,
+                "subnet_bonus": 0,
+                "subnet": None,
+            },
+        )
+        bundle = asyncio.run(
+            evaluate_mobile_network(ScoringContext(ip="6.6.6.9", uuid="u9", tag="TAG"), BASE_CONFIG, deps)
+        )
+        evidence = bundle.signal_flags["provider_evidence"]
+        self.assertEqual(bundle.verdict, "MOBILE")
+        self.assertFalse(evidence["review_recommended"])
+        self.assertIn("behavior_history_mobile", bundle.reason_codes)
+        self.assertIn("learning_provider", bundle.reason_codes)
         self.assertIsNone(review_reason_for_bundle(bundle))
 
     def test_runtime_config_removed_noisy_keywords_do_not_create_signals(self):

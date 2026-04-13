@@ -81,7 +81,7 @@ class ScoreWeights:
             ip_api_mobile_bonus=int(settings.get("ip_api_mobile_bonus", 30)),
             pure_home_asn_penalty=int(settings.get("pure_home_asn_penalty", -100)),
             score_subnet_mobile_bonus=int(settings.get("score_subnet_mobile_bonus", 40)),
-            score_subnet_home_penalty=int(settings.get("score_subnet_home_penalty", -10)),
+            score_subnet_home_penalty=int(settings.get("score_subnet_home_penalty", 0)),
             score_churn_high_bonus=int(settings.get("score_churn_high_bonus", 30)),
             score_churn_medium_bonus=int(settings.get("score_churn_medium_bonus", 15)),
             score_stationary_penalty=int(settings.get("score_stationary_penalty", -5)),

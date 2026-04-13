@@ -255,6 +255,9 @@ async def _analyze_event(
     user_data: dict[str, Any],
     payload: dict[str, Any],
     rules: dict[str, Any],
+    *,
+    persist_behavior_state: bool = True,
+    persist_decision: bool = True,
 ) -> DecisionBundle:
     ipinfo = _ipinfo_client()
 
@@ -267,9 +270,18 @@ async def _analyze_event(
     behavior_engine = BehavioralEngine(container.analysis_store, rules)
 
     async def analyze_behavior(current_uuid: str, target_ip: str, current_tag: str) -> dict[str, Any]:
-        result = await behavior_engine.analyze(current_uuid, target_ip, current_tag)
+        result = await behavior_engine.analyze(
+            current_uuid,
+            target_ip,
+            current_tag,
+            persist_state=persist_behavior_state,
+        )
         result["subnet"] = container.analysis_store.get_subnet(target_ip)
         return result
+
+    async def record_decision(ip: str, uuid: str, verdict: str) -> None:
+        if persist_decision:
+            await behavior_engine.record_decision(ip, uuid, verdict)
 
     def record_stats(asn: Optional[int], status: str, matched_kw: Optional[str], org: str) -> None:
         # Daily/stat buffers are not part of the panel control-plane contract in v1.
@@ -292,7 +304,7 @@ async def _analyze_event(
             get_promoted_pattern=container.store.async_get_promoted_pattern,
             get_legacy_confidence=container.analysis_store.get_learning_confidence,
             check_ip_api_mobile=lambda _: asyncio.sleep(0, result=None),
-            record_decision=behavior_engine.record_decision,
+            record_decision=record_decision,
             record_stats=record_stats,
         ),
     )

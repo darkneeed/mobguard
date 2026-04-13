@@ -5,7 +5,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, Query
 
 from ..dependencies import get_container, get_session
-from ..schemas.reviews import ReviewResolutionRequest, RulesUpdateRequest
+from ..schemas.reviews import ReviewRecheckRequest, ReviewResolutionRequest, RulesUpdateRequest
 from ..services import reviews as review_service
 
 
@@ -57,6 +57,24 @@ def list_reviews(
             "page_size": page_size,
             "sort": sort,
         },
+    )
+
+
+@router.post("/reviews/recheck")
+async def recheck_reviews(
+    body: ReviewRecheckRequest,
+    session: dict[str, Any] = Depends(get_session),
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    return await review_service.recheck_reviews(
+        container,
+        {
+            "limit": body.limit,
+            "module_id": body.module_id,
+            "review_reason": body.review_reason,
+        },
+        session.get("username") or session.get("first_name") or f"tg:{session['telegram_id']}",
+        session["telegram_id"],
     )
 
 
