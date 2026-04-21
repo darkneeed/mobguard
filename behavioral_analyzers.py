@@ -13,6 +13,31 @@ def _parse_history_timestamp(raw_value: str) -> datetime | None:
         return None
 
 
+def _settings(config: dict[str, Any]) -> dict[str, Any]:
+    settings = config.get("settings", {})
+    return settings if isinstance(settings, dict) else {}
+
+
+def _int_setting(config: dict[str, Any], key: str, default: int) -> int:
+    value = _settings(config).get(key, default)
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_setting(config: dict[str, Any], key: str, default: float) -> float:
+    value = _settings(config).get(key, default)
+    if value in (None, ""):
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class ConcurrencyDetector:
     
     def __init__(self, db, config):
@@ -21,7 +46,7 @@ class ConcurrencyDetector:
     
     async def check(self, ip: str, uuid: str) -> Tuple[bool, int]:
         # Порог берётся из конфига (concurrency_threshold), по умолчанию 2
-        threshold = self.config['settings'].get('concurrency_threshold', 2)
+        threshold = _int_setting(self.config, 'concurrency_threshold', 2)
         concurrent_count = await self.db.count_concurrent_users(ip, minutes=15)
         immunity = concurrent_count >= threshold
         
@@ -53,9 +78,9 @@ class ChurnAnalyzer:
         Возвращает бонус и лог на основе уже вычисленного churn_rate
         """
         # Настройки берём из конфига
-        high_threshold = self.config['settings'].get('churn_mobile_threshold', 3)
-        high_bonus = self.config['settings'].get('score_churn_high_bonus', 30)
-        medium_bonus = self.config['settings'].get('score_churn_medium_bonus', 15)
+        high_threshold = _int_setting(self.config, 'churn_mobile_threshold', 3)
+        high_bonus = _int_setting(self.config, 'score_churn_high_bonus', 30)
+        medium_bonus = _int_setting(self.config, 'score_churn_medium_bonus', 15)
         
         if churn_rate >= high_threshold:
             log = f"+{high_bonus} High churn ({churn_rate} IPs/{hours}h)"
@@ -74,9 +99,8 @@ class HistoryPatternAnalyzer:
         self.config = config
 
     async def summarize(self, uuid: str) -> Dict[str, Any]:
-        settings = self.config['settings']
-        lookback_days = max(int(settings.get('history_lookback_days', 14)), 1)
-        min_gap_minutes = max(int(settings.get('history_min_gap_minutes', 30)), 1)
+        lookback_days = max(_int_setting(self.config, 'history_lookback_days', 14), 1)
+        min_gap_minutes = max(_int_setting(self.config, 'history_min_gap_minutes', 30), 1)
         raw_rows = await self.db.get_recent_ip_history(uuid, lookback_days)
         samples: list[tuple[str, datetime]] = []
         last_kept_at: datetime | None = None
@@ -132,8 +156,8 @@ class HistoryPatternAnalyzer:
         }
 
     def get_mobility_score(self, summary: Dict[str, Any]) -> Tuple[int, str]:
-        threshold = self.config['settings'].get('history_mobile_same_subnet_min_distinct_ips', 8)
-        bonus = self.config['settings'].get('history_mobile_bonus', 40)
+        threshold = _int_setting(self.config, 'history_mobile_same_subnet_min_distinct_ips', 8)
+        bonus = _int_setting(self.config, 'history_mobile_bonus', 40)
         subnet = str(summary.get("top_subnet") or "").strip()
         subnet_distinct_ips = int(summary.get("top_subnet_distinct_ips") or 0)
         if subnet and subnet_distinct_ips >= threshold:
@@ -146,9 +170,9 @@ class HistoryPatternAnalyzer:
         return 0, ""
 
     def get_home_score(self, summary: Dict[str, Any]) -> Tuple[int, str]:
-        min_records = self.config['settings'].get('history_home_same_ip_min_records', 5)
-        min_span_hours = self.config['settings'].get('history_home_same_ip_min_span_hours', 24)
-        penalty = self.config['settings'].get('history_home_penalty', -25)
+        min_records = _int_setting(self.config, 'history_home_same_ip_min_records', 5)
+        min_span_hours = _float_setting(self.config, 'history_home_same_ip_min_span_hours', 24.0)
+        penalty = _int_setting(self.config, 'history_home_penalty', -25)
         same_ip = str(summary.get("top_same_ip") or "").strip()
         same_ip_count = int(summary.get("top_same_ip_count") or 0)
         same_ip_span_hours = float(summary.get("top_same_ip_span_hours") or 0.0)
@@ -170,9 +194,9 @@ class LifetimeAnalyzer:
     
     def get_stationarity_score(self, lifetime: float) -> Tuple[int, str]:
         """Оценка стационарности на основе уже полученного lifetime"""
-        hours_threshold = self.config['settings'].get('lifetime_stationary_hours', 12)
+        hours_threshold = _float_setting(self.config, 'lifetime_stationary_hours', 12.0)
         # Штраф за длительную стационарность берётся из конфига
-        penalty = self.config['settings'].get('score_stationary_penalty', -5)
+        penalty = _int_setting(self.config, 'score_stationary_penalty', -5)
         is_stationary = lifetime > hours_threshold
         
         if is_stationary:
@@ -226,10 +250,10 @@ class SubnetIntelligence:
         - 1+ MOBILE: +40 (сильный бонус, высокий приоритет)
         - 3+ HOME: -10 (слабый штраф, низкий приоритет)
         """
-        mobile_bonus = self.config['settings'].get('score_subnet_mobile_bonus', 40)
-        home_penalty = self.config['settings'].get('score_subnet_home_penalty', 0)
-        mobile_threshold = self.config['settings'].get('subnet_mobile_min_evidence', 1)
-        home_threshold = self.config['settings'].get('subnet_home_min_evidence', 3)
+        mobile_bonus = _int_setting(self.config, 'score_subnet_mobile_bonus', 40)
+        home_penalty = _int_setting(self.config, 'score_subnet_home_penalty', 0)
+        mobile_threshold = _int_setting(self.config, 'subnet_mobile_min_evidence', 1)
+        home_threshold = _int_setting(self.config, 'subnet_home_min_evidence', 3)
         
         evidence = await self.get_evidence(ip)
         subnet = self.db.get_subnet(ip)
@@ -265,7 +289,7 @@ class BehavioralEngine:
             logs.append(f"⚡ CGNAT: {concurrent_users} concurrent users → HOME blocked")
         
         # 2. Churn (мобильность) — ОПТИМИЗИРОВАНО
-        churn_hours = self.config['settings'].get('churn_window_hours', 6)
+        churn_hours = _int_setting(self.config, 'churn_window_hours', 6)
         
         # 1 запрос к БД
         churn_rate = await self.churn.calculate_churn(uuid, churn_hours)
@@ -296,7 +320,7 @@ class BehavioralEngine:
         lifetime_penalty, lifetime_log = self.lifetime.get_stationarity_score(lifetime_hours)
         
         # Порог стационарности из конфига
-        stat_threshold = self.config['settings'].get('lifetime_stationary_hours', 12)
+        stat_threshold = _float_setting(self.config, 'lifetime_stationary_hours', 12.0)
         is_stationary = lifetime_hours > stat_threshold
         
         if lifetime_log:

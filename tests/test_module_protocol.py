@@ -229,6 +229,129 @@ class ModuleProtocolTests(unittest.TestCase):
         self.assertEqual(result["accepted"], 2)
         self.assertEqual(result["processed"], 2)
 
+    def test_event_batch_real_processing_does_not_crash_when_recording_behavioral_decision(self):
+        self.store.create_managed_module(
+            "node-a",
+            "token-a",
+            "encrypted-token-a",
+            module_name="Node A",
+            metadata={
+                "inbound_tags": ["SELFSTEAL_RU-YANDEX_TCP"],
+            },
+        )
+        module_service.register_module(
+            self.container,
+            {
+                "module_id": "node-a",
+                "module_name": "Node A",
+                "version": "1.0.0",
+                "protocol_version": "v1",
+            },
+            "token-a",
+        )
+
+        class FakeIPInfo:
+            async def get_ip_info(self, _ip):
+                return {"org": "AS51547 Mobile Operator", "hostname": "mobile.example"}
+
+            def parse_asn(self, value):
+                return 51547 if value else None
+
+            def normalize_isp_name(self, value):
+                return str(value or "")
+
+            def is_datacenter(self, _org, _hostname):
+                return False
+
+        with patch.object(module_service, "_ipinfo_client", return_value=FakeIPInfo()), patch.object(
+            module_service,
+            "_remnawave_client",
+            return_value=SimpleNamespace(enabled=False, get_user_data=lambda _identifier: None),
+        ):
+            result = asyncio.run(
+                module_service.ingest_module_events(
+                    self.container,
+                    {
+                        "module_id": "node-a",
+                        "protocol_version": "v1",
+                        "items": [
+                            {
+                                "event_uid": "live-1",
+                                "occurred_at": "2026-04-11T12:00:00",
+                                "ip": "1.2.3.4",
+                                "tag": "SELFSTEAL_RU-YANDEX_TCP",
+                                "uuid": "123e4567-e89b-12d3-a456-426614174000",
+                            }
+                        ],
+                    },
+                    "token-a",
+                )
+            )
+
+        self.assertEqual(result["accepted"], 1)
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["results"][0]["status"], "processed")
+
+    def test_event_batch_tolerates_none_runtime_settings_values(self):
+        payload = json.loads(self.config_path.read_text(encoding="utf-8"))
+        payload.setdefault("settings", {})
+        payload["settings"]["pure_asn_score"] = None
+        payload["settings"]["mixed_asn_score"] = None
+        self.config_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        self.store.sync_runtime_config(payload)
+
+        self.store.create_managed_module(
+            "node-b",
+            "token-b",
+            "encrypted-token-b",
+            module_name="Node B",
+            metadata={"inbound_tags": ["SELFSTEAL_RU-YANDEX_TCP"]},
+        )
+        module_service.register_module(
+            self.container,
+            {
+                "module_id": "node-b",
+                "module_name": "Node B",
+                "version": "1.0.0",
+                "protocol_version": "v1",
+            },
+            "token-b",
+        )
+
+        async def fake_process(_runtime, _module, payload):
+            return {
+                "status": "processed",
+                "event_id": 201,
+                "review_case_id": None,
+                "bundle": {"ip": payload["ip"]},
+                "review_reason": None,
+                "enforcement": None,
+            }
+
+        with patch.object(module_service, "_process_module_event", fake_process):
+            result = asyncio.run(
+                module_service.ingest_module_events(
+                    self.container,
+                    {
+                        "module_id": "node-b",
+                        "protocol_version": "v1",
+                        "items": [
+                            {
+                                "event_uid": "none-settings-1",
+                                "occurred_at": "2026-04-11T12:00:00",
+                                "ip": "1.2.3.9",
+                                "tag": "SELFSTEAL_RU-YANDEX_TCP",
+                                "uuid": "uuid-9",
+                            }
+                        ],
+                    },
+                    "token-b",
+                )
+            )
+
+        self.assertEqual(result["accepted"], 1)
+        self.assertEqual(result["processed"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,27 @@ from dataclasses import dataclass
 from typing import Any
 
 
+def _int_setting(settings: dict[str, Any], key: str, default: int) -> int:
+    value = settings.get(key, default)
+    if value in (None, ""):
+        return default
+    return int(value)
+
+
+def _float_setting(settings: dict[str, Any], key: str, default: float) -> float:
+    value = settings.get(key, default)
+    if value in (None, ""):
+        return default
+    return float(value)
+
+
+def _bool_setting(settings: dict[str, Any], key: str, default: bool) -> bool:
+    value = settings.get(key, default)
+    if value in (None, ""):
+        return default
+    return bool(value)
+
+
 @dataclass(frozen=True)
 class ProviderProfile:
     key: str
@@ -72,19 +93,19 @@ class ScoreWeights:
     def from_config(cls, config: dict[str, Any]) -> "ScoreWeights":
         settings = config.get("settings", {})
         return cls(
-            pure_asn_score=int(settings.get("pure_asn_score", 60)),
-            mixed_asn_score=int(settings.get("mixed_asn_score", 45)),
-            ptr_home_penalty=int(settings.get("ptr_home_penalty", -20)),
-            mobile_kw_bonus=int(settings.get("mobile_kw_bonus", 20)),
-            provider_mobile_marker_bonus=int(settings.get("provider_mobile_marker_bonus", 18)),
-            provider_home_marker_penalty=int(settings.get("provider_home_marker_penalty", -18)),
-            ip_api_mobile_bonus=int(settings.get("ip_api_mobile_bonus", 30)),
-            pure_home_asn_penalty=int(settings.get("pure_home_asn_penalty", -100)),
-            score_subnet_mobile_bonus=int(settings.get("score_subnet_mobile_bonus", 40)),
-            score_subnet_home_penalty=int(settings.get("score_subnet_home_penalty", 0)),
-            score_churn_high_bonus=int(settings.get("score_churn_high_bonus", 30)),
-            score_churn_medium_bonus=int(settings.get("score_churn_medium_bonus", 15)),
-            score_stationary_penalty=int(settings.get("score_stationary_penalty", -5)),
+            pure_asn_score=_int_setting(settings, "pure_asn_score", 60),
+            mixed_asn_score=_int_setting(settings, "mixed_asn_score", 45),
+            ptr_home_penalty=_int_setting(settings, "ptr_home_penalty", -20),
+            mobile_kw_bonus=_int_setting(settings, "mobile_kw_bonus", 20),
+            provider_mobile_marker_bonus=_int_setting(settings, "provider_mobile_marker_bonus", 18),
+            provider_home_marker_penalty=_int_setting(settings, "provider_home_marker_penalty", -18),
+            ip_api_mobile_bonus=_int_setting(settings, "ip_api_mobile_bonus", 30),
+            pure_home_asn_penalty=_int_setting(settings, "pure_home_asn_penalty", -100),
+            score_subnet_mobile_bonus=_int_setting(settings, "score_subnet_mobile_bonus", 40),
+            score_subnet_home_penalty=_int_setting(settings, "score_subnet_home_penalty", 0),
+            score_churn_high_bonus=_int_setting(settings, "score_churn_high_bonus", 30),
+            score_churn_medium_bonus=_int_setting(settings, "score_churn_medium_bonus", 15),
+            score_stationary_penalty=_int_setting(settings, "score_stationary_penalty", -5),
         )
 
 
@@ -102,15 +123,17 @@ class Thresholds:
     def from_config(cls, config: dict[str, Any]) -> "Thresholds":
         settings = config.get("settings", {})
         return cls(
-            threshold_probable_home=int(settings.get("threshold_probable_home", 30)),
-            threshold_probable_mobile=int(settings.get("threshold_probable_mobile", 50)),
-            threshold_home=int(settings.get("threshold_home", 15)),
-            threshold_mobile=int(settings.get("threshold_mobile", 60)),
-            auto_enforce_requires_hard_or_multi_signal=bool(
-                settings.get("auto_enforce_requires_hard_or_multi_signal", True)
+            threshold_probable_home=_int_setting(settings, "threshold_probable_home", 30),
+            threshold_probable_mobile=_int_setting(settings, "threshold_probable_mobile", 50),
+            threshold_home=_int_setting(settings, "threshold_home", 15),
+            threshold_mobile=_int_setting(settings, "threshold_mobile", 60),
+            auto_enforce_requires_hard_or_multi_signal=_bool_setting(
+                settings,
+                "auto_enforce_requires_hard_or_multi_signal",
+                True,
             ),
-            probable_home_warning_only=bool(settings.get("probable_home_warning_only", True)),
-            provider_conflict_review_only=bool(settings.get("provider_conflict_review_only", True)),
+            probable_home_warning_only=_bool_setting(settings, "probable_home_warning_only", True),
+            provider_conflict_review_only=_bool_setting(settings, "provider_conflict_review_only", True),
         )
 
 
@@ -125,10 +148,10 @@ class LearningThresholds:
     def from_config(cls, config: dict[str, Any]) -> "LearningThresholds":
         settings = config.get("settings", {})
         return cls(
-            learning_promote_asn_min_support=int(settings.get("learning_promote_asn_min_support", 10)),
-            learning_promote_asn_min_precision=float(settings.get("learning_promote_asn_min_precision", 0.95)),
-            learning_promote_combo_min_support=int(settings.get("learning_promote_combo_min_support", 5)),
-            learning_promote_combo_min_precision=float(settings.get("learning_promote_combo_min_precision", 0.9)),
+            learning_promote_asn_min_support=_int_setting(settings, "learning_promote_asn_min_support", 10),
+            learning_promote_asn_min_precision=_float_setting(settings, "learning_promote_asn_min_precision", 0.95),
+            learning_promote_combo_min_support=_int_setting(settings, "learning_promote_combo_min_support", 5),
+            learning_promote_combo_min_precision=_float_setting(settings, "learning_promote_combo_min_precision", 0.9),
         )
 
 

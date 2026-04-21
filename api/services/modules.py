@@ -296,7 +296,7 @@ async def _analyze_event(
 
     async def record_decision(ip: str, uuid: str, verdict: str) -> None:
         if persist_decision:
-            await behavior_engine.record_decision(ip, uuid, verdict)
+            await runtime.behavior_engine.record_decision(ip, uuid, verdict)
 
     def record_stats(asn: Optional[int], status: str, matched_kw: Optional[str], org: str) -> None:
         # Daily/stat buffers are not part of the panel control-plane contract in v1.

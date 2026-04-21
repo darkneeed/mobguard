@@ -63,6 +63,37 @@ BASE_CONFIG = {
 
 
 class BehavioralAnalyzersTests(unittest.TestCase):
+    def test_none_settings_fall_back_to_defaults(self):
+        db = _FakeAnalysisDb([])
+        config = {
+            "settings": {
+                "concurrency_threshold": None,
+                "churn_window_hours": None,
+                "churn_mobile_threshold": None,
+                "score_churn_high_bonus": None,
+                "score_churn_medium_bonus": None,
+                "history_lookback_days": None,
+                "history_min_gap_minutes": None,
+                "history_mobile_same_subnet_min_distinct_ips": None,
+                "history_mobile_bonus": None,
+                "history_home_same_ip_min_records": None,
+                "history_home_same_ip_min_span_hours": None,
+                "history_home_penalty": None,
+                "lifetime_stationary_hours": None,
+                "score_stationary_penalty": None,
+                "score_subnet_mobile_bonus": None,
+                "score_subnet_home_penalty": None,
+                "subnet_mobile_min_evidence": None,
+                "subnet_home_min_evidence": None,
+            }
+        }
+        engine = BehavioralEngine(db, config)
+
+        result = asyncio.run(engine.analyze("uuid-fallback", "1.2.3.4", "TAG", persist_state=False))
+
+        self.assertEqual(result["total_behavior_score"], 0)
+        self.assertFalse(result["concurrency_immunity"])
+
     def test_history_mobile_signal_ignores_short_gap_duplicates(self):
         db = _FakeAnalysisDb(
             [
