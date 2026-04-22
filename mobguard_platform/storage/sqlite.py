@@ -14,7 +14,6 @@ class SQLiteStorage:
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=self.timeout)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
         return conn
 

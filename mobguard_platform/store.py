@@ -612,6 +612,7 @@ class PlatformStore:
     def init_schema(self) -> None:
         seed_rules = self.build_seed_rules()
         with self._connect() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS modules (
