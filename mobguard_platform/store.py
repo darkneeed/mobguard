@@ -4,6 +4,7 @@ import asyncio
 import copy
 import hashlib
 import json
+import logging
 import os
 import sqlite3
 from datetime import datetime, timedelta
@@ -125,6 +126,9 @@ DEFAULT_SETTINGS = {
     "orphan_analysis_events_retention_days": 30,
     "resolved_review_retention_days": 90,
 }
+
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> str:
@@ -454,6 +458,7 @@ class PlatformStore:
         self._rules_cache: Optional[dict[str, Any]] = None
         self._rules_cache_meta: Optional[dict[str, Any]] = None
         self._rules_cache_mtime: Optional[float] = None
+        self._mirrored_live_rules_marker: Optional[tuple[int, str, str]] = None
         self.storage = SQLiteStorage(db_path)
         self.sessions = AdminSessionRepository(self.storage)
         self.admin_security = AdminSecurityRepository(self.storage)
@@ -567,25 +572,42 @@ class PlatformStore:
         self._rules_cache_mtime = os.path.getmtime(self.config_path)
 
     def _mirror_live_rules_state(self, rules: dict[str, Any], meta: dict[str, Any]) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO live_rules (id, rules_json, revision, updated_at, updated_by)
-                VALUES (1, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    rules_json = excluded.rules_json,
-                    revision = excluded.revision,
-                    updated_at = excluded.updated_at,
-                    updated_by = excluded.updated_by
-                """,
-                (
-                    json.dumps(rules, ensure_ascii=False),
-                    int(meta.get("revision", 1)),
-                    meta.get("updated_at", ""),
-                    "system" if meta.get("updated_by") == "bootstrap" else meta.get("updated_by", "system"),
-                ),
-            )
-            conn.commit()
+        marker = (
+            int(meta.get("revision", 1)),
+            str(meta.get("updated_at", "")),
+            "system" if meta.get("updated_by") == "bootstrap" else str(meta.get("updated_by", "system")),
+        )
+        if self._mirrored_live_rules_marker == marker:
+            return
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO live_rules (id, rules_json, revision, updated_at, updated_by)
+                    VALUES (1, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        rules_json = excluded.rules_json,
+                        revision = excluded.revision,
+                        updated_at = excluded.updated_at,
+                        updated_by = excluded.updated_by
+                    """,
+                    (
+                        json.dumps(rules, ensure_ascii=False),
+                        marker[0],
+                        marker[1],
+                        marker[2],
+                    ),
+                )
+                conn.commit()
+            self._mirrored_live_rules_marker = marker
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                # This mirror is auxiliary: serving config from file is the source of truth.
+                # Skip repeated retries for the same revision to avoid lock storms on read paths.
+                self._mirrored_live_rules_marker = marker
+                logger.warning("Skipping live_rules mirror update because SQLite is locked")
+                return
+            raise
 
     def init_schema(self) -> None:
         seed_rules = self.build_seed_rules()
@@ -1095,12 +1117,18 @@ class PlatformStore:
 
             live_rules = conn.execute("SELECT rules_json FROM live_rules WHERE id = 1").fetchone()
             if not live_rules:
+                seed_meta = {"revision": 1, "updated_at": _utcnow(), "updated_by": "system"}
                 conn.execute(
                     """
                     INSERT INTO live_rules (id, rules_json, revision, updated_at, updated_by)
                     VALUES (1, ?, 1, ?, ?)
                     """,
-                    (json.dumps(seed_rules, ensure_ascii=False), _utcnow(), "system"),
+                    (json.dumps(seed_rules, ensure_ascii=False), seed_meta["updated_at"], seed_meta["updated_by"]),
+                )
+                self._mirrored_live_rules_marker = (
+                    int(seed_meta["revision"]),
+                    str(seed_meta["updated_at"]),
+                    str(seed_meta["updated_by"]),
                 )
             conn.commit()
 
@@ -1291,6 +1319,11 @@ class PlatformStore:
                 (actor, actor_tg_id, now, json.dumps(normalized, ensure_ascii=False)),
             )
             conn.commit()
+        self._mirrored_live_rules_marker = (
+            int(next_revision),
+            str(now),
+            str(actor),
+        )
         return {
             "rules": merged,
             "revision": next_revision,

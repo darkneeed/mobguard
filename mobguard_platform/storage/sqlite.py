@@ -9,7 +9,7 @@ from typing import Optional
 class SQLiteStorage:
     db_path: str
     timeout: int = 30
-    busy_timeout_ms: int = 5000
+    busy_timeout_ms: int = 30000
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=self.timeout)
