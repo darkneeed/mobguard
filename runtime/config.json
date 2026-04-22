@@ -91,7 +91,7 @@
       "aliases": ["megafon", "megaphone"],
       "mobile_markers": ["mobile", "lte", "5g", "pgw"],
       "home_markers": ["fiber", "gpon", "fttb", "ftth"],
-      "asns": [31163]
+      "asns": [31163, 31213]
     },
     {
       "key": "t2",
