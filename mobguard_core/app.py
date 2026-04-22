@@ -8,6 +8,7 @@ import aiohttp
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, Any, List, Set
+from urllib.parse import quote
 
 # Compatibility-only runtime:
 # panel/shared logic is the canonical implementation. Keep this module working,
@@ -47,6 +48,11 @@ from mobguard_platform.runtime_admin_defaults import (
     telegram_event_notifications_enabled,
     telegram_notification_setting,
 )
+from mobguard_platform.usage_profile import (
+    build_usage_profile_admin_lines,
+    build_usage_profile_snapshot,
+    build_usage_profile_template_context,
+)
 from mobguard_core.scoring import ScoringContext, ScoringDependencies, evaluate_mobile_network
 
 # ================= CONFIGURATION & SETUP =================
@@ -66,8 +72,8 @@ CONFIG = RUNTIME_CONTEXT.config
 # Env variables
 TG_MAIN_BOT_TOKEN = os.getenv("TG_MAIN_BOT_TOKEN")
 TG_ADMIN_BOT_TOKEN = os.getenv("TG_ADMIN_BOT_TOKEN")
-TG_ADMIN_CHAT_ID = CONFIG['settings'].get('tg_admin_chat_id', "-1003304969829")
-TG_TOPIC_ID = CONFIG['settings'].get('tg_topic_id', 58)
+TG_ADMIN_CHAT_ID = CONFIG['settings'].get('tg_admin_chat_id', "")
+TG_TOPIC_ID = CONFIG['settings'].get('tg_topic_id', 0)
 PANEL_TOKEN = os.getenv("PANEL_TOKEN")
 
 # Global State
@@ -514,6 +520,87 @@ class PanelAPI:
                 await _own_session.close()
         return None
 
+    async def get_user_hwid_devices(self, user_uuid: str) -> List[Dict[str, Any]]:
+        normalized_uuid = str(user_uuid or "").strip()
+        if not normalized_uuid:
+            self.last_error = "User UUID is empty"
+            return []
+
+        _own_session = None
+        if self._session and not self._session.closed:
+            session = self._session
+        else:
+            _own_session = aiohttp.ClientSession()
+            session = _own_session
+
+        try:
+            for endpoint in (
+                f"/api/hwid/devices/{quote(normalized_uuid)}",
+                f"/api/v2/users/{quote(normalized_uuid)}/hwid-devices",
+            ):
+                try:
+                    async with session.get(f"{self.base_url}{endpoint}", headers=self.headers, timeout=5) as resp:
+                        if resp.status != 200:
+                            continue
+                        payload = await resp.json()
+                        response = payload.get('response', payload)
+                        if isinstance(response, list):
+                            return [item for item in response if isinstance(item, dict)]
+                        if isinstance(response, dict):
+                            devices = response.get("devices", [])
+                            if isinstance(devices, list):
+                                return [item for item in devices if isinstance(item, dict)]
+                except Exception:
+                    continue
+        finally:
+            if _own_session:
+                await _own_session.close()
+        return []
+
+    async def get_user_traffic_stats(
+        self,
+        user_uuid: str,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+        top_nodes_limit: int = 50,
+    ) -> Optional[Dict[str, Any]]:
+        normalized_uuid = str(user_uuid or "").strip()
+        if not normalized_uuid:
+            self.last_error = "User UUID is empty"
+            return None
+
+        now = datetime.utcnow()
+        start_value = start or (now - timedelta(days=1)).strftime('%Y-%m-%d')
+        end_value = end or (now + timedelta(days=1)).strftime('%Y-%m-%d')
+        url = (
+            f"{self.base_url}/api/bandwidth-stats/users/{quote(normalized_uuid)}"
+            f"?start={start_value}&end={end_value}&topNodesLimit={max(int(top_nodes_limit), 1)}"
+        )
+
+        _own_session = None
+        if self._session and not self._session.closed:
+            session = self._session
+        else:
+            _own_session = aiohttp.ClientSession()
+            session = _own_session
+
+        try:
+            async with session.get(url, headers=self.headers, timeout=5) as resp:
+                if resp.status != 200:
+                    self.last_error = f"Traffic stats request failed with HTTP {resp.status}"
+                    return None
+                payload = await resp.json()
+                response = payload.get('response', payload)
+                return response if isinstance(response, dict) else None
+        except Exception as e:
+            self.last_error = f"Traffic stats request failed: {e}"
+            logger.debug("Panel traffic stats lookup failed for %s: %s", normalized_uuid, e)
+            return None
+        finally:
+            if _own_session:
+                await _own_session.close()
+
     def _cache_user(self, user: Dict):
         uuid = user.get('uuid')
         if uuid:
@@ -911,6 +998,14 @@ def render_runtime_template(template_key: str, context: Dict[str, Any]) -> str:
     return render_optional_template(enforcement_template(template_key), context, escape_html)
 
 
+def admin_scenario_enabled(scenario: str) -> bool:
+    return admin_bot_available() and telegram_event_notifications_enabled(
+        settings(),
+        "admin",
+        scenario,
+    )
+
+
 def refresh_runtime_state_from_config() -> None:
     global CONFIG, TG_ADMIN_CHAT_ID, TG_TOPIC_ID, DEBUG_LEVEL, DEBUG_MODE, DRY_RUN, EXEMPT_UUIDS, TG_MIN_INTERVAL
 
@@ -922,8 +1017,8 @@ def refresh_runtime_state_from_config() -> None:
     ipinfo_api.set_config(CONFIG)
     panel.base_url = settings().get('panel_url', panel.base_url)
     network_analyzer.db_path = CONFIG['settings']['geoip_db']
-    TG_ADMIN_CHAT_ID = str(settings().get('tg_admin_chat_id', "-1003304969829"))
-    TG_TOPIC_ID = int(settings().get('tg_topic_id', 58) or 0)
+    TG_ADMIN_CHAT_ID = str(settings().get('tg_admin_chat_id', ""))
+    TG_TOPIC_ID = int(settings().get('tg_topic_id', 0) or 0)
     DEBUG_LEVEL = str(settings().get('debug_level', 'OFF')).upper()
     DEBUG_MODE = DEBUG_LEVEL != 'OFF'
     DRY_RUN = config_flag('dry_run', True)
@@ -935,6 +1030,33 @@ def is_admin(user_id: int) -> bool:
 
 async def resolve_target(target: str): 
     return await panel.get_user_data(target)
+
+
+async def enrich_user_usage_context(user: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(user, dict):
+        return user
+
+    enriched = dict(user)
+    user_uuid = str(enriched.get("uuid") or "").strip()
+    if not user_uuid:
+        return enriched
+
+    if not any(
+        key in enriched and isinstance(enriched.get(key), list) and enriched.get(key)
+        for key in ("hwidDevices", "hwid_devices", "devices", "clients")
+    ):
+        devices = await panel.get_user_hwid_devices(user_uuid)
+        if devices:
+            enriched["hwidDevices"] = devices
+            if enriched.get("hwidDeviceCount") in (None, ""):
+                enriched["hwidDeviceCount"] = len(devices)
+
+    if not isinstance(enriched.get("usageProfileTrafficStats"), dict):
+        traffic_stats = await panel.get_user_traffic_stats(user_uuid)
+        if traffic_stats:
+            enriched["usageProfileTrafficStats"] = traffic_stats
+
+    return enriched
 
 async def notify_admin(text: str, reply_markup=None):
     global TG_MESSAGE_QUEUE
@@ -984,9 +1106,10 @@ def escape_html(text: str) -> str:
 
 async def send_unsure_notify(user: Dict, bundle: DecisionBundle, tag: str, review_reason: str):
     global UNSURE_NOTIFIED
-    if not admin_event_notifications_enabled("review"):
+    if not (admin_event_notifications_enabled("review") or admin_scenario_enabled("usage_profile_risk")):
         return
 
+    user = await enrich_user_usage_context(user)
     uuid = user.get('uuid')
     notify_key = f"{uuid}:{bundle.ip}:{review_reason}"
 
@@ -998,6 +1121,16 @@ async def send_unsure_notify(user: Dict, bundle: DecisionBundle, tag: str, revie
 
     tg_id = user.get('telegramId') or ""
     review_url = platform_store.build_review_url(bundle.case_id) if bundle.case_id else ""
+    usage_profile = build_usage_profile_snapshot(
+        platform_store,
+        {
+            "uuid": user.get("uuid"),
+            "username": user.get("username"),
+            "system_id": user.get("id"),
+            "telegram_id": user.get("telegramId"),
+        },
+        panel_user=user,
+    )
     title = {
         "unsure": "ТРЕБУЕТСЯ РУЧНАЯ ПРОВЕРКА",
         "probable_home": "ПОГРАНИЧНЫЙ HOME КЕЙС",
@@ -1005,8 +1138,13 @@ async def send_unsure_notify(user: Dict, bundle: DecisionBundle, tag: str, revie
         "manual_review_mixed_home": "MIXED ASN HOME КЕЙС",
     }.get(review_reason, "ТРЕБУЕТСЯ РУЧНАЯ ПРОВЕРКА")
 
+    scenario_template = (
+        "admin_usage_profile_risk_template"
+        if admin_scenario_enabled("usage_profile_risk")
+        else "admin_review_template"
+    )
     msg = render_runtime_template(
-        "admin_review_template",
+        scenario_template,
         {
             "username": user.get('username', 'N/A'),
             "uuid": uuid or "N/A",
@@ -1017,10 +1155,17 @@ async def send_unsure_notify(user: Dict, bundle: DecisionBundle, tag: str, revie
             "tag": tag,
             "confidence_band": f"{title} / {bundle.verdict} / {bundle.confidence_band}",
             "review_url": review_url,
+            **build_usage_profile_template_context(usage_profile),
         },
     )
     if bundle.case_id:
         msg += f"\n<b>Case ID:</b> <code>{bundle.case_id}</code>\n"
+    usage_lines = build_usage_profile_admin_lines(
+        usage_profile,
+        scenario="usage_profile_risk",
+    )
+    if usage_lines:
+        msg += "\n" + "\n".join(usage_lines) + "\n"
     msg += "\n<b>Основания:</b>\n"
     for entry in bundle.log:
         msg += f"  • {escape_html(entry)}\n"
@@ -1968,6 +2113,7 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
     if bundle.verdict != 'HOME' or bundle.confidence_band not in ('HIGH_HOME', 'PROBABLE_HOME'):
         return
 
+    user = await enrich_user_usage_context(user)
     uuid = user['uuid']
     ip = bundle.ip
     isp = bundle.isp
@@ -2053,13 +2199,36 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
         "ban_minutes": 0,
         "ban_text": "",
     }
+    usage_profile = build_usage_profile_snapshot(
+        platform_store,
+        {
+            "uuid": uuid,
+            "username": user.get("username"),
+            "system_id": user.get("id"),
+            "telegram_id": user.get("telegramId"),
+        },
+        panel_user=user,
+        anchor_started_at=start_time.isoformat() if start_time else "",
+    )
+    common_context.update(build_usage_profile_template_context(usage_profile))
 
     if warning_only:
-        if admin_event_notifications_enabled("warning_only"):
+        if admin_event_notifications_enabled("warning_only") or admin_scenario_enabled("usage_profile_risk"):
+            template_key = (
+                "admin_usage_profile_risk_template"
+                if admin_scenario_enabled("usage_profile_risk")
+                else "admin_warning_only_template"
+            )
             admin_msg = render_runtime_template(
-                "admin_warning_only_template",
+                template_key,
                 {**common_context, "confidence_band": f"{bundle.confidence_band} / punitive disabled"},
             )
+            usage_lines = build_usage_profile_admin_lines(
+                usage_profile,
+                scenario="usage_profile_risk",
+            )
+            if usage_lines:
+                admin_msg += "\n" + "\n".join(usage_lines) + "\n"
             admin_msg += "\n<b>Основание:</b>\n"
             for entry in log:
                 admin_msg += f"  • {escape_html(entry)}\n"
@@ -2083,15 +2252,26 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
                 "INSERT OR REPLACE INTO violations (uuid, strikes, unban_time, last_strike_time, warning_time, warning_count) VALUES (?, ?, NULL, ?, ?, ?)",
                 (uuid, strikes, now.isoformat(), now.isoformat(), warning_count),
             )
-            if admin_event_notifications_enabled("warning"):
+            if admin_event_notifications_enabled("warning") or admin_scenario_enabled("violation_continues"):
+                template_key = (
+                    "admin_violation_continues_template"
+                    if admin_scenario_enabled("violation_continues")
+                    else "admin_warning_template"
+                )
                 admin_msg = render_runtime_template(
-                    "admin_warning_template",
+                    template_key,
                     {
                         **common_context,
                         "warning_count": warning_count,
                         "warnings_left": max(warnings_before_ban - warning_count, 0),
                     },
                 )
+                usage_lines = build_usage_profile_admin_lines(
+                    usage_profile,
+                    scenario="violation_continues",
+                )
+                if usage_lines:
+                    admin_msg += "\n" + "\n".join(usage_lines) + "\n"
                 await notify_admin(admin_msg)
             await db.delete_tracker(tracker_key)
             if not DRY_RUN and user.get('telegramId') and user_event_notifications_enabled("warning"):
@@ -2152,9 +2332,15 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
             status_icon = "⛔️" if not DRY_RUN else "[ОТЛАДКА] ⛔️"
             keyboard = None
 
-        if admin_event_notifications_enabled("ban"):
+        if admin_event_notifications_enabled("ban") or admin_scenario_enabled("violation_continues") or admin_scenario_enabled("traffic_limit_exceeded"):
+            is_traffic_cap = restriction_state["restriction_mode"] == TRAFFIC_CAP_RESTRICTION_MODE
+            template_key = "admin_ban_template"
+            if is_traffic_cap and admin_scenario_enabled("traffic_limit_exceeded"):
+                template_key = "admin_traffic_limit_exceeded_template"
+            elif (not is_traffic_cap) and admin_scenario_enabled("violation_continues"):
+                template_key = "admin_violation_continues_template"
             admin_msg = render_runtime_template(
-                "admin_ban_template",
+                template_key,
                 {
                     **common_context,
                     "warning_count": warning_count,
@@ -2167,6 +2353,16 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
                 "<b>ОГРАНИЧЕНИЕ ДОСТУПА</b>",
                 f"{status_icon} <b>ОГРАНИЧЕНИЕ ДОСТУПА</b>",
             )
+            usage_lines = build_usage_profile_admin_lines(
+                usage_profile,
+                scenario=(
+                    "traffic_limit_exceeded"
+                    if restriction_state["restriction_mode"] == TRAFFIC_CAP_RESTRICTION_MODE
+                    else "violation_continues"
+                ),
+            )
+            if usage_lines:
+                admin_msg += "\n" + "\n".join(usage_lines) + "\n"
             admin_msg += "\n<b>Основание:</b>\n"
             for entry in log:
                 admin_msg += f"  • {escape_html(entry)}\n"
@@ -2228,15 +2424,26 @@ async def handle_violation(user: Dict, tag: str, bundle: DecisionBundle, warning
         (uuid, strikes, now.isoformat(), now.isoformat(), 1),
     )
 
-    if admin_event_notifications_enabled("warning"):
+    if admin_event_notifications_enabled("warning") or admin_scenario_enabled("violation_continues"):
+        template_key = (
+            "admin_violation_continues_template"
+            if admin_scenario_enabled("violation_continues")
+            else "admin_warning_template"
+        )
         admin_msg = render_runtime_template(
-            "admin_warning_template",
+            template_key,
             {
                 **common_context,
                 "warning_count": 1,
                 "warnings_left": max(warnings_before_ban - 1, 0),
             },
         )
+        usage_lines = build_usage_profile_admin_lines(
+            usage_profile,
+            scenario="violation_continues",
+        )
+        if usage_lines:
+            admin_msg += "\n" + "\n".join(usage_lines) + "\n"
         admin_msg += "\n<b>Основание:</b>\n"
         for entry in log:
             admin_msg += f"  • {escape_html(entry)}\n"

@@ -3,7 +3,11 @@ import unittest
 from unittest.mock import patch
 
 from api import main
-from api.services.runtime_state import build_user_export_payload
+from api.services.runtime_state import (
+    build_user_export_payload,
+    enrich_panel_user_devices,
+    enrich_panel_user_usage_context,
+)
 from mobguard_platform.panel_client import PanelClient
 
 
@@ -139,6 +143,8 @@ class AdminUserDataTests(unittest.TestCase):
         self.assertEqual(payload["review_cases"][0]["id"], 1)
         self.assertEqual(payload["analysis_events"][0]["id"], 10)
         self.assertEqual(payload["analysis_events"][0]["provider_evidence"]["provider_key"], "beeline")
+        self.assertEqual(payload["usage_profile"]["ip_count"], 1)
+        self.assertEqual(payload["usage_profile"]["provider_count"], 1)
 
     def test_build_user_export_payload_adds_metadata_and_counts(self):
         fake_store = FakeStore()
@@ -155,6 +161,7 @@ class AdminUserDataTests(unittest.TestCase):
         self.assertEqual(payload["export_meta"]["identifier"], identity["uuid"])
         self.assertEqual(payload["export_meta"]["record_counts"]["review_cases"], 1)
         self.assertEqual(payload["export_meta"]["record_counts"]["analysis_events"], 1)
+        self.assertEqual(payload["export_meta"]["record_counts"]["usage_profile_signals"], 0)
         self.assertEqual(payload["analysis_events"][0]["provider_evidence"]["service_type_hint"], "home")
 
 
@@ -278,6 +285,62 @@ class PanelClientTests(unittest.TestCase):
                 )
             ],
         )
+
+    def test_get_user_hwid_devices_uses_upstream_endpoint(self):
+        client = PanelClient("https://panel.example.com", "secret")
+        calls = []
+
+        def fake_request(method, endpoint, body=None):
+            calls.append((method, endpoint, body))
+            if endpoint == "/api/hwid/devices/user-uuid":
+                return {"response": [{"hwid": "hwid-1", "platform": "Android"}]}
+            return None
+
+        with patch.object(client, "_request", side_effect=fake_request):
+            payload = client.get_user_hwid_devices("user-uuid")
+
+        self.assertEqual(payload[0]["hwid"], "hwid-1")
+        self.assertEqual([endpoint for _, endpoint, _ in calls], ["/api/hwid/devices/user-uuid"])
+
+    def test_enrich_panel_user_devices_attaches_explicit_hwid_inventory(self):
+        client = PanelClient("https://panel.example.com", "secret")
+        with patch.object(
+            client,
+            "get_user_hwid_devices",
+            return_value=[{"hwid": "hwid-1", "platform": "Android", "deviceModel": "Pixel 8"}],
+        ):
+            enriched = enrich_panel_user_devices(client, {"uuid": "user-uuid", "username": "alice"})
+
+        self.assertEqual(enriched["hwidDevices"][0]["hwid"], "hwid-1")
+        self.assertEqual(enriched["hwidDeviceCount"], 1)
+
+    def test_get_user_traffic_stats_uses_bandwidth_stats_endpoint(self):
+        client = PanelClient("https://panel.example.com", "secret")
+        calls = []
+
+        def fake_request(method, endpoint, body=None):
+            calls.append((method, endpoint, body))
+            return {"response": {"series": [{"timestamp": "2026-04-22T10:00:00", "node-a": 123}]}}
+
+        with patch.object(client, "_request", side_effect=fake_request):
+            payload = client.get_user_traffic_stats("user-uuid", start="2026-04-21", end="2026-04-23", top_nodes_limit=25)
+
+        self.assertEqual(payload["series"][0]["node-a"], 123)
+        self.assertEqual(
+            [endpoint for _, endpoint, _ in calls],
+            ["/api/bandwidth-stats/users/user-uuid?start=2026-04-21&end=2026-04-23&topNodesLimit=25"],
+        )
+
+    def test_enrich_panel_user_usage_context_attaches_traffic_stats(self):
+        client = PanelClient("https://panel.example.com", "secret")
+        with patch.object(client, "get_user_hwid_devices", return_value=[]), patch.object(
+            client,
+            "get_user_traffic_stats",
+            return_value={"series": [{"timestamp": "2026-04-22T10:00:00", "node-a": 456}]},
+        ):
+            enriched = enrich_panel_user_usage_context(client, {"uuid": "user-uuid", "username": "alice"})
+
+        self.assertEqual(enriched["usageProfileTrafficStats"]["series"][0]["node-a"], 456)
 
 
 if __name__ == "__main__":

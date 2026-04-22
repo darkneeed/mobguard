@@ -18,6 +18,13 @@ vi.mock("../api/client", () => ({
 }));
 
 describe("ReviewDetailPage", () => {
+  const ownerSession = {
+    telegram_id: 1,
+    username: "owner",
+    expires_at: "2026-04-11T00:00:00Z",
+    permissions: ["reviews.read", "reviews.resolve"]
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     cleanup();
@@ -26,7 +33,7 @@ describe("ReviewDetailPage", () => {
   it("renders evidence blocks in stacked readable cards", async () => {
     vi.mocked(api.getReview).mockResolvedValue({
       id: 34,
-      username: "user_816589895",
+      username: "synthetic_user",
       ip: "128.71.75.0",
       latest_event: {
         bundle: {
@@ -60,20 +67,42 @@ describe("ReviewDetailPage", () => {
       related_cases: [
         {
           id: 21,
-          username: "user_816589895",
+          username: "synthetic_user",
           ip: "128.70.186.177",
           verdict: "HOME",
           confidence_band: "HIGH_HOME",
           system_id: 258,
-          telegram_id: "816589895",
+          telegram_id: "42424242",
           uuid: "84375f3b-048c-46bd-9133-52850be18241",
           updated_at: "2026-04-12T03:25:00Z"
         }
       ],
+      usage_profile: {
+        available: true,
+        usage_profile_summary: "IPs 2; providers 2; devices 2",
+        device_labels: ["iPhone 15", "Pixel 8"],
+        os_families: ["iOS", "Android"],
+        nodes: ["Node A", "Node B"],
+        soft_reasons: ["geo_impossible_travel", "device_rotation"],
+        geo_summary: {
+          countries: ["RU", "DE"],
+          recent_locations: [{ country: "RU", city: "Moscow" }, { country: "DE", city: "Berlin" }]
+        },
+        travel_flags: {
+          geo_country_jump: true,
+          geo_impossible_travel: true,
+          impossible_travel: [{ from_location: "RU, Moscow", to_location: "DE, Berlin" }]
+        },
+        top_ips: [{ ip: "128.71.75.0", count: 2 }],
+        top_providers: [{ provider: "beelinemixed", count: 2 }],
+        ongoing_duration_text: "2h",
+        last_seen: "2026-04-12T03:25:00Z",
+        updated_at: "2026-04-12T03:25:00Z"
+      },
       resolutions: []
     });
 
-    renderWithProviders(<ReviewDetailPage />, {
+    renderWithProviders(<ReviewDetailPage session={ownerSession} />, {
       route: "/reviews/34",
       path: "/reviews/:caseId"
     });
@@ -89,6 +118,8 @@ describe("ReviewDetailPage", () => {
     );
     expect(screen.getByText("beelinemixed")).toBeInTheDocument();
     expect(screen.getByText("vimpelcom, vimpel")).toBeInTheDocument();
+    expect(screen.getByText("Usage profile")).toBeInTheDocument();
+    expect(screen.getByText("IPs 2; providers 2; devices 2")).toBeInTheDocument();
   });
 
   it("opens the next case from the current queue after resolve", async () => {
@@ -184,7 +215,7 @@ describe("ReviewDetailPage", () => {
         <LanguageProvider language="en" setLanguage={() => undefined}>
           <ToastProvider>
             <Routes>
-              <Route path="/reviews/:caseId" element={<ReviewDetailPage />} />
+              <Route path="/reviews/:caseId" element={<ReviewDetailPage session={ownerSession} />} />
             </Routes>
           </ToastProvider>
         </LanguageProvider>

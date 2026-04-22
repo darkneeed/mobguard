@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Outlet } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppRouter } from "./AppRouter";
 import { LanguageProvider } from "../localization";
@@ -23,11 +23,35 @@ vi.mock("../pages/DataPage", () => ({ DataPage: () => <div>Data Screen</div> }))
 vi.mock("../pages/QualityPage", () => ({ QualityPage: () => <div>Quality Screen</div> }));
 
 describe("AppRouter", () => {
+  beforeEach(() => {
+    cleanup();
+  });
+
   const baseProps = {
     session: {
       telegram_id: 1,
       username: "operator",
-      expires_at: "2026-04-11T00:00:00Z"
+      expires_at: "2026-04-11T00:00:00Z",
+      role: "owner",
+      permissions: [
+        "overview.read",
+        "quality.read",
+        "reviews.read",
+        "reviews.resolve",
+        "reviews.recheck",
+        "rules.read",
+        "rules.write",
+        "settings.telegram.read",
+        "settings.telegram.write",
+        "settings.access.read",
+        "settings.access.write",
+        "data.read",
+        "data.write",
+        "modules.read",
+        "modules.write",
+        "modules.token_reveal",
+        "audit.read"
+      ]
     },
     language: "en" as const,
     setLanguage: vi.fn(),
@@ -53,7 +77,7 @@ describe("AppRouter", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Overview Screen")).toBeInTheDocument();
+    expect((await screen.findAllByText("Overview Screen")).length).toBeGreaterThan(0);
   });
 
   it("supports nested rules and data routes", async () => {
@@ -78,5 +102,26 @@ describe("AppRouter", () => {
     );
 
     expect((await screen.findAllByText("Rules Screen")).length).toBeGreaterThan(0);
+  });
+
+  it("redirects a viewer away from owner-only routes", async () => {
+    render(
+      <MemoryRouter initialEntries={["/rules/policy"]}>
+        <LanguageProvider language="en" setLanguage={() => undefined}>
+          <AppRouter
+            {...baseProps}
+            session={{
+              telegram_id: 3,
+              username: "viewer",
+              expires_at: "2026-04-11T00:00:00Z",
+              role: "viewer",
+              permissions: ["overview.read", "quality.read", "reviews.read", "data.read", "modules.read", "audit.read"]
+            }}
+          />
+        </LanguageProvider>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Overview Screen")).toBeInTheDocument();
   });
 });

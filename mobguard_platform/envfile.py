@@ -8,11 +8,8 @@ from typing import Any
 ENV_LINE_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 
 
-def read_env_file(path: str) -> dict[str, str]:
-    values: dict[str, str] = {
-        key: str(value)
-        for key, value in os.environ.items()
-    }
+def read_env_file_only(path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
     if not os.path.exists(path):
         return values
     with open(path, "r", encoding="utf-8") as handle:
@@ -23,6 +20,15 @@ def read_env_file(path: str) -> dict[str, str]:
                 continue
             key, value = match.groups()
             values[key] = value
+    return values
+
+
+def read_env_file(path: str) -> dict[str, str]:
+    values: dict[str, str] = {
+        key: str(value)
+        for key, value in os.environ.items()
+    }
+    values.update(read_env_file_only(path))
     return values
 
 

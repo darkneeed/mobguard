@@ -36,6 +36,9 @@ type TelegramFieldKey =
   | "telegram_notify_admin_warning_only_enabled"
   | "telegram_notify_admin_warning_enabled"
   | "telegram_notify_admin_ban_enabled"
+  | "telegram_notify_admin_usage_profile_risk_enabled"
+  | "telegram_notify_admin_violation_continues_enabled"
+  | "telegram_notify_admin_traffic_limit_exceeded_enabled"
   | "telegram_notify_user_warning_only_enabled"
   | "telegram_notify_user_warning_enabled"
   | "telegram_notify_user_ban_enabled";
@@ -47,7 +50,10 @@ type TemplateFieldKey =
   | "admin_warning_only_template"
   | "admin_warning_template"
   | "admin_ban_template"
-  | "admin_review_template";
+  | "admin_review_template"
+  | "admin_usage_profile_risk_template"
+  | "admin_violation_continues_template"
+  | "admin_traffic_limit_exceeded_template";
 
 type TelegramField = {
   key: TelegramFieldKey;
@@ -72,6 +78,9 @@ const TELEGRAM_FIELDS: TelegramField[] = [
   { key: "telegram_notify_admin_warning_only_enabled", section: "admin", type: "boolean" },
   { key: "telegram_notify_admin_warning_enabled", section: "admin", type: "boolean" },
   { key: "telegram_notify_admin_ban_enabled", section: "admin", type: "boolean" },
+  { key: "telegram_notify_admin_usage_profile_risk_enabled", section: "admin", type: "boolean" },
+  { key: "telegram_notify_admin_violation_continues_enabled", section: "admin", type: "boolean" },
+  { key: "telegram_notify_admin_traffic_limit_exceeded_enabled", section: "admin", type: "boolean" },
   { key: "telegram_notify_user_warning_only_enabled", section: "user", type: "boolean" },
   { key: "telegram_notify_user_warning_enabled", section: "user", type: "boolean" },
   { key: "telegram_notify_user_ban_enabled", section: "user", type: "boolean" }
@@ -84,7 +93,10 @@ const TEMPLATE_FIELDS: TemplateField[] = [
   { key: "admin_warning_only_template", audience: "admin" },
   { key: "admin_warning_template", audience: "admin" },
   { key: "admin_ban_template", audience: "admin" },
-  { key: "admin_review_template", audience: "admin" }
+  { key: "admin_review_template", audience: "admin" },
+  { key: "admin_usage_profile_risk_template", audience: "admin" },
+  { key: "admin_violation_continues_template", audience: "admin" },
+  { key: "admin_traffic_limit_exceeded_template", audience: "admin" }
 ];
 
 function normalizeTelegramDraft(payload: TelegramPayload): Record<string, string> {

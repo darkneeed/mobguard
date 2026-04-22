@@ -3,7 +3,28 @@ export type Session = {
   username?: string;
   first_name?: string;
   expires_at: string;
+  subject?: string;
+  auth_method?: string;
+  role?: string;
+  permissions?: string[];
+  totp_enabled?: boolean;
+  totp_verified?: boolean;
+  totp_verified_at?: string;
   payload?: Record<string, unknown>;
+};
+
+export type AuthResult = Session & {
+  requires_totp?: boolean;
+  totp_setup_required?: boolean;
+  challenge_token?: string;
+};
+
+export type TotpSetupPayload = {
+  challenge_token: string;
+  secret: string;
+  provisioning_uri: string;
+  account_name: string;
+  issuer: string;
 };
 
 export type AuthCapabilities = {
@@ -50,6 +71,12 @@ export type ReviewItem = {
   severity: "critical" | "high" | "medium" | "low";
   repeat_count: number;
   reason_codes: string[];
+  usage_profile_summary?: string;
+  usage_profile_signal_count?: number;
+  usage_profile_priority?: number;
+  usage_profile_soft_reasons?: string[];
+  usage_profile_ongoing_duration_seconds?: number | null;
+  usage_profile_ongoing_duration_text?: string;
   opened_at: string;
   updated_at: string;
   review_url: string;
@@ -158,6 +185,43 @@ export type UserCardFlags = {
   active_warning?: boolean;
 };
 
+export type UsageProfile = {
+  available?: boolean;
+  event_count?: number;
+  ip_count?: number;
+  provider_count?: number;
+  device_count?: number;
+  device_labels?: string[];
+  devices?: Array<Record<string, unknown>>;
+  os_families?: string[];
+  node_count?: number;
+  nodes?: string[];
+  geo_summary?: {
+    country_count?: number;
+    countries?: string[];
+    recent_locations?: Array<Record<string, unknown>>;
+    last_location?: Record<string, unknown> | null;
+  };
+  travel_flags?: {
+    geo_country_jump?: boolean;
+    geo_impossible_travel?: boolean;
+    country_jumps?: Array<Record<string, unknown>>;
+    impossible_travel?: Array<Record<string, unknown>>;
+  };
+  top_ips?: Array<Record<string, unknown>>;
+  top_providers?: Array<Record<string, unknown>>;
+  traffic_burst?: Record<string, unknown> | null;
+  soft_reasons?: string[];
+  signal_counts?: Record<string, unknown>;
+  ongoing_duration_seconds?: number | null;
+  ongoing_duration_text?: string;
+  last_seen?: string | null;
+  updated_at?: string | null;
+  usage_profile_summary?: string;
+  summary_score?: number;
+  summary_reason_set?: string[];
+};
+
 export type UserCardResponse = {
   identity?: UserIdentity;
   panel_user?: Record<string, unknown> | null;
@@ -167,6 +231,7 @@ export type UserCardResponse = {
   ip_history?: Array<Record<string, unknown>>;
   review_cases?: Array<Record<string, unknown>>;
   analysis_events?: Array<Record<string, unknown>>;
+  usage_profile?: UsageProfile;
   flags?: UserCardFlags;
   remote_updated?: boolean;
   remote_changed?: boolean;
@@ -196,6 +261,7 @@ export type ReviewDetailResponse = Partial<ReviewItem> & {
   latest_event?: Record<string, unknown>;
   resolutions?: ReviewResolution[];
   related_cases?: Array<Record<string, unknown>>;
+  usage_profile?: UsageProfile;
 };
 
 export type ViolationsResponse = {
@@ -210,6 +276,24 @@ export type OverridesResponse = {
 
 export type CacheAdminResponse = {
   items: Array<Record<string, unknown>>;
+};
+
+export type AuditEvent = {
+  id: number;
+  actor_subject: string;
+  actor_role: string;
+  actor_auth_method: string;
+  actor_telegram_id?: number | null;
+  actor_username?: string | null;
+  action: string;
+  target_type: string;
+  target_id: string;
+  details: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AuditTrailResponse = {
+  items: AuditEvent[];
 };
 
 export type LearningAdminResponse = {

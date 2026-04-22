@@ -69,7 +69,8 @@ export const ruDictionary: TranslationDictionary = {
         cache: "Кэш",
         learning: "Learning",
         cases: "Кейсы",
-        exports: "Экспорты"
+        exports: "Экспорты",
+        audit: "Аудит"
       }
     },
     theme: {
@@ -164,7 +165,23 @@ export const ruDictionary: TranslationDictionary = {
     signingIn: "Выполняю вход…",
     localNotConfigured: "Local fallback auth не настроен.",
     authFailed: "Ошибка авторизации",
-    localAuthFailed: "Ошибка локальной авторизации"
+    localAuthFailed: "Ошибка локальной авторизации",
+    totp: {
+      setupTitle: "Настройка owner TOTP",
+      verifyTitle: "Проверка owner TOTP",
+      setupDescription: "Сохраните секрет в приложении-аутентификаторе и подтвердите настройку 6-значным кодом.",
+      verifyDescription: "Введите 6-значный TOTP-код owner, чтобы завершить вход.",
+      secretLabel: "Секрет",
+      issuerLabel: "Issuer",
+      accountLabel: "Аккаунт",
+      uriLabel: "Provisioning URI",
+      codePlaceholder: "123456",
+      confirmButton: "Подтвердить настройку TOTP",
+      verifyButton: "Проверить код",
+      cancelButton: "Отмена",
+      processing: "Проверяем…",
+      failed: "Ошибка проверки TOTP"
+    }
   },
   reviewQueue: {
     eyebrow: "Очередь ревью",
@@ -174,6 +191,15 @@ export const ruDictionary: TranslationDictionary = {
     lastUpdated: "Обновлено {value}",
     searchPlaceholder: "Быстрый поиск по IP / username / ISP / UUID / IDs",
     clearFilters: "Сбросить фильтры",
+    savedFilters: {
+      save: "Сохранить текущие",
+      apply: "Применить сохранённые",
+      clear: "Очистить сохранённые",
+      saved: "Текущие фильтры очереди сохранены",
+      applied: "Сохранённые фильтры очереди применены",
+      cleared: "Сохранённые фильтры очереди удалены",
+      invalid: "Сохранённые фильтры очереди повреждены"
+    },
     toggleFiltersTitle: "Переключить фильтры",
     filtersButton: "Фильтры",
     filterCount: "Фильтры ({count})",
@@ -212,6 +238,8 @@ export const ruDictionary: TranslationDictionary = {
       punitiveAny: "Любой punitive статус",
       punitiveOnly: "Только punitive",
       reviewOnly: "Только review",
+      sortPriorityDesc: "Сначала высокий priority",
+      sortPriorityAsc: "Сначала низкий priority",
       sortUpdatedDesc: "Сначала новые",
       sortScoreDesc: "Сначала высокий score",
       sortRepeatDesc: "Сначала частые повторы",
@@ -235,7 +263,10 @@ export const ruDictionary: TranslationDictionary = {
       decision: "Решение",
       punitiveEligible: "punitive eligible",
       reviewOnly: "review only",
+      priority: "priority {value}",
+      usageSignals: "usage {count}",
       repeat: "повтор x{count}",
+      ongoing: "в окне {value}",
       opened: "открыт {value}"
     },
     pageSize: {
@@ -250,6 +281,8 @@ export const ruDictionary: TranslationDictionary = {
       bulkMobile: "Поставить selected в MOBILE",
       bulkHome: "Поставить selected в HOME",
       bulkSkip: "Пропустить selected",
+      recheckVisible: "Перепроверить видимые",
+      recheckDone: "Перепроверено {count} кейсов очереди",
       processing: "Обработка…",
       saved: "Решение по кейсу сохранено",
       bulkSaved: "Применено решение к {count} выбранным кейсам"
@@ -347,6 +380,8 @@ export const ruDictionary: TranslationDictionary = {
     description: "Evidence, связанная история и sticky-зона решения для быстрой модерации.",
     loading: "Загрузка…",
     backToQueue: "Назад в очередь",
+    queuePosition: "Очередь {current}/{total}",
+    keyboardHint: "[ назад ] вперёд · M/H/S решение",
     copySuccess: "Скопировано в буфер",
     copyFailed: "Не удалось скопировать",
     errors: {
@@ -356,6 +391,7 @@ export const ruDictionary: TranslationDictionary = {
       summary: "Сводка",
       reasons: "Причины",
       providerEvidence: "Провайдерские сигналы",
+      usageProfile: "Профиль использования",
       log: "Лог",
       history: "История решений",
       linkedContext: "Связанный контекст пользователя/IP",
@@ -406,6 +442,24 @@ export const ruDictionary: TranslationDictionary = {
       matchedAliases: "Совпавшие алиасы",
       mobileMarkers: "Совпавшие mobile markers",
       homeMarkers: "Совпавшие home markers"
+    },
+    usageProfile: {
+      empty: "Данных usage-profile пока нет",
+      summary: "Снапшот",
+      devices: "Устройства",
+      osFamilies: "Семейства ОС",
+      nodes: "Распределение по нодам",
+      softReasons: "Soft reasons",
+      geo: "Геоистория",
+      travel: "Аномалии перемещения",
+      countryJumpOnly: "только country jump",
+      topIps: "Топ недавних IP",
+      topProviders: "Топ провайдеров",
+      recentLocations: "Недавние локации",
+      impossibleTravel: "Невозможное перемещение",
+      ongoing: "Длительность окна",
+      lastSeen: "Последний сигнал",
+      updatedAt: "Обновлено"
     }
   },
   rules: {
@@ -509,7 +563,7 @@ export const ruDictionary: TranslationDictionary = {
     templatesTitle: "Шаблоны сообщений",
     templatesHintLabel: "Подсказка по шаблонам сообщений",
     templatesHint:
-      "Многострочный текст сохраняется.\n\nПлейсхолдеры: {{username}}, {{warning_count}}, {{warnings_left}}, {{ban_text}}, {{review_url}}.",
+      "Многострочный текст сохраняется.\n\nПлейсхолдеры: {{username}}, {{warning_count}}, {{warnings_left}}, {{ban_text}}, {{review_url}}, {{usage_profile_summary}}.",
     userTemplates: "Пользовательские шаблоны",
     adminTemplates: "Админские шаблоны",
     envTitle: "Telegram .env",
@@ -576,7 +630,8 @@ export const ruDictionary: TranslationDictionary = {
       cache: "Live cache-записи, которые можно исправить или удалить без ожидания естественного TTL.",
       learning: "Promoted patterns, legacy confidence и provider-learning срезы.",
       cases: "Недавние кейсы ревью с быстрым переходом в полный detail.",
-      exports: "Генерация calibration-архива с видимостью dataset readiness и manifest."
+      exports: "Генерация calibration-архива с видимостью dataset readiness и manifest.",
+      audit: "История операторских действий по модерации, data-mutation, settings и операциям с модулями."
     },
     tabs: {
       users: "Пользователи",
@@ -585,7 +640,8 @@ export const ruDictionary: TranslationDictionary = {
       cache: "Кэш",
       learning: "Обучение",
       cases: "Кейсы",
-      exports: "Выгрузки"
+      exports: "Выгрузки",
+      audit: "Аудит"
     },
     errors: {
       loadTabFailed: "Не удалось загрузить вкладку данных",
@@ -625,6 +681,19 @@ export const ruDictionary: TranslationDictionary = {
       actionsTitle: "Действия с пользователем",
       analysisTitle: "Недавний анализ и provider evidence",
       analysisEmpty: "Недавних analysis events нет",
+      usageProfileTitle: "Профиль использования",
+      usageProfileEmpty: "Данных usage-profile пока нет",
+      usageProfileSummary: "Снапшот",
+      usageProfileOngoing: "Длительность окна",
+      usageProfileDevices: "Устройства",
+      usageProfileOs: "Семейства ОС",
+      usageProfileNodes: "Распределение по нодам",
+      usageProfileSignals: "Soft reasons",
+      usageProfileGeo: "Геоистория",
+      usageProfileTravel: "Аномалии перемещения",
+      usageProfileCountryJumpOnly: "только country jump",
+      usageProfileTopIps: "Топ недавних IP",
+      usageProfileTopProviders: "Топ провайдеров",
       openCasesTitle: "Открытые / недавние кейсы ревью",
       openCasesEmpty: "Локальных кейсов ревью нет",
       historyTitle: "История нарушений",
@@ -735,6 +804,11 @@ export const ruDictionary: TranslationDictionary = {
       confidence: "confidence {value}",
       plusOneConfidence: "+1 confidence",
       delete: "Удалить"
+    },
+    audit: {
+      title: "Operator audit trail",
+      description: "Read-only лог действий администраторов, которые меняли moderation state, rules, settings или modules.",
+      empty: "Аудит-событий пока нет"
     },
     cases: {
       title: "Кейсы"
@@ -882,9 +956,19 @@ export const ruDictionary: TranslationDictionary = {
     },
     listFields: {
       admin_tg_ids: {
-        label: "Admin Telegram IDs",
-        description: "Telegram IDs, которым разрешён вход в веб-панель.",
-        recommendation: "Держите здесь только модераторов и администраторов панели."
+        label: "Owner Telegram IDs",
+        description: "Telegram IDs, которым назначена owner-роль с полным доступом к платформе.",
+        recommendation: "Держите этот список коротким и максимально доверенным."
+      },
+      moderator_tg_ids: {
+        label: "Moderator Telegram IDs",
+        description: "Telegram IDs, которым разрешены queue resolution, recheck и data-admin мутации без доступа к platform settings.",
+        recommendation: "Используйте для операторов ручной модерации и runtime-коррекций."
+      },
+      viewer_tg_ids: {
+        label: "Viewer Telegram IDs",
+        description: "Telegram IDs для read-only доступа к overview, quality, modules, queue, data и audit.",
+        recommendation: "Подходит для аналитиков и поддержки, которым не нужно менять состояние."
       },
       exempt_ids: {
         label: "Excluded System IDs",
@@ -1225,6 +1309,18 @@ export const ruDictionary: TranslationDictionary = {
         label: "Notify access restrictions",
         description: "Отправлять админские сообщения при применении ограничения доступа."
       },
+      telegram_notify_admin_usage_profile_risk_enabled: {
+        label: "Notify usage-profile risk",
+        description: "Отправлять админские сообщения с enriched usage-profile snapshot."
+      },
+      telegram_notify_admin_violation_continues_enabled: {
+        label: "Notify ongoing violations",
+        description: "Отправлять админские сообщения, когда подозрительное поведение продолжается во времени."
+      },
+      telegram_notify_admin_traffic_limit_exceeded_enabled: {
+        label: "Notify traffic-limit exceeded",
+        description: "Отправлять админские сообщения, когда применяется traffic-cap ограничение."
+      },
       telegram_notify_user_warning_only_enabled: {
         label: "Send warning-only messages",
         description: "Отправлять пользовательские сообщения по warning-only кейсам."
@@ -1266,6 +1362,18 @@ export const ruDictionary: TranslationDictionary = {
       admin_review_template: {
         label: "Review message",
         description: "Текст админского уведомления для кейсов ревью / ручной модерации."
+      },
+      admin_usage_profile_risk_template: {
+        label: "Usage-profile risk message",
+        description: "Текст админского уведомления для enriched usage-profile snapshot."
+      },
+      admin_violation_continues_template: {
+        label: "Violation-continues message",
+        description: "Текст админского уведомления, когда подозрительное поведение продолжает развиваться."
+      },
+      admin_traffic_limit_exceeded_template: {
+        label: "Traffic-limit-exceeded message",
+        description: "Текст админского уведомления, когда применяется traffic-cap ограничение."
       }
     }
   }

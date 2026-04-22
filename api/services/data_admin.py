@@ -53,6 +53,10 @@ def get_user_card_export(container: APIContainer, identifier: str) -> dict[str, 
     return _get_user_card_export_impl(container, identifier)
 
 
+def list_admin_audit(container: APIContainer, limit: int = 100) -> dict[str, Any]:
+    return {"items": container.store.list_admin_audit_events(limit=limit)}
+
+
 def _runtime_settings(container: APIContainer) -> dict[str, Any]:
     return container.runtime.config.get("settings", {})
 

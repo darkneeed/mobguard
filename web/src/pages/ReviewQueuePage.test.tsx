@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,8 +14,17 @@ vi.mock("../api/client", () => ({
 }));
 
 describe("ReviewQueuePage", () => {
+  const ownerSession = {
+    telegram_id: 1,
+    username: "owner",
+    expires_at: "2026-04-11T00:00:00Z",
+    permissions: ["reviews.read", "reviews.resolve", "reviews.recheck"]
+  };
+
   beforeEach(() => {
+    cleanup();
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   const listPayload: ReviewListResponse = {
@@ -41,6 +50,11 @@ describe("ReviewQueuePage", () => {
         severity: "critical",
         repeat_count: 2,
         reason_codes: ["provider_conflict"],
+        usage_profile_summary: "IPs 3; devices 2; flags geo_impossible_travel",
+        usage_profile_signal_count: 2,
+        usage_profile_priority: 980,
+        usage_profile_soft_reasons: ["geo_impossible_travel", "device_rotation"],
+        usage_profile_ongoing_duration_text: "2h",
         opened_at: "2026-04-11T00:00:00Z",
         updated_at: "2026-04-11T00:00:00Z",
         review_url: "https://example.test/reviews/1"
@@ -66,6 +80,11 @@ describe("ReviewQueuePage", () => {
         severity: "high",
         repeat_count: 1,
         reason_codes: ["unsure"],
+        usage_profile_summary: "",
+        usage_profile_signal_count: 0,
+        usage_profile_priority: 210,
+        usage_profile_soft_reasons: [],
+        usage_profile_ongoing_duration_text: "",
         opened_at: "2026-04-11T00:00:00Z",
         updated_at: "2026-04-11T00:00:00Z",
         review_url: "https://example.test/reviews/2"
@@ -80,9 +99,9 @@ describe("ReviewQueuePage", () => {
     vi.mocked(api.listReviews).mockResolvedValue(listPayload);
     vi.mocked(api.resolveReview).mockResolvedValue({});
 
-    renderWithProviders(<ReviewQueuePage />, { route: "/queue" });
+    renderWithProviders(<ReviewQueuePage session={ownerSession} />, { route: "/queue" });
 
-    await screen.findByText("alpha");
+    expect((await screen.findAllByText("alpha")).length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole("button", { name: "Select page" }));
     await userEvent.click(screen.getByRole("button", { name: "Set selected to MOBILE" }));
 
@@ -95,16 +114,18 @@ describe("ReviewQueuePage", () => {
   it("allows changing cards per page and uses fixed review queue grid", async () => {
     vi.mocked(api.listReviews).mockResolvedValue(listPayload);
 
-    renderWithProviders(<ReviewQueuePage />, { route: "/queue" });
+    renderWithProviders(<ReviewQueuePage session={ownerSession} />, { route: "/queue" });
 
     await screen.findByText("alpha");
     expect(api.listReviews).toHaveBeenCalledWith(
       expect.objectContaining({
         page: 1,
-        page_size: 24
+        page_size: 24,
+        sort: "priority_desc"
       })
     );
     expect(document.querySelector(".review-queue-grid")).not.toBeNull();
+    expect(screen.getByText("priority 980")).toBeInTheDocument();
 
     const [pageSizeSelect] = screen.getAllByLabelText("Cards per page");
     await userEvent.selectOptions(pageSizeSelect, "48");
@@ -116,6 +137,26 @@ describe("ReviewQueuePage", () => {
           page_size: 48
         })
       );
+    });
+  });
+
+  it("saves and reapplies queue filters from localStorage", async () => {
+    vi.mocked(api.listReviews).mockResolvedValue(listPayload);
+
+    renderWithProviders(<ReviewQueuePage session={ownerSession} />, { route: "/queue" });
+
+    await screen.findByText("alpha");
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await userEvent.type(screen.getByPlaceholderText("Username"), "alice");
+    await userEvent.click(screen.getByRole("button", { name: "Save current" }));
+
+    expect(window.localStorage.getItem("mobguard.reviewQueue.savedFilters")).toContain("\"username\":\"alice\"");
+
+    await userEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    await userEvent.click(screen.getByRole("button", { name: "Apply saved" }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Username")).toHaveValue("alice");
     });
   });
 });

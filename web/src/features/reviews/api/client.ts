@@ -15,6 +15,11 @@ export const reviewsApi = {
       method: "POST",
       body: JSON.stringify({ resolution, note })
     }),
+  recheckReviews: (payload: { limit: number; module_id?: string; review_reason?: string }) =>
+    request<Record<string, unknown>>("/admin/reviews/recheck", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   getRules: () => request<RulesState>("/admin/rules"),
   updateRules: (payload: { rules: Record<string, unknown>; revision: number; updated_at: string }) =>
     request<RulesState>("/admin/rules", {

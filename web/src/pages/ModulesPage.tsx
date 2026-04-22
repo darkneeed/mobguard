@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { hasPermission } from "../app/permissions";
 import {
   api,
   ModuleDetailResponse,
   ModuleListResponse,
   ModuleProvisioningPayload,
-  ModuleRecord
+  ModuleRecord,
+  Session
 } from "../api/client";
 import { ModalShell } from "../components/ModalShell";
 import { useToast } from "../components/ToastProvider";
@@ -71,7 +73,7 @@ function statusLabelKey(module: ModuleRecord): string {
   return "modules.health.ok";
 }
 
-export function ModulesPage() {
+export function ModulesPage({ session }: { session?: Session }) {
   const { t, language } = useI18n();
   const { pushToast } = useToast();
   const [data, setData] = useState<ModuleListResponse | null>(null);
@@ -93,6 +95,8 @@ export function ModulesPage() {
     [draft, savedDraft]
   );
   const modalOpen = modalMode !== null;
+  const canManageModules = hasPermission(session, "modules.write");
+  const canRevealModuleToken = hasPermission(session, "modules.token_reveal");
   const canSubmit =
     modalMode === "create"
       ? draftDirty && Boolean(draft.module_name.trim())
@@ -276,7 +280,7 @@ export function ModulesPage() {
         </div>
         <div className="action-row">
           <span className="chip">{t("modules.count", { count: data?.count ?? 0 })}</span>
-          <button onClick={startCreateFlow}>{t("modules.create")}</button>
+          <button onClick={startCreateFlow} disabled={!canManageModules}>{t("modules.create")}</button>
         </div>
       </div>
 
@@ -326,7 +330,7 @@ export function ModulesPage() {
             <span className={draftDirty ? "tag review-only" : "tag severity-low"}>
               {draftDirty ? t("common.unsavedChanges") : t("common.saved")}
             </span>
-            <button onClick={saveModule} disabled={submitting || !canSubmit}>
+            <button onClick={saveModule} disabled={!canManageModules || submitting || !canSubmit}>
               {modalMode === "create" ? t("modules.create") : t("modules.save")}
             </button>
           </div>
@@ -424,7 +428,7 @@ export function ModulesPage() {
                     </button>
                     <button
                       className="ghost"
-                      disabled={loadingDetail || !activeModule?.token_reveal_available}
+                      disabled={loadingDetail || !activeModule?.token_reveal_available || !canRevealModuleToken}
                       onClick={revealToken}
                     >
                       {t("modules.revealToken")}

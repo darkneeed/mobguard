@@ -4,13 +4,19 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
-from ..dependencies import get_container, get_session
+from ..dependencies import get_container, require_permission
+from ..permissions import (
+    PERMISSION_MODULES_READ,
+    PERMISSION_MODULES_TOKEN_REVEAL,
+    PERMISSION_MODULES_WRITE,
+)
 from ..schemas.modules import (
     EventBatchRequest,
     ModuleHeartbeatRequest,
     ModuleProvisioningRequest,
     ModuleRegisterRequest,
 )
+from ..services.admin_audit import record_admin_action
 from ..services import modules as module_service
 
 
@@ -84,7 +90,7 @@ async def module_events_batch(
 
 @router.get("/admin/modules")
 def admin_list_modules(
-    _: dict[str, Any] = Depends(get_session),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_MODULES_READ)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     return module_service.list_modules(container)
@@ -93,19 +99,28 @@ def admin_list_modules(
 @router.post("/admin/modules")
 def admin_create_module(
     payload: ModuleProvisioningRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_MODULES_WRITE, require_owner_totp=True)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     try:
-        return module_service.create_managed_module(container, payload.model_dump())
+        result = module_service.create_managed_module(container, payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    record_admin_action(
+        container,
+        session,
+        action="modules.create",
+        target_type="module",
+        target_id=str(result["module"]["module_id"]),
+        details={"module_name": payload.module_name, "inbound_tags": payload.inbound_tags},
+    )
+    return result
 
 
 @router.get("/admin/modules/{module_id}")
 def admin_get_module(
     module_id: str,
-    _: dict[str, Any] = Depends(get_session),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_MODULES_READ)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     try:
@@ -118,24 +133,42 @@ def admin_get_module(
 def admin_update_module(
     module_id: str,
     payload: ModuleProvisioningRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_MODULES_WRITE, require_owner_totp=True)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     try:
-        return module_service.update_module_detail(container, module_id, payload.model_dump())
+        result = module_service.update_module_detail(container, module_id, payload.model_dump())
     except ValueError as exc:
         status_code = 404 if "not registered" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    record_admin_action(
+        container,
+        session,
+        action="modules.update",
+        target_type="module",
+        target_id=module_id,
+        details={"module_name": payload.module_name, "inbound_tags": payload.inbound_tags},
+    )
+    return result
 
 
 @router.post("/admin/modules/{module_id}/token/reveal")
 def admin_reveal_module_token(
     module_id: str,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_MODULES_TOKEN_REVEAL, require_owner_totp=True)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     try:
-        return module_service.reveal_module_token(container, module_id)
+        result = module_service.reveal_module_token(container, module_id)
     except ValueError as exc:
         status_code = 404 if "not registered" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    record_admin_action(
+        container,
+        session,
+        action="modules.token_reveal",
+        target_type="module",
+        target_id=module_id,
+        details={},
+    )
+    return result

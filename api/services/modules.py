@@ -23,7 +23,7 @@ from mobguard_platform import (
 )
 from mobguard_platform.module_secrets import ModuleSecretError, decrypt_module_token, encrypt_module_token
 from mobguard_platform.panel_client import PanelClient
-from mobguard_platform.runtime import read_env_file
+from mobguard_platform.runtime import read_env_file, read_env_file_only
 from mobguard_platform.runtime_admin_defaults import ENFORCEMENT_SETTINGS_DEFAULTS
 
 from ..context import APIContainer
@@ -108,12 +108,8 @@ def _remnawave_client(container: APIContainer) -> PanelClient:
 
 
 def _module_secret_key(container: APIContainer) -> str:
-    env_values = read_env_file(str(container.runtime.env_path))
-    secret_key = str(
-        os.getenv("MOBGUARD_MODULE_SECRET_KEY")
-        or env_values.get("MOBGUARD_MODULE_SECRET_KEY")
-        or ""
-    ).strip()
+    env_values = read_env_file_only(str(container.runtime.env_path))
+    secret_key = str(env_values.get("MOBGUARD_MODULE_SECRET_KEY") or "").strip()
     if not secret_key:
         raise ValueError("MOBGUARD_MODULE_SECRET_KEY is not configured")
     return secret_key
@@ -514,6 +510,14 @@ async def _process_module_event(
         raw_ip,
         str(payload.get("tag") or ""),
         bundle,
+        {
+            "client_device_id": payload.get("client_device_id"),
+            "client_device_label": payload.get("client_device_label"),
+            "client_os_family": payload.get("client_os_family"),
+            "client_os_version": payload.get("client_os_version"),
+            "client_app_name": payload.get("client_app_name"),
+            "client_app_version": payload.get("client_app_version"),
+        },
     )
     bundle.event_id = event_id
 

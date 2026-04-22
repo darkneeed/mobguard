@@ -22,7 +22,7 @@ class ReviewBackfillTests(unittest.TestCase):
                 {
                     "settings": {
                         "review_ui_base_url": "https://mobguard.example.com",
-                        "remnawave_api_url": "https://admpanel.mwnd.ru",
+                        "remnawave_api_url": "https://panel.example.com",
                     }
                 },
                 ensure_ascii=False,
@@ -184,26 +184,32 @@ class ReviewBackfillTests(unittest.TestCase):
                 calls.append(str(identifier)) or {
                     "uuid": "b0a99119-98e9-413b-8a78-fce4d0095c98",
                     "id": 211,
-                    "username": "user_999818198",
-                    "telegramId": 999818198,
+                    "username": "synthetic_user",
+                    "telegramId": 42424242,
                 }
             )
             if str(identifier) == "211"
             else None
+            ,
+            get_user_hwid_devices=lambda _uuid: [],
+            get_user_traffic_stats=lambda _uuid: None,
         )
 
-        with patch("api.services.review_backfill.panel_client", return_value=fake_client):
+        with patch("api.services.review_backfill.panel_client", return_value=fake_client), patch(
+            "api.services.reviews.panel_client",
+            return_value=fake_client,
+        ):
             listing = review_service.list_reviews(self.container, {"page": 1, "page_size": 25, "status": "OPEN"})
             detail = review_service.get_review(self.container, 1)
 
-        self.assertEqual(listing["items"][0]["username"], "user_999818198")
+        self.assertEqual(listing["items"][0]["username"], "synthetic_user")
         self.assertEqual(listing["items"][0]["uuid"], "b0a99119-98e9-413b-8a78-fce4d0095c98")
-        self.assertEqual(listing["items"][0]["telegram_id"], "999818198")
-        self.assertEqual(listing["items"][1]["username"], "user_999818198")
-        self.assertEqual(detail["username"], "user_999818198")
+        self.assertEqual(listing["items"][0]["telegram_id"], "42424242")
+        self.assertEqual(listing["items"][1]["username"], "synthetic_user")
+        self.assertEqual(detail["username"], "synthetic_user")
         self.assertEqual(detail["uuid"], "b0a99119-98e9-413b-8a78-fce4d0095c98")
-        self.assertEqual(detail["telegram_id"], "999818198")
-        self.assertEqual(calls.count("211"), 1)
+        self.assertEqual(detail["telegram_id"], "42424242")
+        self.assertEqual(calls.count("211"), 2)
 
         with self.store._connect() as conn:
             case_row = conn.execute(
@@ -216,13 +222,13 @@ class ReviewBackfillTests(unittest.TestCase):
                 "SELECT uuid, username, system_id, telegram_id FROM review_cases WHERE id = 2"
             ).fetchone()
 
-        self.assertEqual(case_row["username"], "user_999818198")
+        self.assertEqual(case_row["username"], "synthetic_user")
         self.assertEqual(case_row["uuid"], "b0a99119-98e9-413b-8a78-fce4d0095c98")
-        self.assertEqual(case_row["telegram_id"], "999818198")
-        self.assertEqual(event_row["username"], "user_999818198")
+        self.assertEqual(case_row["telegram_id"], "42424242")
+        self.assertEqual(event_row["username"], "synthetic_user")
         self.assertEqual(event_row["uuid"], "b0a99119-98e9-413b-8a78-fce4d0095c98")
-        self.assertEqual(event_row["telegram_id"], "999818198")
-        self.assertEqual(second_case_row["username"], "user_999818198")
+        self.assertEqual(event_row["telegram_id"], "42424242")
+        self.assertEqual(second_case_row["username"], "synthetic_user")
 
 
 if __name__ == "__main__":

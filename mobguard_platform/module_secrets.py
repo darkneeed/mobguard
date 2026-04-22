@@ -18,18 +18,31 @@ def _fernet(secret_key: str) -> Fernet:
     return Fernet(derived_key)
 
 
-def encrypt_module_token(secret_key: str, token: str) -> str:
-    normalized_token = str(token or "").strip()
-    if not normalized_token:
-        raise ModuleSecretError("Module token is empty")
-    return _fernet(secret_key).encrypt(normalized_token.encode("utf-8")).decode("utf-8")
+def encrypt_secret_value(secret_key: str, value: str, *, empty_error: str) -> str:
+    normalized_value = str(value or "").strip()
+    if not normalized_value:
+        raise ModuleSecretError(empty_error)
+    return _fernet(secret_key).encrypt(normalized_value.encode("utf-8")).decode("utf-8")
 
 
-def decrypt_module_token(secret_key: str, ciphertext: str) -> str:
+def decrypt_secret_value(secret_key: str, ciphertext: str, *, missing_error: str, invalid_error: str) -> str:
     normalized_ciphertext = str(ciphertext or "").strip()
     if not normalized_ciphertext:
-        raise ModuleSecretError("Module token is unavailable for reveal")
+        raise ModuleSecretError(missing_error)
     try:
         return _fernet(secret_key).decrypt(normalized_ciphertext.encode("utf-8")).decode("utf-8")
     except InvalidToken as exc:
-        raise ModuleSecretError("Stored module token cannot be decrypted with the configured secret key") from exc
+        raise ModuleSecretError(invalid_error) from exc
+
+
+def encrypt_module_token(secret_key: str, token: str) -> str:
+    return encrypt_secret_value(secret_key, token, empty_error="Module token is empty")
+
+
+def decrypt_module_token(secret_key: str, ciphertext: str) -> str:
+    return decrypt_secret_value(
+        secret_key,
+        ciphertext,
+        missing_error="Module token is unavailable for reveal",
+        invalid_error="Stored module token cannot be decrypted with the configured secret key",
+    )

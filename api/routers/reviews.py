@@ -4,8 +4,16 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query
 
-from ..dependencies import get_container, get_session
+from ..dependencies import get_container, require_permission
+from ..permissions import (
+    PERMISSION_REVIEWS_READ,
+    PERMISSION_REVIEWS_RECHECK,
+    PERMISSION_REVIEWS_RESOLVE,
+    PERMISSION_RULES_READ,
+    PERMISSION_RULES_WRITE,
+)
 from ..schemas.reviews import ReviewRecheckRequest, ReviewResolutionRequest, RulesUpdateRequest
+from ..services.admin_audit import record_admin_action
 from ..services import reviews as review_service
 
 
@@ -32,7 +40,7 @@ def list_reviews(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     sort: str = Query(default="updated_desc"),
-    _: dict[str, Any] = Depends(get_session),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_REVIEWS_READ)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     return review_service.list_reviews(
@@ -63,10 +71,10 @@ def list_reviews(
 @router.post("/reviews/recheck")
 async def recheck_reviews(
     body: ReviewRecheckRequest,
-    session: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_REVIEWS_RECHECK)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return await review_service.recheck_reviews(
+    payload = await review_service.recheck_reviews(
         container,
         {
             "limit": body.limit,
@@ -76,10 +84,28 @@ async def recheck_reviews(
         session.get("username") or session.get("first_name") or f"tg:{session['telegram_id']}",
         session["telegram_id"],
     )
+    record_admin_action(
+        container,
+        session,
+        action="reviews.recheck",
+        target_type="review_batch",
+        target_id=str(payload.get("count", 0)),
+        details={
+            "limit": body.limit,
+            "module_id": body.module_id or "",
+            "review_reason": body.review_reason or "",
+            "summary": payload.get("summary", {}),
+        },
+    )
+    return payload
 
 
 @router.get("/reviews/{case_id}")
-def get_review(case_id: int, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def get_review(
+    case_id: int,
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_REVIEWS_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return review_service.get_review(container, case_id)
 
 
@@ -87,10 +113,10 @@ def get_review(case_id: int, _: dict[str, Any] = Depends(get_session), container
 def resolve_review(
     case_id: int,
     body: ReviewResolutionRequest,
-    session: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_REVIEWS_RESOLVE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return review_service.resolve_review(
+    payload = review_service.resolve_review(
         container.store,
         case_id,
         body.resolution,
@@ -98,24 +124,49 @@ def resolve_review(
         session["telegram_id"],
         body.note,
     )
+    record_admin_action(
+        container,
+        session,
+        action="reviews.resolve",
+        target_type="review_case",
+        target_id=str(case_id),
+        details={"resolution": body.resolution, "note": body.note or ""},
+    )
+    return payload
 
 
 @router.get("/rules")
-def get_rules(_: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def get_rules(
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_RULES_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return review_service.get_rules(container.store)
 
 
 @router.put("/rules")
 def put_rules(
-    payload: RulesUpdateRequest,
-    session: dict[str, Any] = Depends(get_session),
+    body: RulesUpdateRequest,
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_RULES_WRITE, require_owner_totp=True)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return review_service.update_rules(
+    payload = review_service.update_rules(
         container.store,
-        payload.rules,
+        body.rules,
         session.get("username") or session.get("first_name") or f"tg:{session['telegram_id']}",
         session["telegram_id"],
-        expected_revision=payload.revision,
-        expected_updated_at=payload.updated_at,
+        expected_revision=body.revision,
+        expected_updated_at=body.updated_at,
     )
+    record_admin_action(
+        container,
+        session,
+        action="rules.update",
+        target_type="live_rules",
+        target_id="1",
+        details={
+            "keys": sorted(body.rules.keys()) if isinstance(body.rules, dict) else [],
+            "revision": body.revision,
+            "updated_at": body.updated_at,
+        },
+    )
+    return payload

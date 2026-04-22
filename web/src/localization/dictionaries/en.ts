@@ -69,7 +69,8 @@ export const enDictionary: TranslationDictionary = {
         cache: "Cache",
         learning: "Learning",
         cases: "Cases",
-        exports: "Exports"
+        exports: "Exports",
+        audit: "Audit"
       }
     },
     theme: {
@@ -164,7 +165,23 @@ export const enDictionary: TranslationDictionary = {
     signingIn: "Signing in…",
     localNotConfigured: "Local fallback auth is not configured.",
     authFailed: "Auth failed",
-    localAuthFailed: "Local auth failed"
+    localAuthFailed: "Local auth failed",
+    totp: {
+      setupTitle: "Set up owner TOTP",
+      verifyTitle: "Owner TOTP verification",
+      setupDescription: "Save the secret in your authenticator app, then confirm with a 6-digit code.",
+      verifyDescription: "Enter the 6-digit owner TOTP code to finish login.",
+      secretLabel: "Secret",
+      issuerLabel: "Issuer",
+      accountLabel: "Account",
+      uriLabel: "Provisioning URI",
+      codePlaceholder: "123456",
+      confirmButton: "Confirm TOTP setup",
+      verifyButton: "Verify code",
+      cancelButton: "Cancel",
+      processing: "Checking…",
+      failed: "TOTP verification failed"
+    }
   },
   reviewQueue: {
     eyebrow: "Review Queue",
@@ -174,6 +191,15 @@ export const enDictionary: TranslationDictionary = {
     lastUpdated: "Updated {value}",
     searchPlaceholder: "Quick search by IP / username / ISP / UUID / IDs",
     clearFilters: "Reset filters",
+    savedFilters: {
+      save: "Save current",
+      apply: "Apply saved",
+      clear: "Clear saved",
+      saved: "Saved current queue filters",
+      applied: "Applied saved queue filters",
+      cleared: "Saved queue filters cleared",
+      invalid: "Saved queue filters are invalid"
+    },
     toggleFiltersTitle: "Toggle filters",
     filtersButton: "Filters",
     filterCount: "Filters ({count})",
@@ -212,6 +238,8 @@ export const enDictionary: TranslationDictionary = {
       punitiveAny: "Punitive any",
       punitiveOnly: "punitive only",
       reviewOnly: "review only",
+      sortPriorityDesc: "priority desc",
+      sortPriorityAsc: "priority asc",
       sortUpdatedDesc: "updated desc",
       sortScoreDesc: "score desc",
       sortRepeatDesc: "repeat desc",
@@ -235,7 +263,10 @@ export const enDictionary: TranslationDictionary = {
       decision: "Decision",
       punitiveEligible: "punitive eligible",
       reviewOnly: "review only",
+      priority: "priority {value}",
+      usageSignals: "usage {count}",
       repeat: "repeat x{count}",
+      ongoing: "ongoing {value}",
       opened: "opened {value}"
     },
     pageSize: {
@@ -250,6 +281,8 @@ export const enDictionary: TranslationDictionary = {
       bulkMobile: "Set selected to MOBILE",
       bulkHome: "Set selected to HOME",
       bulkSkip: "Skip selected",
+      recheckVisible: "Recheck visible",
+      recheckDone: "Rechecked {count} queue cases",
       processing: "Processing…",
       saved: "Review decision saved",
       bulkSaved: "{count} selected cases resolved"
@@ -347,6 +380,8 @@ export const enDictionary: TranslationDictionary = {
     description: "Evidence, linked history, and a sticky resolution rail for fast moderation.",
     loading: "Loading…",
     backToQueue: "Back to queue",
+    queuePosition: "Queue {current}/{total}",
+    keyboardHint: "[ prev ] next · M/H/S resolve",
     copySuccess: "Copied to clipboard",
     copyFailed: "Failed to copy",
     errors: {
@@ -356,6 +391,7 @@ export const enDictionary: TranslationDictionary = {
       summary: "Summary",
       reasons: "Reasons",
       providerEvidence: "Provider evidence",
+      usageProfile: "Usage profile",
       log: "Log",
       history: "Resolution history",
       linkedContext: "Linked user/IP context",
@@ -406,6 +442,24 @@ export const enDictionary: TranslationDictionary = {
       matchedAliases: "Matched aliases",
       mobileMarkers: "Matched mobile markers",
       homeMarkers: "Matched home markers"
+    },
+    usageProfile: {
+      empty: "No usage-profile evidence yet",
+      summary: "Snapshot",
+      devices: "Devices",
+      osFamilies: "OS families",
+      nodes: "Node spread",
+      softReasons: "Soft reasons",
+      geo: "Geo history",
+      travel: "Travel anomalies",
+      countryJumpOnly: "country jump only",
+      topIps: "Top recent IPs",
+      topProviders: "Top providers",
+      recentLocations: "Recent locations",
+      impossibleTravel: "Impossible travel",
+      ongoing: "Ongoing duration",
+      lastSeen: "Last seen",
+      updatedAt: "Updated"
     }
   },
   rules: {
@@ -509,7 +563,7 @@ export const enDictionary: TranslationDictionary = {
     templatesTitle: "Message templates",
     templatesHintLabel: "Message templates hint",
     templatesHint:
-      "Multiline text is preserved.\n\nPlaceholders: {{username}}, {{warning_count}}, {{warnings_left}}, {{ban_text}}, {{review_url}}.",
+      "Multiline text is preserved.\n\nPlaceholders: {{username}}, {{warning_count}}, {{warnings_left}}, {{ban_text}}, {{review_url}}, {{usage_profile_summary}}.",
     userTemplates: "User templates",
     adminTemplates: "Admin templates",
     envTitle: "Telegram .env",
@@ -576,7 +630,8 @@ export const enDictionary: TranslationDictionary = {
       cache: "Live cache entries that can be corrected or removed without waiting for natural expiry.",
       learning: "Promoted patterns, legacy confidence rows, and provider-learning slices.",
       cases: "Recent review cases with a compact operator jump-list into full detail.",
-      exports: "Calibration archive generation with dataset readiness and manifest visibility."
+      exports: "Calibration archive generation with dataset readiness and manifest visibility.",
+      audit: "Operator action history for moderation, data mutations, settings, and module operations."
     },
     tabs: {
       users: "users",
@@ -585,7 +640,8 @@ export const enDictionary: TranslationDictionary = {
       cache: "cache",
       learning: "learning",
       cases: "cases",
-      exports: "exports"
+      exports: "exports",
+      audit: "audit"
     },
     errors: {
       loadTabFailed: "Failed to load data tab",
@@ -625,6 +681,19 @@ export const enDictionary: TranslationDictionary = {
       actionsTitle: "User actions",
       analysisTitle: "Recent analysis & provider evidence",
       analysisEmpty: "No recent analysis events",
+      usageProfileTitle: "Usage profile",
+      usageProfileEmpty: "No usage-profile evidence yet",
+      usageProfileSummary: "Snapshot",
+      usageProfileOngoing: "Ongoing duration",
+      usageProfileDevices: "Devices",
+      usageProfileOs: "OS families",
+      usageProfileNodes: "Node spread",
+      usageProfileSignals: "Soft reasons",
+      usageProfileGeo: "Geo history",
+      usageProfileTravel: "Travel anomalies",
+      usageProfileCountryJumpOnly: "country jump only",
+      usageProfileTopIps: "Top recent IPs",
+      usageProfileTopProviders: "Top providers",
       openCasesTitle: "Open / recent review cases",
       openCasesEmpty: "No local review cases",
       historyTitle: "Violation history",
@@ -735,6 +804,11 @@ export const enDictionary: TranslationDictionary = {
       confidence: "confidence {value}",
       plusOneConfidence: "+1 confidence",
       delete: "Delete"
+    },
+    audit: {
+      title: "Operator audit trail",
+      description: "Read-only log of admin actions that changed moderation state, rules, settings, or modules.",
+      empty: "No audit events yet"
     },
     cases: {
       title: "Cases"
@@ -882,9 +956,19 @@ export const enDictionary: TranslationDictionary = {
     },
     listFields: {
       admin_tg_ids: {
-        label: "Admin Telegram IDs",
-        description: "Telegram IDs allowed to log into the web panel.",
-        recommendation: "Keep only panel moderators and admins here."
+        label: "Owner Telegram IDs",
+        description: "Telegram IDs mapped to the owner role with full platform control.",
+        recommendation: "Keep this list short and highly trusted."
+      },
+      moderator_tg_ids: {
+        label: "Moderator Telegram IDs",
+        description: "Telegram IDs allowed to resolve queue items and mutate data-admin state without touching platform settings.",
+        recommendation: "Use for operators responsible for moderation and runtime data correction."
+      },
+      viewer_tg_ids: {
+        label: "Viewer Telegram IDs",
+        description: "Telegram IDs allowed to inspect overview, quality, modules, queue, data, and audit in read-only mode.",
+        recommendation: "Use for analysts and support staff who should not mutate state."
       },
       exempt_ids: {
         label: "Excluded System IDs",
@@ -1225,6 +1309,18 @@ export const enDictionary: TranslationDictionary = {
         label: "Notify access restrictions",
         description: "Send admin messages when an access restriction is applied."
       },
+      telegram_notify_admin_usage_profile_risk_enabled: {
+        label: "Notify usage-profile risk",
+        description: "Send admin messages for enriched usage-profile risk snapshots."
+      },
+      telegram_notify_admin_violation_continues_enabled: {
+        label: "Notify ongoing violations",
+        description: "Send admin messages when suspicious behaviour continues over time."
+      },
+      telegram_notify_admin_traffic_limit_exceeded_enabled: {
+        label: "Notify traffic-limit exceeded",
+        description: "Send admin messages when traffic-cap restriction is used."
+      },
       telegram_notify_user_warning_only_enabled: {
         label: "Send warning-only messages",
         description: "Send user-facing messages for non-escalating warning-only events."
@@ -1266,6 +1362,18 @@ export const enDictionary: TranslationDictionary = {
       admin_review_template: {
         label: "Review message",
         description: "Admin notification text for review/manual moderation cases."
+      },
+      admin_usage_profile_risk_template: {
+        label: "Usage-profile risk message",
+        description: "Admin notification text for enriched usage-profile risk snapshots."
+      },
+      admin_violation_continues_template: {
+        label: "Violation-continues message",
+        description: "Admin notification text when suspicious behaviour keeps going."
+      },
+      admin_traffic_limit_exceeded_template: {
+        label: "Traffic-limit-exceeded message",
+        description: "Admin notification text when traffic-cap restriction is used."
       }
     }
   }

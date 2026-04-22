@@ -6,6 +6,11 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
 from ..models import DecisionBundle, ReviewCaseSummary
+from ..usage_profile import (
+    build_usage_profile_priority,
+    build_usage_profile_snapshot,
+    normalize_usage_observation,
+)
 from .base import SQLiteRepository
 
 
@@ -55,6 +60,15 @@ def _resolve_review_module_name(conn: sqlite3.Connection, payload: dict[str, Any
     return normalized
 
 
+def _review_identity(user: Optional[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "uuid": (user or {}).get("uuid"),
+        "username": (user or {}).get("username"),
+        "system_id": _coerce_optional_int((user or {}).get("id")),
+        "telegram_id": str((user or {}).get("telegramId")) if (user or {}).get("telegramId") not in (None, "") else None,
+    }
+
+
 class ReviewAdminRepository(SQLiteRepository):
     def __init__(
         self,
@@ -73,19 +87,29 @@ class ReviewAdminRepository(SQLiteRepository):
         ip: str,
         tag: str,
         bundle: DecisionBundle,
+        *,
+        observation: Optional[dict[str, Any]] = None,
     ) -> int:
         now = _utcnow()
         payload = bundle.to_dict()
         module_id = str((user or {}).get("module_id") or "").strip() or None
         module_name = str((user or {}).get("module_name") or "").strip() or module_id
+        usage_observation = normalize_usage_observation(
+            observation,
+            signal_flags=bundle.signal_flags,
+        )
         with self.connect() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO analysis_events (
                     created_at, module_id, module_name, uuid, username, system_id, telegram_id, ip, tag,
-                    verdict, confidence_band, score, isp, asn, punitive_eligible,
+                    verdict, confidence_band, score, isp, asn,
+                    country, region, city, loc, latitude, longitude,
+                    client_device_id, client_device_label, client_os_family, client_os_version,
+                    client_app_name, client_app_version,
+                    punitive_eligible,
                     reasons_json, signal_flags_json, bundle_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     now,
@@ -102,6 +126,18 @@ class ReviewAdminRepository(SQLiteRepository):
                     bundle.score,
                     bundle.isp,
                     bundle.asn,
+                    usage_observation.get("country"),
+                    usage_observation.get("region"),
+                    usage_observation.get("city"),
+                    usage_observation.get("loc"),
+                    usage_observation.get("latitude"),
+                    usage_observation.get("longitude"),
+                    usage_observation.get("client_device_id"),
+                    usage_observation.get("client_device_label"),
+                    usage_observation.get("client_os_family"),
+                    usage_observation.get("client_os_version"),
+                    usage_observation.get("client_app_name"),
+                    usage_observation.get("client_app_version"),
                     int(bundle.punitive_eligible),
                     json.dumps([reason.to_dict() for reason in bundle.reasons], ensure_ascii=False),
                     json.dumps(bundle.signal_flags, ensure_ascii=False),
@@ -120,6 +156,34 @@ class ReviewAdminRepository(SQLiteRepository):
             return ""
         return f"{base_url}/reviews/{case_id}"
 
+    def _usage_profile_fields(
+        self,
+        user: Optional[dict[str, Any]],
+        *,
+        bundle: DecisionBundle,
+        repeat_count: int,
+        anchor_started_at: str,
+    ) -> dict[str, Any]:
+        snapshot = build_usage_profile_snapshot(
+            self,
+            _review_identity(user),
+            anchor_started_at=anchor_started_at,
+        )
+        priority = build_usage_profile_priority(
+            snapshot,
+            punitive_eligible=bool(bundle.punitive_eligible),
+            confidence_band=str(bundle.confidence_band or ""),
+            repeat_count=repeat_count,
+        )
+        return {
+            "usage_profile_summary": str(snapshot.get("usage_profile_summary") or ""),
+            "usage_profile_signal_count": int(priority["signal_count"]),
+            "usage_profile_priority": int(priority["priority"]),
+            "usage_profile_soft_reasons_json": json.dumps(snapshot.get("soft_reasons", []), ensure_ascii=False),
+            "usage_profile_ongoing_duration_seconds": snapshot.get("ongoing_duration_seconds"),
+            "usage_profile_ongoing_duration_text": str(snapshot.get("ongoing_duration_text") or ""),
+        }
+
     def ensure_review_case(
         self,
         user: Optional[dict[str, Any]],
@@ -136,10 +200,17 @@ class ReviewAdminRepository(SQLiteRepository):
         reason_codes = json.dumps(bundle.reason_codes, ensure_ascii=False)
         with self.connect() as conn:
             existing = conn.execute(
-                "SELECT id, repeat_count FROM review_cases WHERE unique_key = ? AND module_id = ?",
+                "SELECT id, repeat_count, opened_at FROM review_cases WHERE unique_key = ? AND module_id = ?",
                 (unique_key, module_id),
             ).fetchone()
             if existing:
+                next_repeat_count = int(existing["repeat_count"]) + 1
+                usage_fields = self._usage_profile_fields(
+                    user,
+                    bundle=bundle,
+                    repeat_count=next_repeat_count,
+                    anchor_started_at=str(existing["opened_at"] or now),
+                )
                 conn.execute(
                     """
                     UPDATE review_cases
@@ -158,6 +229,12 @@ class ReviewAdminRepository(SQLiteRepository):
                         latest_event_id = ?,
                         repeat_count = ?,
                         reason_codes_json = ?,
+                        usage_profile_summary = ?,
+                        usage_profile_signal_count = ?,
+                        usage_profile_priority = ?,
+                        usage_profile_soft_reasons_json = ?,
+                        usage_profile_ongoing_duration_seconds = ?,
+                        usage_profile_ongoing_duration_text = ?,
                         updated_at = ?
                     WHERE id = ?
                     """,
@@ -174,21 +251,35 @@ class ReviewAdminRepository(SQLiteRepository):
                         bundle.asn,
                         int(bundle.punitive_eligible),
                         event_id,
-                        int(existing["repeat_count"]) + 1,
+                        next_repeat_count,
                         reason_codes,
+                        usage_fields["usage_profile_summary"],
+                        usage_fields["usage_profile_signal_count"],
+                        usage_fields["usage_profile_priority"],
+                        usage_fields["usage_profile_soft_reasons_json"],
+                        usage_fields["usage_profile_ongoing_duration_seconds"],
+                        usage_fields["usage_profile_ongoing_duration_text"],
                         now,
                         existing["id"],
                     ),
                 )
                 case_id = int(existing["id"])
             else:
+                usage_fields = self._usage_profile_fields(
+                    user,
+                    bundle=bundle,
+                    repeat_count=1,
+                    anchor_started_at=now,
+                )
                 cursor = conn.execute(
                     """
                     INSERT INTO review_cases (
                         unique_key, status, review_reason, module_id, module_name, uuid, username, system_id, telegram_id, ip, tag,
                         verdict, confidence_band, score, isp, asn, punitive_eligible, latest_event_id, repeat_count,
-                        reason_codes_json, opened_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        reason_codes_json, usage_profile_summary, usage_profile_signal_count, usage_profile_priority,
+                        usage_profile_soft_reasons_json, usage_profile_ongoing_duration_seconds, usage_profile_ongoing_duration_text,
+                        opened_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         unique_key,
@@ -211,6 +302,12 @@ class ReviewAdminRepository(SQLiteRepository):
                         event_id,
                         1,
                         reason_codes,
+                        usage_fields["usage_profile_summary"],
+                        usage_fields["usage_profile_signal_count"],
+                        usage_fields["usage_profile_priority"],
+                        usage_fields["usage_profile_soft_reasons_json"],
+                        usage_fields["usage_profile_ongoing_duration_seconds"],
+                        usage_fields["usage_profile_ongoing_duration_text"],
                         now,
                         now,
                     ),
@@ -258,12 +355,18 @@ class ReviewAdminRepository(SQLiteRepository):
 
         with self.connect() as conn:
             case_row = conn.execute(
-                "SELECT id, review_reason, repeat_count FROM review_cases WHERE id = ?",
+                "SELECT id, review_reason, repeat_count, opened_at FROM review_cases WHERE id = ?",
                 (case_id,),
             ).fetchone()
             if not case_row:
                 raise KeyError(f"Review case {case_id} not found")
         event_id = self.record_analysis_event(user, ip, tag, bundle)
+        usage_fields = self._usage_profile_fields(
+            user,
+            bundle=bundle,
+            repeat_count=int(case_row["repeat_count"] or 0),
+            anchor_started_at=str(case_row["opened_at"] or now),
+        )
 
         with self.connect() as conn:
             next_status = "OPEN" if review_reason else "SKIPPED"
@@ -288,6 +391,12 @@ class ReviewAdminRepository(SQLiteRepository):
                     punitive_eligible = ?,
                     latest_event_id = ?,
                     reason_codes_json = ?,
+                    usage_profile_summary = ?,
+                    usage_profile_signal_count = ?,
+                    usage_profile_priority = ?,
+                    usage_profile_soft_reasons_json = ?,
+                    usage_profile_ongoing_duration_seconds = ?,
+                    usage_profile_ongoing_duration_text = ?,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -309,6 +418,12 @@ class ReviewAdminRepository(SQLiteRepository):
                     int(bundle.punitive_eligible),
                     event_id,
                     reason_codes,
+                    usage_fields["usage_profile_summary"],
+                    usage_fields["usage_profile_signal_count"],
+                    usage_fields["usage_profile_priority"],
+                    usage_fields["usage_profile_soft_reasons_json"],
+                    usage_fields["usage_profile_ongoing_duration_seconds"],
+                    usage_fields["usage_profile_ongoing_duration_text"],
                     now,
                     case_id,
                 ),
@@ -347,6 +462,8 @@ class ReviewAdminRepository(SQLiteRepository):
         item = _resolve_review_module_name(conn, _normalize_review_identity_payload(dict(row)))
         if "reason_codes_json" in item:
             item["reason_codes"] = json.loads(item.pop("reason_codes_json"))
+        if "usage_profile_soft_reasons_json" in item:
+            item["usage_profile_soft_reasons"] = json.loads(item.pop("usage_profile_soft_reasons_json"))
         item["review_url"] = self.build_review_url(int(item["id"]))
         return item
 
@@ -364,6 +481,8 @@ class ReviewAdminRepository(SQLiteRepository):
         page_size = min(max(int(filters.get("page_size", 25) or 25), 1), 100)
         sort = str(filters.get("sort", "updated_desc") or "updated_desc")
         sort_map = {
+            "priority_desc": "usage_profile_priority DESC, updated_at DESC",
+            "priority_asc": "usage_profile_priority ASC, updated_at DESC",
             "updated_desc": "updated_at DESC",
             "updated_asc": "updated_at ASC",
             "score_desc": "score DESC",
@@ -374,7 +493,10 @@ class ReviewAdminRepository(SQLiteRepository):
         order_by = sort_map.get(sort, "updated_at DESC")
         query = [
             """SELECT id, status, review_reason, module_id, module_name, uuid, username, system_id, telegram_id, ip, tag, verdict, confidence_band,
-               score, isp, asn, punitive_eligible, repeat_count, reason_codes_json, opened_at, updated_at,
+               score, isp, asn, punitive_eligible, repeat_count, reason_codes_json,
+               usage_profile_summary, usage_profile_signal_count, usage_profile_priority,
+               usage_profile_soft_reasons_json, usage_profile_ongoing_duration_seconds, usage_profile_ongoing_duration_text,
+               opened_at, updated_at,
                CASE
                    WHEN punitive_eligible = 1 THEN 'critical'
                    WHEN confidence_band = 'HIGH_HOME' THEN 'high'

@@ -352,6 +352,100 @@ class ModuleProtocolTests(unittest.TestCase):
         self.assertEqual(result["accepted"], 1)
         self.assertEqual(result["processed"], 1)
 
+    def test_event_batch_persists_optional_client_fields_and_geo_context(self):
+        self.store.create_managed_module(
+            "node-c",
+            "token-c",
+            "encrypted-token-c",
+            module_name="Node C",
+            metadata={"inbound_tags": ["SELFSTEAL_RU-YANDEX_TCP"]},
+        )
+        module_service.register_module(
+            self.container,
+            {
+                "module_id": "node-c",
+                "module_name": "Node C",
+                "version": "1.0.0",
+                "protocol_version": "v1",
+            },
+            "token-c",
+        )
+
+        class FakeIPInfo:
+            async def get_ip_info(self, _ip):
+                return {
+                    "org": "AS51547 Mobile Operator",
+                    "hostname": "mobile.example",
+                    "country": "RU",
+                    "region": "Moscow",
+                    "city": "Moscow",
+                    "loc": "55.75,37.61",
+                }
+
+            def parse_asn(self, value):
+                return 51547 if value else None
+
+            def normalize_isp_name(self, value):
+                return str(value or "")
+
+            def is_datacenter(self, _org, _hostname):
+                return False
+
+        with patch.object(module_service, "_ipinfo_client", return_value=FakeIPInfo()), patch.object(
+            module_service,
+            "_remnawave_client",
+            return_value=SimpleNamespace(enabled=False, get_user_data=lambda _identifier: None),
+        ):
+            result = asyncio.run(
+                module_service.ingest_module_events(
+                    self.container,
+                    {
+                        "module_id": "node-c",
+                        "protocol_version": "v1",
+                        "items": [
+                            {
+                                "event_uid": "usage-1",
+                                "occurred_at": "2026-04-11T12:00:00",
+                                "ip": "1.2.3.4",
+                                "tag": "SELFSTEAL_RU-YANDEX_TCP",
+                                "uuid": "123e4567-e89b-12d3-a456-426614174000",
+                                "client_device_id": "dev-1",
+                                "client_device_label": "Pixel 8",
+                                "client_os_family": "Android",
+                                "client_os_version": "15",
+                                "client_app_name": "Happ",
+                                "client_app_version": "1.2.3",
+                            }
+                        ],
+                    },
+                    "token-c",
+                )
+            )
+
+        self.assertEqual(result["accepted"], 1)
+        with self.store._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT country, region, city, loc,
+                       client_device_id, client_device_label, client_os_family,
+                       client_os_version, client_app_name, client_app_version
+                FROM analysis_events
+                WHERE id = ?
+                """,
+                (result["results"][0]["event_id"],),
+            ).fetchone()
+
+        self.assertEqual(row["country"], "RU")
+        self.assertEqual(row["region"], "Moscow")
+        self.assertEqual(row["city"], "Moscow")
+        self.assertEqual(row["loc"], "55.75,37.61")
+        self.assertEqual(row["client_device_id"], "dev-1")
+        self.assertEqual(row["client_device_label"], "Pixel 8")
+        self.assertEqual(row["client_os_family"], "Android")
+        self.assertEqual(row["client_os_version"], "15")
+        self.assertEqual(row["client_app_name"], "Happ")
+        self.assertEqual(row["client_app_version"], "1.2.3")
+
 
 if __name__ == "__main__":
     unittest.main()

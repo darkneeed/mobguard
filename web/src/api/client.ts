@@ -4,6 +4,9 @@ import { reviewsApi } from "../features/reviews/api/client";
 import { settingsApi } from "../features/settings/api/client";
 
 export type {
+  AuditEvent,
+  AuditTrailResponse,
+  AuthResult,
   AuthCapabilities,
   BrandingConfig,
   CacheAdminResponse,
@@ -30,9 +33,11 @@ export type {
   RulesState,
   Session,
   SettingsSectionUpdatePayload,
+  TotpSetupPayload,
   UserCardExportResponse,
   UserCardResponse,
   UserSearchResponse,
+  UsageProfile,
   ViolationsResponse
 } from "../shared/api/types";
 

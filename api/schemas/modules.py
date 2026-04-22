@@ -33,6 +33,12 @@ class RawAccessEventRequest(BaseModel):
     telegram_id: Optional[str] = None
     ip: str
     tag: Optional[str] = None
+    client_device_id: Optional[str] = None
+    client_device_label: Optional[str] = None
+    client_os_family: Optional[str] = None
+    client_os_version: Optional[str] = None
+    client_app_name: Optional[str] = None
+    client_app_version: Optional[str] = None
 
 
 class EventBatchRequest(BaseModel):

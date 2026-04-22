@@ -100,6 +100,9 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertEqual(resolved["system_id"], 42)
         self.assertEqual(resolved["latest_event"]["system_id"], 42)
         self.assertEqual(self.store.get_ip_override(bundle.ip), "HOME")
+        self.assertIn("usage_profile_summary", resolved)
+        self.assertGreaterEqual(int(resolved["usage_profile_signal_count"]), 0)
+        self.assertGreaterEqual(int(resolved["usage_profile_priority"]), 0)
         pattern = self.store.get_promoted_pattern("asn", "12345")
         self.assertIsNotNone(pattern)
         self.assertEqual(pattern["decision"], "HOME")
@@ -363,6 +366,48 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertEqual(filtered["items"][0]["id"], first_case.id)
         self.assertEqual(filtered["items"][0]["system_id"], 42)
         self.assertEqual(filtered["items"][0]["opened_at"], "2026-04-01T10:00:00")
+
+    def test_list_review_cases_sorts_by_usage_priority(self):
+        first_user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
+        second_user = {"uuid": "uuid-2", "username": "bob", "telegramId": "2002", "id": 77}
+
+        first_bundle = DecisionBundle(
+            ip="10.10.10.10",
+            verdict="HOME",
+            confidence_band="PROBABLE_HOME",
+            score=18,
+            asn=12345,
+            isp="ISP-A",
+        )
+        second_bundle = DecisionBundle(
+            ip="10.10.10.20",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-B",
+        )
+
+        first_event = self.store.record_analysis_event(first_user, first_bundle.ip, "TAG", first_bundle)
+        first_case = self.store.ensure_review_case(first_user, first_bundle.ip, "TAG", first_bundle, first_event, "probable_home")
+        second_event = self.store.record_analysis_event(second_user, second_bundle.ip, "TAG", second_bundle)
+        second_case = self.store.ensure_review_case(second_user, second_bundle.ip, "TAG", second_bundle, second_event, "unsure")
+
+        with self.store._connect() as conn:
+            conn.execute(
+                "UPDATE review_cases SET usage_profile_priority = ? WHERE id = ?",
+                (1200, second_case.id),
+            )
+            conn.execute(
+                "UPDATE review_cases SET usage_profile_priority = ? WHERE id = ?",
+                (400, first_case.id),
+            )
+            conn.commit()
+
+        listing = self.store.list_review_cases({"sort": "priority_desc"})
+
+        self.assertEqual(listing["items"][0]["id"], second_case.id)
+        self.assertEqual(listing["items"][1]["id"], first_case.id)
 
     def test_list_review_cases_prefers_module_name_and_falls_back_to_modules_table(self):
         user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42, "module_id": "node-a", "module_name": "Node A"}
@@ -658,7 +703,11 @@ class StoreReviewFlowTests(unittest.TestCase):
             }
 
         self.assertIn("system_id", analysis_columns)
+        self.assertIn("country", analysis_columns)
+        self.assertIn("client_device_label", analysis_columns)
         self.assertIn("system_id", review_columns)
+        self.assertIn("usage_profile_priority", review_columns)
+        self.assertIn("usage_profile_summary", review_columns)
         self.assertIn("idx_review_cases_system_id", indexes)
         self.assertIn("idx_review_cases_uuid_updated", indexes)
         self.assertIn("idx_review_cases_username_updated", indexes)

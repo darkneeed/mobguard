@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from .models import DecisionBundle, ReviewCaseSummary
 from .asn_sources import detect_asn_source
+from .repositories.admin_security import AdminSecurityRepository
 from .repositories.health import ServiceHealthRepository
 from .repositories.modules_admin import ModuleAdminRepository
 from .repositories.review_admin import ReviewAdminRepository
@@ -27,6 +28,8 @@ EDITABLE_TOP_LEVEL_KEYS = {
     "home_isp_keywords": str,
     "exclude_isp_keywords": str,
     "admin_tg_ids": int,
+    "moderator_tg_ids": int,
+    "viewer_tg_ids": int,
     "exempt_tg_ids": int,
     "exempt_ids": int,
 }
@@ -453,6 +456,7 @@ class PlatformStore:
         self._rules_cache_mtime: Optional[float] = None
         self.storage = SQLiteStorage(db_path)
         self.sessions = AdminSessionRepository(self.storage)
+        self.admin_security = AdminSecurityRepository(self.storage)
         self.health = ServiceHealthRepository(self.storage, db_path)
         self.modules_admin = ModuleAdminRepository(self.storage)
         self.review_admin = ReviewAdminRepository(
@@ -664,6 +668,18 @@ class PlatformStore:
                     score INTEGER NOT NULL DEFAULT 0,
                     isp TEXT,
                     asn INTEGER,
+                    country TEXT,
+                    region TEXT,
+                    city TEXT,
+                    loc TEXT,
+                    latitude REAL,
+                    longitude REAL,
+                    client_device_id TEXT,
+                    client_device_label TEXT,
+                    client_os_family TEXT,
+                    client_os_version TEXT,
+                    client_app_name TEXT,
+                    client_app_version TEXT,
                     punitive_eligible INTEGER NOT NULL DEFAULT 0,
                     reasons_json TEXT NOT NULL,
                     signal_flags_json TEXT NOT NULL,
@@ -695,6 +711,12 @@ class PlatformStore:
                     latest_event_id INTEGER NOT NULL,
                     repeat_count INTEGER NOT NULL DEFAULT 1,
                     reason_codes_json TEXT NOT NULL,
+                    usage_profile_summary TEXT NOT NULL DEFAULT '',
+                    usage_profile_signal_count INTEGER NOT NULL DEFAULT 0,
+                    usage_profile_priority INTEGER NOT NULL DEFAULT 0,
+                    usage_profile_soft_reasons_json TEXT NOT NULL DEFAULT '[]',
+                    usage_profile_ongoing_duration_seconds INTEGER,
+                    usage_profile_ongoing_duration_text TEXT NOT NULL DEFAULT '',
                     opened_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -821,6 +843,56 @@ class PlatformStore:
             )
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS admin_identities (
+                    subject TEXT PRIMARY KEY,
+                    auth_method TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    telegram_id INTEGER,
+                    username TEXT,
+                    first_name TEXT,
+                    totp_secret_cipher TEXT NOT NULL DEFAULT '',
+                    totp_enabled INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS admin_totp_challenges (
+                    token TEXT PRIMARY KEY,
+                    subject TEXT NOT NULL,
+                    auth_method TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    telegram_id INTEGER,
+                    username TEXT,
+                    first_name TEXT,
+                    challenge_kind TEXT NOT NULL,
+                    temp_secret_cipher TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS admin_action_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    actor_subject TEXT NOT NULL,
+                    actor_role TEXT NOT NULL,
+                    actor_auth_method TEXT NOT NULL,
+                    actor_telegram_id INTEGER,
+                    actor_username TEXT,
+                    action TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    details_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS service_heartbeats (
                     service_name TEXT PRIMARY KEY,
                     status TEXT NOT NULL,
@@ -850,6 +922,30 @@ class PlatformStore:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN isp TEXT")
             if analysis_event_columns and "asn" not in analysis_event_columns:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN asn INTEGER")
+            if analysis_event_columns and "country" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN country TEXT")
+            if analysis_event_columns and "region" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN region TEXT")
+            if analysis_event_columns and "city" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN city TEXT")
+            if analysis_event_columns and "loc" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN loc TEXT")
+            if analysis_event_columns and "latitude" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN latitude REAL")
+            if analysis_event_columns and "longitude" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN longitude REAL")
+            if analysis_event_columns and "client_device_id" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN client_device_id TEXT")
+            if analysis_event_columns and "client_device_label" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN client_device_label TEXT")
+            if analysis_event_columns and "client_os_family" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN client_os_family TEXT")
+            if analysis_event_columns and "client_os_version" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN client_os_version TEXT")
+            if analysis_event_columns and "client_app_name" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN client_app_name TEXT")
+            if analysis_event_columns and "client_app_version" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN client_app_version TEXT")
             if analysis_event_columns and "punitive_eligible" not in analysis_event_columns:
                 conn.execute(
                     "ALTER TABLE analysis_events ADD COLUMN punitive_eligible INTEGER NOT NULL DEFAULT 0"
@@ -877,6 +973,22 @@ class PlatformStore:
                 conn.execute("ALTER TABLE review_cases ADD COLUMN punitive_eligible INTEGER NOT NULL DEFAULT 0")
             if review_case_columns and "system_id" not in review_case_columns:
                 conn.execute("ALTER TABLE review_cases ADD COLUMN system_id INTEGER")
+            if review_case_columns and "usage_profile_summary" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN usage_profile_summary TEXT NOT NULL DEFAULT ''")
+            if review_case_columns and "usage_profile_signal_count" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN usage_profile_signal_count INTEGER NOT NULL DEFAULT 0")
+            if review_case_columns and "usage_profile_priority" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN usage_profile_priority INTEGER NOT NULL DEFAULT 0")
+            if review_case_columns and "usage_profile_soft_reasons_json" not in review_case_columns:
+                conn.execute(
+                    "ALTER TABLE review_cases ADD COLUMN usage_profile_soft_reasons_json TEXT NOT NULL DEFAULT '[]'"
+                )
+            if review_case_columns and "usage_profile_ongoing_duration_seconds" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN usage_profile_ongoing_duration_seconds INTEGER")
+            if review_case_columns and "usage_profile_ongoing_duration_text" not in review_case_columns:
+                conn.execute(
+                    "ALTER TABLE review_cases ADD COLUMN usage_profile_ongoing_duration_text TEXT NOT NULL DEFAULT ''"
+                )
             live_rules_columns = {
                 row["name"] for row in conn.execute("PRAGMA table_info(live_rules)").fetchall()
             }
@@ -916,6 +1028,9 @@ class PlatformStore:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_review_cases_status ON review_cases(status, updated_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_review_cases_priority ON review_cases(status, usage_profile_priority DESC, updated_at DESC)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_review_cases_opened_at ON review_cases(opened_at)"
@@ -970,6 +1085,12 @@ class PlatformStore:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_admin_sessions_exp ON admin_sessions(expires_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_admin_totp_challenges_exp ON admin_totp_challenges(expires_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_admin_action_audit_created ON admin_action_audit(created_at DESC)"
             )
 
             live_rules = conn.execute("SELECT rules_json FROM live_rules WHERE id = 1").fetchone()
@@ -1229,8 +1350,9 @@ class PlatformStore:
         ip: str,
         tag: str,
         bundle: DecisionBundle,
+        observation: Optional[dict[str, Any]] = None,
     ) -> int:
-        return self.review_admin.record_analysis_event(user, ip, tag, bundle)
+        return self.review_admin.record_analysis_event(user, ip, tag, bundle, observation=observation)
 
     def build_review_url(self, case_id: int) -> str:
         return self.review_admin.build_review_url(case_id)
@@ -1648,6 +1770,12 @@ class PlatformStore:
                     "DELETE FROM admin_sessions WHERE expires_at < ?",
                     (exact_override_cutoff,),
                 )
+            if self._table_exists(conn, "admin_totp_challenges"):
+                deleted["admin_totp_challenges"] = _execute_with_changes(
+                    conn,
+                    "DELETE FROM admin_totp_challenges WHERE expires_at < ?",
+                    (exact_override_cutoff,),
+                )
 
             if self._table_exists(conn, "module_heartbeats"):
                 deleted["module_heartbeats"] = _execute_with_changes(
@@ -1788,6 +1916,91 @@ class PlatformStore:
     def delete_admin_session(self, token: str) -> None:
         self.sessions.delete(token)
 
+    def upsert_admin_identity(
+        self,
+        *,
+        subject: str,
+        auth_method: str,
+        role: str,
+        telegram_id: int | None = None,
+        username: str | None = None,
+        first_name: str | None = None,
+    ) -> dict[str, Any]:
+        return self.admin_security.upsert_identity(
+            subject=subject,
+            auth_method=auth_method,
+            role=role,
+            telegram_id=telegram_id,
+            username=username,
+            first_name=first_name,
+        )
+
+    def get_admin_identity(self, subject: str) -> Optional[dict[str, Any]]:
+        return self.admin_security.get_identity(subject)
+
+    def set_admin_identity_totp(self, subject: str, *, secret_cipher: str, enabled: bool) -> dict[str, Any]:
+        return self.admin_security.set_identity_totp(subject, secret_cipher=secret_cipher, enabled=enabled)
+
+    def create_admin_totp_challenge(
+        self,
+        *,
+        subject: str,
+        auth_method: str,
+        role: str,
+        telegram_id: int | None = None,
+        username: str | None = None,
+        first_name: str | None = None,
+        challenge_kind: str,
+        ttl_seconds: int = 300,
+    ) -> dict[str, Any]:
+        return self.admin_security.create_totp_challenge(
+            subject=subject,
+            auth_method=auth_method,
+            role=role,
+            telegram_id=telegram_id,
+            username=username,
+            first_name=first_name,
+            challenge_kind=challenge_kind,
+            ttl_seconds=ttl_seconds,
+        )
+
+    def get_admin_totp_challenge(self, token: str) -> Optional[dict[str, Any]]:
+        return self.admin_security.get_totp_challenge(token)
+
+    def update_admin_totp_challenge_secret(self, token: str, secret_cipher: str) -> dict[str, Any]:
+        return self.admin_security.update_totp_challenge_secret(token, secret_cipher)
+
+    def delete_admin_totp_challenge(self, token: str) -> None:
+        self.admin_security.delete_totp_challenge(token)
+
+    def record_admin_audit_event(
+        self,
+        *,
+        actor_subject: str,
+        actor_role: str,
+        actor_auth_method: str,
+        actor_telegram_id: int | None,
+        actor_username: str | None,
+        action: str,
+        target_type: str,
+        target_id: str,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self.admin_security.record_audit_event(
+            actor_subject=actor_subject,
+            actor_role=actor_role,
+            actor_auth_method=actor_auth_method,
+            actor_telegram_id=actor_telegram_id,
+            actor_username=actor_username,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            details=details,
+        )
+
+    def list_admin_audit_events(self, limit: int = 200) -> list[dict[str, Any]]:
+        return self.admin_security.list_audit_events(limit=limit)
+
     def update_service_heartbeat(
         self,
         service_name: str,
@@ -1803,9 +2016,27 @@ class PlatformStore:
         return self.health.get_snapshot(live_rules_state_loader=self.get_live_rules_state)
 
     def is_admin_tg_id(self, tg_id: int) -> bool:
+        return self.get_admin_role_for_tg_id(tg_id) is not None
+
+    def get_admin_role_for_tg_id(self, tg_id: int) -> str | None:
         rules = self.get_live_rules()
-        admin_ids = rules.get("admin_tg_ids", self.base_config.get("admin_tg_ids", []))
-        return int(tg_id) in [int(value) for value in admin_ids]
+        numeric_id = int(tg_id)
+        owner_ids = {int(value) for value in rules.get("admin_tg_ids", self.base_config.get("admin_tg_ids", []))}
+        moderator_ids = {
+            int(value)
+            for value in rules.get("moderator_tg_ids", self.base_config.get("moderator_tg_ids", []))
+        }
+        viewer_ids = {
+            int(value)
+            for value in rules.get("viewer_tg_ids", self.base_config.get("viewer_tg_ids", []))
+        }
+        if numeric_id in owner_ids:
+            return "owner"
+        if numeric_id in moderator_ids:
+            return "moderator"
+        if numeric_id in viewer_ids:
+            return "viewer"
+        return None
 
     async def async_sync_runtime_config(self, runtime_config: dict[str, Any]) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
@@ -1842,9 +2073,10 @@ class PlatformStore:
         ip: str,
         tag: str,
         bundle: DecisionBundle,
+        observation: Optional[dict[str, Any]] = None,
     ) -> int:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.record_analysis_event, user, ip, tag, bundle)
+        return await loop.run_in_executor(None, self.record_analysis_event, user, ip, tag, bundle, observation)
 
     async def async_ensure_review_case(
         self,

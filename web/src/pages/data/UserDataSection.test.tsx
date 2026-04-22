@@ -25,6 +25,19 @@ describe("UserDataSection", () => {
             review_cases: [{ id: 7, review_reason: "unsure", ip: "1.2.3.4", updated_at: "2026-04-12T03:25:00Z" }],
             analysis_events: [],
             history: [],
+            usage_profile: {
+              available: true,
+              usage_profile_summary: "IPs 2; providers 2; devices 2",
+              device_labels: ["iPhone 15", "Pixel 8"],
+              os_families: ["iOS", "Android"],
+              nodes: ["Node A", "Node B"],
+              soft_reasons: ["geo_impossible_travel", "device_rotation"],
+              geo_summary: { countries: ["RU", "DE"] },
+              travel_flags: { geo_impossible_travel: true },
+              top_ips: [{ ip: "1.2.3.4", count: 2 }],
+              top_providers: [{ provider: "ISP A", count: 2 }],
+              ongoing_duration_text: "2h",
+            },
             panel_user: { status: "active" },
           }}
           userCardExport={null}
@@ -52,6 +65,7 @@ describe("UserDataSection", () => {
 
     expect(screen.getByText("alice · data.users.systemLabel · data.users.telegramLabel")).toBeInTheDocument();
     expect(screen.getByText("data.users.cardTitle")).toBeInTheDocument();
+    expect(screen.getByText("data.users.usageProfileTitle")).toBeInTheDocument();
     expect(screen.getByText("data.users.actionsTitle")).toBeInTheDocument();
   });
 });

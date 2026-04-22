@@ -40,6 +40,14 @@ class AdminSessionRepository(SQLiteRepository):
             "username": payload.get("username"),
             "first_name": payload.get("first_name"),
             "expires_at": expires_at.isoformat(),
+            "subject": payload.get("subject"),
+            "auth_method": payload.get("auth_method"),
+            "role": payload.get("role"),
+            "permissions": list(payload.get("permissions") or []),
+            "totp_enabled": bool(payload.get("totp_enabled")),
+            "totp_verified": bool(payload.get("totp_verified")),
+            "totp_verified_at": payload.get("totp_verified_at"),
+            "payload": payload,
         }
 
     def get(self, token: str) -> Optional[dict[str, Any]]:
@@ -56,9 +64,23 @@ class AdminSessionRepository(SQLiteRepository):
             return None
         if row["expires_at"] <= utcnow():
             return None
-        payload = dict(row)
-        payload["payload"] = json.loads(payload.pop("payload_json"))
-        return payload
+        session = dict(row)
+        payload = json.loads(session.pop("payload_json"))
+        session["payload"] = payload
+        for key in (
+            "subject",
+            "auth_method",
+            "role",
+            "permissions",
+            "totp_enabled",
+            "totp_verified",
+            "totp_verified_at",
+        ):
+            session[key] = payload.get(key)
+        session["username"] = payload.get("username") or session.get("username")
+        session["first_name"] = payload.get("first_name") or session.get("first_name")
+        session["telegram_id"] = int(payload.get("telegram_id", session.get("telegram_id", 0)) or 0)
+        return session
 
     def delete(self, token: str) -> None:
         with self.connect() as conn:

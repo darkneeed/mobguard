@@ -1,17 +1,32 @@
 import { request } from "../../../shared/api/request";
-import { AuthCapabilities, Session } from "../../../shared/api/types";
+import { AuthCapabilities, AuthResult, Session, TotpSetupPayload } from "../../../shared/api/types";
 
 export const authApi = {
   authStart: () => request<AuthCapabilities>("/admin/auth/telegram/start", { method: "POST" }),
   authVerify: (payload: Record<string, unknown>) =>
-    request<Session>("/admin/auth/telegram/verify", {
+    request<AuthResult>("/admin/auth/telegram/verify", {
       method: "POST",
       body: JSON.stringify({ payload })
     }),
   localLogin: (username: string, password: string) =>
-    request<Session>("/admin/auth/local/login", {
+    request<AuthResult>("/admin/auth/local/login", {
       method: "POST",
       body: JSON.stringify({ username, password })
+    }),
+  totpSetup: (challengeToken: string) =>
+    request<TotpSetupPayload>("/admin/auth/totp/setup", {
+      method: "POST",
+      body: JSON.stringify({ challenge_token: challengeToken })
+    }),
+  totpConfirm: (challengeToken: string, code: string) =>
+    request<Session>("/admin/auth/totp/confirm", {
+      method: "POST",
+      body: JSON.stringify({ challenge_token: challengeToken, code })
+    }),
+  totpVerify: (challengeToken: string, code: string) =>
+    request<Session>("/admin/auth/totp/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge_token: challengeToken, code })
     }),
   me: () => request<Session>("/admin/me"),
   logout: () => request<{ ok: boolean }>("/admin/logout", { method: "POST" })

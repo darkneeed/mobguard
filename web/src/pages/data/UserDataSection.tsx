@@ -25,6 +25,7 @@ type Props = {
   setStrikeCount: (value: string) => void;
   warningCount: string;
   setWarningCount: (value: string) => void;
+  canWriteData?: boolean;
   searchUsers: () => Promise<void>;
   loadUser: (identifier: string) => Promise<void>;
   runUserAction: (action: () => Promise<UserCardResponse>, successMessage: string) => Promise<void>;
@@ -53,6 +54,7 @@ export function UserDataSection({
   setStrikeCount,
   warningCount,
   setWarningCount,
+  canWriteData = true,
   searchUsers,
   loadUser,
   runUserAction,
@@ -71,6 +73,11 @@ export function UserDataSection({
   const reviewCases = userCard?.review_cases || [];
   const history = userCard?.history || [];
   const analysisEvents = userCard?.analysis_events || [];
+  const usageProfile = userCard?.usage_profile;
+  const usageTravel = (usageProfile?.travel_flags || {}) as Record<string, unknown>;
+  const usageGeo = (usageProfile?.geo_summary || {}) as Record<string, unknown>;
+  const usageTopIps = (Array.isArray(usageProfile?.top_ips) ? usageProfile.top_ips : []) as Array<Record<string, unknown>>;
+  const usageTopProviders = (Array.isArray(usageProfile?.top_providers) ? usageProfile.top_providers : []) as Array<Record<string, unknown>>;
   const panelUser = userCard?.panel_user || undefined;
   const userTraffic =
     panelUser && typeof panelUser === "object" && "userTraffic" in panelUser
@@ -202,48 +209,132 @@ export function UserDataSection({
           </div>
 
           <div className="panel">
+            <h2>{t("data.users.usageProfileTitle")}</h2>
+            <ul className="reason-list">
+              {!usageProfile?.available ? <li><span>{t("data.users.usageProfileEmpty")}</span></li> : null}
+              {usageProfile?.usage_profile_summary ? (
+                <li>
+                  <strong>{t("data.users.usageProfileSummary")}</strong>
+                  <span>{usageProfile.usage_profile_summary}</span>
+                  <span>{t("data.users.usageProfileOngoing")} · {displayValue(usageProfile.ongoing_duration_text)}</span>
+                </li>
+              ) : null}
+              <li>
+                <strong>{t("data.users.usageProfileDevices")}</strong>
+                <span>
+                  {Array.isArray(usageProfile?.device_labels) && usageProfile.device_labels.length > 0
+                    ? usageProfile.device_labels.join(", ")
+                    : t("common.notAvailable")}
+                </span>
+                <span>
+                  {t("data.users.usageProfileOs")} ·{" "}
+                  {Array.isArray(usageProfile?.os_families) && usageProfile.os_families.length > 0
+                    ? usageProfile.os_families.join(", ")
+                    : t("common.notAvailable")}
+                </span>
+              </li>
+              <li>
+                <strong>{t("data.users.usageProfileNodes")}</strong>
+                <span>
+                  {Array.isArray(usageProfile?.nodes) && usageProfile.nodes.length > 0
+                    ? usageProfile.nodes.join(", ")
+                    : t("common.notAvailable")}
+                </span>
+                <span>
+                  {t("data.users.usageProfileSignals")} ·{" "}
+                  {Array.isArray(usageProfile?.soft_reasons) && usageProfile.soft_reasons.length > 0
+                    ? usageProfile.soft_reasons.join(", ")
+                    : t("common.notAvailable")}
+                </span>
+              </li>
+              <li>
+                <strong>{t("data.users.usageProfileGeo")}</strong>
+                <span>
+                  {Array.isArray(usageGeo.countries) && usageGeo.countries.length > 0
+                    ? usageGeo.countries.join(", ")
+                    : t("common.notAvailable")}
+                </span>
+                <span>
+                  {t("data.users.usageProfileTravel")} ·{" "}
+                  {Boolean(usageTravel.geo_impossible_travel)
+                    ? t("common.yes")
+                    : Boolean(usageTravel.geo_country_jump)
+                      ? t("data.users.usageProfileCountryJumpOnly")
+                      : t("common.no")}
+                </span>
+              </li>
+              <li>
+                <strong>{t("data.users.usageProfileTopIps")}</strong>
+                <span>
+                  {usageTopIps.length > 0
+                    ? usageTopIps
+                        .map(
+                          (item) =>
+                            `${displayValue((item as Record<string, unknown>).ip)} (${displayValue((item as Record<string, unknown>).count)})`
+                        )
+                        .join(", ")
+                    : t("common.notAvailable")}
+                </span>
+              </li>
+              <li>
+                <strong>{t("data.users.usageProfileTopProviders")}</strong>
+                <span>
+                  {usageTopProviders.length > 0
+                    ? usageTopProviders
+                        .map(
+                          (item) =>
+                            `${displayValue((item as Record<string, unknown>).provider)} (${displayValue((item as Record<string, unknown>).count)})`
+                        )
+                        .join(", ")
+                    : t("common.notAvailable")}
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <div className="panel">
             <h2>{t("data.users.actionsTitle")}</h2>
             <div className="form-grid">
               <div className="rule-field">
                 <strong>{t("data.users.actions.banMinutes")}</strong>
                 <input value={banMinutes} onChange={(event) => setBanMinutes(event.target.value)} />
-                <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.banUser(identifier, Number(banMinutes)), t("data.saved.userUpdated"))}>{t("data.users.actions.startBan")}</button>
-                <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.unbanUser(identifier), t("data.saved.userUpdated"))}>{t("data.users.actions.unban")}</button>
+                <button disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.banUser(identifier, Number(banMinutes)), t("data.saved.userUpdated"))}>{t("data.users.actions.startBan")}</button>
+                <button className="ghost" disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.unbanUser(identifier), t("data.saved.userUpdated"))}>{t("data.users.actions.unban")}</button>
               </div>
               <div className="rule-field">
                 <strong>{t("data.users.actions.trafficCapGigabytes")}</strong>
                 <input value={trafficCapGigabytes} onChange={(event) => setTrafficCapGigabytes(event.target.value)} />
                 <div className="action-row">
-                  <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.applyUserTrafficCap(identifier, Number(trafficCapGigabytes)), t("data.saved.userUpdated"))}>{t("data.users.actions.applyTrafficCap")}</button>
-                  <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.restoreUserTrafficCap(identifier), t("data.saved.userUpdated"))}>{t("data.users.actions.restoreTrafficCap")}</button>
+                  <button disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.applyUserTrafficCap(identifier, Number(trafficCapGigabytes)), t("data.saved.userUpdated"))}>{t("data.users.actions.applyTrafficCap")}</button>
+                  <button className="ghost" disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.restoreUserTrafficCap(identifier), t("data.saved.userUpdated"))}>{t("data.users.actions.restoreTrafficCap")}</button>
                 </div>
               </div>
               <div className="rule-field">
                 <strong>{t("data.users.actions.strikes")}</strong>
                 <input value={strikeCount} onChange={(event) => setStrikeCount(event.target.value)} />
                 <div className="action-row">
-                  <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "add", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.add")}</button>
-                  <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "remove", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.remove")}</button>
-                  <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "set", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.set")}</button>
+                  <button className="ghost" disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "add", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.add")}</button>
+                  <button className="ghost" disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "remove", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.remove")}</button>
+                  <button disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserStrikes(identifier, "set", Number(strikeCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.set")}</button>
                 </div>
               </div>
               <div className="rule-field">
                 <strong>{t("data.users.actions.warnings")}</strong>
                 <input value={warningCount} onChange={(event) => setWarningCount(event.target.value)} />
                 <div className="action-row">
-                  <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserWarnings(identifier, "set", Number(warningCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.setWarning")}</button>
-                  <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserWarnings(identifier, "clear", 0), t("data.saved.userUpdated"))}>{t("data.users.actions.clearWarning")}</button>
+                  <button disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserWarnings(identifier, "set", Number(warningCount)), t("data.saved.userUpdated"))}>{t("data.users.actions.setWarning")}</button>
+                  <button className="ghost" disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserWarnings(identifier, "clear", 0), t("data.saved.userUpdated"))}>{t("data.users.actions.clearWarning")}</button>
                 </div>
               </div>
               <div className="rule-field">
                 <strong>{t("data.users.actions.exemptions")}</strong>
                 <div className="action-row">
-                  <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "system", true), t("data.saved.userUpdated"))}>{t("data.users.actions.exemptSystem")}</button>
-                  <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "system", false), t("data.saved.userUpdated"))}>{t("data.users.actions.unexemptSystem")}</button>
+                  <button disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "system", true), t("data.saved.userUpdated"))}>{t("data.users.actions.exemptSystem")}</button>
+                  <button className="ghost" disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "system", false), t("data.saved.userUpdated"))}>{t("data.users.actions.unexemptSystem")}</button>
                 </div>
                 <div className="action-row">
-                  <button disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "telegram", true), t("data.saved.userUpdated"))}>{t("data.users.actions.exemptTelegram")}</button>
-                  <button className="ghost" disabled={isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "telegram", false), t("data.saved.userUpdated"))}>{t("data.users.actions.unexemptTelegram")}</button>
+                  <button disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "telegram", true), t("data.saved.userUpdated"))}>{t("data.users.actions.exemptTelegram")}</button>
+                  <button className="ghost" disabled={!canWriteData || isPending("userAction")} onClick={() => runUserAction(() => api.updateUserExempt(identifier, "telegram", false), t("data.saved.userUpdated"))}>{t("data.users.actions.unexemptTelegram")}</button>
                 </div>
               </div>
             </div>

@@ -38,6 +38,9 @@ TELEGRAM_RUNTIME_SETTINGS_DEFAULTS = {
     "telegram_notify_admin_warning_only_enabled": True,
     "telegram_notify_admin_warning_enabled": True,
     "telegram_notify_admin_ban_enabled": True,
+    "telegram_notify_admin_usage_profile_risk_enabled": True,
+    "telegram_notify_admin_violation_continues_enabled": True,
+    "telegram_notify_admin_traffic_limit_exceeded_enabled": True,
     "telegram_notify_user_warning_only_enabled": True,
     "telegram_notify_user_warning_enabled": True,
     "telegram_notify_user_ban_enabled": True,
@@ -60,6 +63,9 @@ TELEGRAM_EVENT_SETTING_KEYS = {
     ("admin", "warning_only"): "telegram_notify_admin_warning_only_enabled",
     ("admin", "warning"): "telegram_notify_admin_warning_enabled",
     ("admin", "ban"): "telegram_notify_admin_ban_enabled",
+    ("admin", "usage_profile_risk"): "telegram_notify_admin_usage_profile_risk_enabled",
+    ("admin", "violation_continues"): "telegram_notify_admin_violation_continues_enabled",
+    ("admin", "traffic_limit_exceeded"): "telegram_notify_admin_traffic_limit_exceeded_enabled",
     ("user", "warning_only"): "telegram_notify_user_warning_only_enabled",
     ("user", "warning"): "telegram_notify_user_warning_enabled",
     ("user", "ban"): "telegram_notify_user_ban_enabled",
@@ -140,6 +146,7 @@ ENFORCEMENT_TEMPLATE_DEFAULTS = {
         "<b>ISP:</b> {{isp}}\n"
         "<b>Config:</b> {{tag}}\n"
         "<b>Причина:</b> {{confidence_band}} / punitive disabled\n"
+        "<b>Usage profile:</b> {{usage_profile_summary}}\n"
         "<b>Review URL:</b> <code>{{review_url}}</code>\n"
     ),
     "admin_warning_template": (
@@ -154,6 +161,7 @@ ENFORCEMENT_TEMPLATE_DEFAULTS = {
         "<b>ISP:</b> {{isp}}\n"
         "<b>Config:</b> {{tag}}\n"
         "<b>Left:</b> {{warnings_left}}\n"
+        "<b>Usage profile:</b> {{usage_profile_summary}}\n"
         "<b>Review URL:</b> <code>{{review_url}}</code>\n"
     ),
     "admin_ban_template": (
@@ -169,6 +177,7 @@ ENFORCEMENT_TEMPLATE_DEFAULTS = {
         "<b>Config:</b> {{tag}}\n"
         "<b>Warning count:</b> {{warning_count}}\n"
         "<b>Restriction:</b> {{ban_minutes}} мин ({{ban_text}})\n"
+        "<b>Usage profile:</b> {{usage_profile_summary}}\n"
         "<b>Review URL:</b> <code>{{review_url}}</code>\n"
     ),
     "admin_review_template": (
@@ -183,6 +192,50 @@ ENFORCEMENT_TEMPLATE_DEFAULTS = {
         "<b>ISP:</b> {{isp}}\n"
         "<b>Config:</b> {{tag}}\n"
         "<b>Verdict:</b> {{confidence_band}}\n"
+        "<b>Usage profile:</b> {{usage_profile_summary}}\n"
+        "<b>Review URL:</b> <code>{{review_url}}</code>\n"
+    ),
+    "admin_usage_profile_risk_template": (
+        "📶 <b>#mobguard</b>\n"
+        "➖➖➖➖➖➖➖➖➖\n"
+        "🧭 <b>USAGE PROFILE RISK</b>\n"
+        "<b>Username:</b> {{username}}\n"
+        "<b>System ID:</b> {{system_id}}\n"
+        "<b>Telegram ID:</b> {{telegram_id}}\n"
+        "<b>UUID:</b> {{uuid}}\n"
+        "<b>IP:</b> <code>{{ip}}</code>\n"
+        "<b>ISP:</b> {{isp}}\n"
+        "<b>Config:</b> {{tag}}\n"
+        "<b>Usage profile:</b> {{usage_profile_summary}}\n"
+        "<b>Review URL:</b> <code>{{review_url}}</code>\n"
+    ),
+    "admin_violation_continues_template": (
+        "📶 <b>#mobguard</b>\n"
+        "➖➖➖➖➖➖➖➖➖\n"
+        "🔁 <b>VIOLATION CONTINUES</b>\n"
+        "<b>Username:</b> {{username}}\n"
+        "<b>System ID:</b> {{system_id}}\n"
+        "<b>Telegram ID:</b> {{telegram_id}}\n"
+        "<b>UUID:</b> {{uuid}}\n"
+        "<b>IP:</b> <code>{{ip}}</code>\n"
+        "<b>ISP:</b> {{isp}}\n"
+        "<b>Config:</b> {{tag}}\n"
+        "<b>Ongoing:</b> {{usage_profile_ongoing_duration_text}}\n"
+        "<b>Usage profile:</b> {{usage_profile_summary}}\n"
+        "<b>Review URL:</b> <code>{{review_url}}</code>\n"
+    ),
+    "admin_traffic_limit_exceeded_template": (
+        "📶 <b>#mobguard</b>\n"
+        "➖➖➖➖➖➖➖➖➖\n"
+        "📊 <b>TRAFFIC LIMIT EXCEEDED</b>\n"
+        "<b>Username:</b> {{username}}\n"
+        "<b>System ID:</b> {{system_id}}\n"
+        "<b>Telegram ID:</b> {{telegram_id}}\n"
+        "<b>UUID:</b> {{uuid}}\n"
+        "<b>IP:</b> <code>{{ip}}</code>\n"
+        "<b>ISP:</b> {{isp}}\n"
+        "<b>Config:</b> {{tag}}\n"
+        "<b>Usage profile:</b> {{usage_profile_summary}}\n"
         "<b>Review URL:</b> <code>{{review_url}}</code>\n"
     ),
 }

@@ -24,6 +24,9 @@ class RuntimeAdminDefaultsTests(unittest.TestCase):
         self.assertFalse(normalized["telegram_notify_admin_warning_only_enabled"])
         self.assertFalse(normalized["telegram_notify_admin_warning_enabled"])
         self.assertFalse(normalized["telegram_notify_admin_ban_enabled"])
+        self.assertTrue(normalized["telegram_notify_admin_usage_profile_risk_enabled"])
+        self.assertTrue(normalized["telegram_notify_admin_violation_continues_enabled"])
+        self.assertTrue(normalized["telegram_notify_admin_traffic_limit_exceeded_enabled"])
         self.assertFalse(normalized["telegram_notify_user_warning_only_enabled"])
         self.assertFalse(normalized["telegram_notify_user_warning_enabled"])
         self.assertFalse(normalized["telegram_notify_user_ban_enabled"])
@@ -57,6 +60,18 @@ class RuntimeAdminDefaultsTests(unittest.TestCase):
         }
 
         self.assertFalse(telegram_event_notifications_enabled(settings, "admin", "review"))
+
+    def test_new_admin_scenario_flags_respect_master_switch(self):
+        settings = {
+            "telegram_admin_notifications_enabled": True,
+            "telegram_notify_admin_usage_profile_risk_enabled": True,
+            "telegram_notify_admin_violation_continues_enabled": False,
+            "telegram_notify_admin_traffic_limit_exceeded_enabled": True,
+        }
+
+        self.assertTrue(telegram_event_notifications_enabled(settings, "admin", "usage_profile_risk"))
+        self.assertFalse(telegram_event_notifications_enabled(settings, "admin", "violation_continues"))
+        self.assertTrue(telegram_event_notifications_enabled(settings, "admin", "traffic_limit_exceeded"))
 
     def test_default_admin_review_template_still_renders(self):
         rendered = render_optional_template(

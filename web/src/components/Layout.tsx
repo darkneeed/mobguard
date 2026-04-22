@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
-import { BrandingConfig } from "../api/client";
+import { BrandingConfig, Session } from "../api/client";
 import { getSecondaryNavigation, primaryNavigation } from "../app/navigation";
 import { PaletteName, ThemeMode } from "../app/appearance";
+import { hasPermission } from "../app/permissions";
 import { prefetchRouteModule } from "../app/routeModules";
 import { BrandLogo } from "./BrandLogo";
 import { Language, useI18n } from "../localization";
@@ -18,6 +19,7 @@ type LayoutProps = {
   onPaletteChange: (palette: PaletteName) => void;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
+  session: Session;
 };
 
 export function Layout({
@@ -29,11 +31,20 @@ export function Layout({
   palette,
   onPaletteChange,
   theme,
-  onThemeChange
+  onThemeChange,
+  session
 }: LayoutProps) {
   const { t } = useI18n();
   const location = useLocation();
-  const secondaryNavigation = getSecondaryNavigation(location.pathname);
+  const secondaryNavigation = getSecondaryNavigation(location.pathname).filter(
+    (item) => !item.permission || hasPermission(session, item.permission)
+  );
+  const visiblePrimaryNavigation = primaryNavigation
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.permission || hasPermission(session, item.permission))
+    }))
+    .filter((group) => group.items.length > 0);
 
   useEffect(() => {
     const targets = ["/queue", "/rules/general", "/data/users", "/quality"];
@@ -68,7 +79,7 @@ export function Layout({
           <span className="chip">{t("layout.consoleBadge")}</span>
           <small>{t("layout.consoleDescription")}</small>
         </div>
-        {primaryNavigation.map((group) => (
+        {visiblePrimaryNavigation.map((group) => (
           <div className="sidebar-group" key={group.titleKey}>
             <span className="sidebar-group-title">{t(group.titleKey)}</span>
             <nav className="nav">

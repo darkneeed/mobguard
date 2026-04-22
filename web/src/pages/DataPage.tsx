@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { hasPermission } from "../app/permissions";
 import {
   api,
+  AuditTrailResponse,
   CacheAdminResponse,
   CalibrationExportPreview,
   CalibrationReadinessCheck,
   LearningAdminResponse,
   OverridesResponse,
   ReviewListResponse,
+  Session,
   UserCardExportResponse,
   UserCardResponse,
   UserSearchResponse,
@@ -18,11 +21,12 @@ import { useToast } from "../components/ToastProvider";
 import { useI18n } from "../localization";
 import { downloadBlob } from "../shared/api/request";
 import { ExportsDataSection } from "./data/ExportsDataSection";
+import { AuditTrailSection } from "./data/AuditTrailSection";
 import { LearningCasesSection } from "./data/LearningCasesSection";
 import { OperationsDataSection } from "./data/OperationsDataSection";
 import { UserDataSection } from "./data/UserDataSection";
 
-type DataTab = "users" | "violations" | "overrides" | "cache" | "learning" | "cases" | "exports";
+type DataTab = "users" | "violations" | "overrides" | "cache" | "learning" | "cases" | "exports" | "audit";
 type PendingKey =
   | "userSearch"
   | "userLoad"
@@ -41,10 +45,11 @@ const DATA_TABS: DataTab[] = [
   "cache",
   "learning",
   "cases",
-  "exports"
+  "exports",
+  "audit"
 ];
 
-export function DataPage() {
+export function DataPage({ session }: { session?: Session }) {
   const { t, language } = useI18n();
   const { pushToast } = useToast();
   const { section } = useParams();
@@ -69,6 +74,8 @@ export function DataPage() {
   const [cache, setCache] = useState<CacheAdminResponse | null>(null);
   const [learning, setLearning] = useState<LearningAdminResponse | null>(null);
   const [cases, setCases] = useState<ReviewListResponse | null>(null);
+  const [audit, setAudit] = useState<AuditTrailResponse | null>(null);
+  const canWriteData = hasPermission(session, "data.write");
 
   const [exactOverrideIp, setExactOverrideIp] = useState("");
   const [exactOverrideDecision, setExactOverrideDecision] = useState("HOME");
@@ -173,6 +180,9 @@ export function DataPage() {
         } else if (tab === "cases") {
           const payload = await api.listCases({ page: 1, page_size: 50 });
           if (!cancelled) setCases(payload);
+        } else if (tab === "audit") {
+          const payload = await api.getAuditTrail();
+          if (!cancelled) setAudit(payload);
         }
       } catch (err) {
         if (!cancelled) {
@@ -384,6 +394,7 @@ export function DataPage() {
           setStrikeCount={setStrikeCount}
           warningCount={warningCount}
           setWarningCount={setWarningCount}
+          canWriteData={canWriteData}
           searchUsers={searchUsers}
           loadUser={loadUser}
           runUserAction={runUserAction}
@@ -416,6 +427,7 @@ export function DataPage() {
           setSelectedCacheIp={setSelectedCacheIp}
           cacheDraft={cacheDraft}
           setCacheDraft={setCacheDraft}
+          canWriteData={canWriteData}
           saveExactOverride={saveExactOverride}
           saveUnsureOverride={saveUnsureOverride}
           saveCachePatch={saveCachePatch}
@@ -435,6 +447,7 @@ export function DataPage() {
           language={language}
           learning={learning}
           cases={cases}
+          canWriteData={canWriteData}
           setLearning={setLearning}
           pushToast={pushToast}
         />
@@ -453,6 +466,13 @@ export function DataPage() {
           formatExportWarning={formatExportWarning}
           formatReadinessCheckLabel={formatReadinessCheckLabel}
           formatReadinessCheckValue={formatReadinessCheckValue}
+        />
+      ) : null}
+      {tab === "audit" ? (
+        <AuditTrailSection
+          t={t}
+          language={language}
+          audit={audit}
         />
       ) : null}
     </section>

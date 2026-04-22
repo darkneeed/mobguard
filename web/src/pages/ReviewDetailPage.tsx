@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { api, ReviewDetailResponse, ReviewResolution } from "../api/client";
+import { hasPermission } from "../app/permissions";
+import { api, ReviewDetailResponse, ReviewResolution, Session, UsageProfile } from "../api/client";
 import { useToast } from "../components/ToastProvider";
 import { useI18n } from "../localization";
 import { formatDisplayDateTime } from "../utils/datetime";
@@ -39,7 +40,7 @@ type ReviewQueueLocationState = {
   reviewQueueCurrentIndex?: number;
 };
 
-export function ReviewDetailPage() {
+export function ReviewDetailPage({ session }: { session?: Session }) {
   const { t, language } = useI18n();
   const { pushToast } = useToast();
   const { caseId = "" } = useParams();
@@ -55,6 +56,7 @@ export function ReviewDetailPage() {
     () => (queueState?.reviewQueueSearch ? `/queue?${queueState.reviewQueueSearch}` : "/queue"),
     [queueState?.reviewQueueSearch]
   );
+  const canResolve = hasPermission(session, "reviews.resolve");
 
   useEffect(() => {
     setLoading(true);
@@ -173,6 +175,53 @@ export function ReviewDetailPage() {
   );
   const relatedCases = (Array.isArray(data?.related_cases) ? data.related_cases : []) as RelatedCase[];
   const resolutions = (Array.isArray(data?.resolutions) ? data.resolutions : []) as ReviewResolution[];
+  const usageProfile = (data?.usage_profile || undefined) as UsageProfile | undefined;
+  const usageTravel = (usageProfile?.travel_flags || {}) as Record<string, unknown>;
+  const usageGeo = (usageProfile?.geo_summary || {}) as Record<string, unknown>;
+  const usageTopIps = (Array.isArray(usageProfile?.top_ips) ? usageProfile.top_ips : []) as Array<Record<string, unknown>>;
+  const usageTopProviders = (Array.isArray(usageProfile?.top_providers) ? usageProfile.top_providers : []) as Array<Record<string, unknown>>;
+  const usageRecentLocations = (Array.isArray(usageGeo.recent_locations) ? usageGeo.recent_locations : []) as Array<Record<string, unknown>>;
+  const impossibleTravel = (Array.isArray(usageTravel.impossible_travel) ? usageTravel.impossible_travel : []) as Array<Record<string, unknown>>;
+  const queueIndex = typeof queueState?.reviewQueueCurrentIndex === "number" ? queueState.reviewQueueCurrentIndex : -1;
+  const queueCount = queueState?.reviewQueueItemIds?.length || 0;
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!data) return;
+      const target = event.target as HTMLElement | null;
+      const tagName = String(target?.tagName || "").toLowerCase();
+      if (tagName === "input" || tagName === "textarea" || tagName === "select") return;
+      if (event.key === "[" && queueState?.reviewQueueItemIds && queueIndex > 0) {
+        const previousId = queueState.reviewQueueItemIds[queueIndex - 1];
+        navigate(`/reviews/${previousId}`, {
+          replace: true,
+          state: {
+            reviewQueueSearch: queueState.reviewQueueSearch,
+            reviewQueueItemIds: queueState.reviewQueueItemIds,
+            reviewQueueCurrentIndex: queueIndex - 1
+          } satisfies ReviewQueueLocationState
+        });
+      }
+      if (event.key === "]" && queueState?.reviewQueueItemIds && queueIndex >= 0 && queueIndex < queueCount - 1) {
+        const nextId = queueState.reviewQueueItemIds[queueIndex + 1];
+        navigate(`/reviews/${nextId}`, {
+          replace: true,
+          state: {
+            reviewQueueSearch: queueState.reviewQueueSearch,
+            reviewQueueItemIds: queueState.reviewQueueItemIds,
+            reviewQueueCurrentIndex: queueIndex + 1
+          } satisfies ReviewQueueLocationState
+        });
+      }
+      if (!canResolve || resolving) return;
+      if (event.key.toLowerCase() === "m") void resolve("MOBILE");
+      if (event.key.toLowerCase() === "h") void resolve("HOME");
+      if (event.key.toLowerCase() === "s") void resolve("SKIP");
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canResolve, data, navigate, queueCount, queueIndex, queueState, resolve, resolving]);
 
   return (
     <section className="page review-detail-page">
@@ -182,9 +231,13 @@ export function ReviewDetailPage() {
           <h1>{t("reviewDetail.title", { caseId })}</h1>
           <p className="page-lede">{t("reviewDetail.description")}</p>
         </div>
-        <button className="ghost small-button" onClick={() => navigate(queueReturnPath)}>
-          {t("reviewDetail.backToQueue")}
-        </button>
+        <div className="action-row">
+          {queueCount > 0 ? <span className="chip">{t("reviewDetail.queuePosition", { current: queueIndex + 1, total: queueCount })}</span> : null}
+          <span className="tag severity-low">{t("reviewDetail.keyboardHint")}</span>
+          <button className="ghost small-button" onClick={() => navigate(queueReturnPath)}>
+            {t("reviewDetail.backToQueue")}
+          </button>
+        </div>
       </div>
 
       {error ? <div className="error-box">{error}</div> : null}
@@ -331,6 +384,114 @@ export function ReviewDetailPage() {
               </div>
 
               <div className="panel">
+                <h2>{t("reviewDetail.sections.usageProfile")}</h2>
+                <ul className="reason-list review-detail-list">
+                  {!usageProfile?.available ? (
+                    <li className="review-detail-item review-detail-item-empty">
+                      <span className="review-detail-item-meta">{t("reviewDetail.usageProfile.empty")}</span>
+                    </li>
+                  ) : null}
+                  {usageProfile?.usage_profile_summary ? (
+                    <li className="review-detail-item">
+                      <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.summary")}</strong>
+                      <span className="review-detail-item-copy">{usageProfile.usage_profile_summary}</span>
+                      <span className="review-detail-item-meta">
+                        {t("reviewDetail.usageProfile.ongoing")} · {formatValue(usageProfile.ongoing_duration_text)}
+                      </span>
+                    </li>
+                  ) : null}
+                  <li className="review-detail-item">
+                    <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.devices")}</strong>
+                    <span className="review-detail-item-copy">{formatList(usageProfile?.device_labels)}</span>
+                    <span className="review-detail-item-meta">
+                      {t("reviewDetail.usageProfile.osFamilies")} · {formatList(usageProfile?.os_families)}
+                    </span>
+                  </li>
+                  <li className="review-detail-item">
+                    <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.nodes")}</strong>
+                    <span className="review-detail-item-copy">{formatList(usageProfile?.nodes)}</span>
+                    <span className="review-detail-item-meta">
+                      {t("reviewDetail.usageProfile.softReasons")} · {formatList(usageProfile?.soft_reasons)}
+                    </span>
+                  </li>
+                  <li className="review-detail-item">
+                    <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.geo")}</strong>
+                    <span className="review-detail-item-copy">{formatList(usageGeo.countries)}</span>
+                    <span className="review-detail-item-meta">
+                      {t("reviewDetail.usageProfile.travel")} ·{" "}
+                      {Boolean(usageTravel.geo_impossible_travel)
+                        ? t("common.yes")
+                        : Boolean(usageTravel.geo_country_jump)
+                          ? t("reviewDetail.usageProfile.countryJumpOnly")
+                          : t("common.no")}
+                    </span>
+                  </li>
+                  <li className="review-detail-item">
+                    <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.topIps")}</strong>
+                    <span className="review-detail-item-copy">
+                      {usageTopIps.length > 0
+                        ? usageTopIps
+                            .map(
+                              (item) =>
+                                `${formatValue(item.ip as string | undefined)} (${formatValue(item.count as number | undefined)})`
+                            )
+                            .join(", ")
+                        : t("common.notAvailable")}
+                    </span>
+                  </li>
+                  <li className="review-detail-item">
+                    <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.topProviders")}</strong>
+                    <span className="review-detail-item-copy">
+                      {usageTopProviders.length > 0
+                        ? usageTopProviders
+                            .map(
+                              (item) =>
+                                `${formatValue(item.provider as string | undefined)} (${formatValue(item.count as number | undefined)})`
+                            )
+                            .join(", ")
+                        : t("common.notAvailable")}
+                    </span>
+                  </li>
+                  {usageRecentLocations.length > 0 ? (
+                    <li className="review-detail-item">
+                      <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.recentLocations")}</strong>
+                      <span className="review-detail-item-copy">
+                        {usageRecentLocations
+                          .map(
+                            (item) =>
+                              `${formatValue(item.country as string | undefined)}/${formatValue(item.city as string | undefined)}`
+                          )
+                          .join(", ")}
+                      </span>
+                    </li>
+                  ) : null}
+                  {impossibleTravel.length > 0 ? (
+                    <li className="review-detail-item">
+                      <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.impossibleTravel")}</strong>
+                      <span className="review-detail-item-copy">
+                        {impossibleTravel
+                          .map(
+                            (item) =>
+                              `${formatValue(item.from_location as string | undefined)} → ${formatValue(item.to_location as string | undefined)}`
+                          )
+                          .join(", ")}
+                      </span>
+                    </li>
+                  ) : null}
+                  <li className="review-detail-item">
+                    <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.lastSeen")}</strong>
+                    <span className="review-detail-item-copy">
+                      {formatDisplayDateTime(usageProfile?.last_seen || "", t("common.notAvailable"), language)}
+                    </span>
+                    <span className="review-detail-item-meta">
+                      {t("reviewDetail.usageProfile.updatedAt")} ·{" "}
+                      {formatDisplayDateTime(usageProfile?.updated_at || "", t("common.notAvailable"), language)}
+                    </span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="panel">
                 <h2>{t("reviewDetail.sections.log")}</h2>
                 <pre className="log-box review-detail-log">
                   {Array.isArray(bundle?.log) ? bundle?.log.join("\n") : ""}
@@ -399,9 +560,9 @@ export function ReviewDetailPage() {
                 onChange={(event) => setNote(event.target.value)}
               />
               <div className="action-row action-row-vertical">
-                <button disabled={resolving} onClick={() => resolve("MOBILE")}>{t("reviewDetail.resolution.mobile")}</button>
-                <button disabled={resolving} onClick={() => resolve("HOME")}>{t("reviewDetail.resolution.home")}</button>
-                <button className="ghost" disabled={resolving} onClick={() => resolve("SKIP")}>
+                <button disabled={resolving || !canResolve} onClick={() => resolve("MOBILE")}>{t("reviewDetail.resolution.mobile")}</button>
+                <button disabled={resolving || !canResolve} onClick={() => resolve("HOME")}>{t("reviewDetail.resolution.home")}</button>
+                <button className="ghost" disabled={resolving || !canResolve} onClick={() => resolve("SKIP")}>
                   {t("reviewDetail.resolution.skip")}
                 </button>
               </div>

@@ -1,5 +1,6 @@
 import { buildSearchParams, request, requestBlob } from "../../../shared/api/request";
 import {
+  AuditTrailResponse,
   CacheAdminResponse,
   CalibrationExportPreview,
   HealthSnapshot,
@@ -87,6 +88,7 @@ export const dataApi = {
       method: "DELETE"
     }),
   getLearningAdmin: () => request<LearningAdminResponse>("/admin/data/learning"),
+  getAuditTrail: (limit = 100) => request<AuditTrailResponse>(`/admin/data/audit?limit=${limit}`),
   patchLegacyLearning: (rowId: number, payload: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/admin/data/learning/legacy/${rowId}`, {
       method: "PATCH",

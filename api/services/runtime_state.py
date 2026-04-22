@@ -14,6 +14,7 @@ from mobguard_platform.runtime import (
     update_json_file,
 )
 from mobguard_platform.panel_client import PanelClient
+from mobguard_platform.usage_profile import build_usage_profile_snapshot
 from mobguard_platform.runtime_admin_defaults import (
     ENFORCEMENT_SETTINGS_DEFAULTS,
     ENFORCEMENT_TEMPLATE_DEFAULTS,
@@ -31,7 +32,7 @@ DETECTION_LIST_KEYS = (
     "home_isp_keywords",
     "exclude_isp_keywords",
 )
-ACCESS_LIST_KEYS = ("admin_tg_ids", "exempt_tg_ids", "exempt_ids")
+ACCESS_LIST_KEYS = ("admin_tg_ids", "moderator_tg_ids", "viewer_tg_ids", "exempt_tg_ids", "exempt_ids")
 TELEGRAM_ENV_FIELDS = {
     "TG_MAIN_BOT_TOKEN": True,
     "TG_ADMIN_BOT_TOKEN": True,
@@ -146,6 +147,50 @@ def panel_client(container: APIContainer) -> PanelClient:
     return PanelClient(remnawave_url, remnawave_token)
 
 
+def enrich_panel_user_devices(client: PanelClient, panel_user: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    if not isinstance(panel_user, dict):
+        return panel_user
+    if any(
+        key in panel_user and isinstance(panel_user.get(key), list) and panel_user.get(key)
+        for key in ("hwidDevices", "hwid_devices", "devices", "clients")
+    ):
+        return panel_user
+
+    user_uuid = str(panel_user.get("uuid") or "").strip()
+    if not user_uuid:
+        return panel_user
+
+    devices = client.get_user_hwid_devices(user_uuid)
+    if not devices:
+        return panel_user
+
+    enriched = dict(panel_user)
+    enriched["hwidDevices"] = devices
+    if enriched.get("hwidDeviceCount") in (None, ""):
+        enriched["hwidDeviceCount"] = len(devices)
+    return enriched
+
+
+def enrich_panel_user_usage_context(client: PanelClient, panel_user: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    enriched = enrich_panel_user_devices(client, panel_user)
+    if not isinstance(enriched, dict):
+        return enriched
+    if isinstance(enriched.get("usageProfileTrafficStats"), dict):
+        return enriched
+
+    user_uuid = str(enriched.get("uuid") or "").strip()
+    if not user_uuid:
+        return enriched
+
+    traffic_stats = client.get_user_traffic_stats(user_uuid)
+    if not traffic_stats:
+        return enriched
+
+    payload = dict(enriched)
+    payload["usageProfileTrafficStats"] = traffic_stats
+    return payload
+
+
 def _runtime_identity_columns(query: str) -> list[tuple[str, Any]]:
     candidates: list[tuple[str, Any]] = []
     if query.isdigit():
@@ -247,7 +292,8 @@ def search_runtime_users(store: Any, query: str) -> list[dict[str, Any]]:
 
 def resolve_user_identity(container: APIContainer, store: Any, identifier: str) -> dict[str, Any]:
     runtime_match = get_runtime_user_match(store, identifier)
-    panel_user = panel_client(container).get_user_data(identifier)
+    client = panel_client(container)
+    panel_user = enrich_panel_user_usage_context(client, client.get_user_data(identifier))
     uuid = (panel_user or {}).get("uuid") or (runtime_match or {}).get("uuid")
     username = (panel_user or {}).get("username") or (runtime_match or {}).get("username")
     system_id = (
@@ -467,6 +513,11 @@ def build_user_card(store: Any, identity: dict[str, Any]) -> dict[str, Any]:
     exempt_tg_ids = set(coerce_int_list(rules_state["rules"].get("exempt_tg_ids", [])))
     system_id = identity.get("system_id")
     telegram_id = identity.get("telegram_id")
+    usage_profile = build_usage_profile_snapshot(
+        store,
+        identity,
+        panel_user=identity.get("panel_user"),
+    )
     return {
         "identity": {
             "uuid": identity.get("uuid"),
@@ -481,6 +532,7 @@ def build_user_card(store: Any, identity: dict[str, Any]) -> dict[str, Any]:
         "ip_history": [dict(row) for row in ip_history],
         "review_cases": [dict(row) for row in review_cases],
         "analysis_events": [_enrich_analysis_event_row(dict(row)) for row in recent_events],
+        "usage_profile": usage_profile,
         "flags": {
             "exempt_system_id": coerce_optional_int(system_id) in exempt_system_ids if system_id not in (None, "") else False,
             "exempt_telegram_id": coerce_optional_int(telegram_id) in exempt_tg_ids if telegram_id not in (None, "") else False,
@@ -508,6 +560,7 @@ def build_user_export_payload(store: Any, identifier: str, identity: dict[str, A
                 "history": len(card.get("history", [])),
                 "active_trackers": len(card.get("active_trackers", [])),
                 "ip_history": len(card.get("ip_history", [])),
+                "usage_profile_signals": len((card.get("usage_profile") or {}).get("soft_reasons", [])),
             },
         },
         **card,

@@ -26,6 +26,7 @@ type Props = {
   setSelectedCacheIp: (value: string) => void;
   cacheDraft: Record<string, string>;
   setCacheDraft: Dispatch<SetStateAction<Record<string, string>>>;
+  canWriteData?: boolean;
   saveExactOverride: () => Promise<void>;
   saveUnsureOverride: () => Promise<void>;
   saveCachePatch: () => Promise<void>;
@@ -57,6 +58,7 @@ export function OperationsDataSection({
   setSelectedCacheIp,
   cacheDraft,
   setCacheDraft,
+  canWriteData = true,
   saveExactOverride,
   saveUnsureOverride,
   saveCachePatch,
@@ -126,7 +128,7 @@ export function OperationsDataSection({
               <option value="MOBILE">{t("data.decisions.mobile")}</option>
               <option value="SKIP">{t("data.decisions.skip")}</option>
             </select>
-            <button disabled={isPending("exactOverride")} onClick={saveExactOverride}>{t("data.overrides.save")}</button>
+            <button disabled={!canWriteData || isPending("exactOverride")} onClick={saveExactOverride}>{t("data.overrides.save")}</button>
           </div>
           <div className="record-list">
             {exactIp.map((item) => (
@@ -139,7 +141,7 @@ export function OperationsDataSection({
                   <span>{t("data.overrides.expires", { value: formatDisplayDateTime(String(item.expires_at ?? ""), t("common.notAvailable"), language) })}</span>
                 </div>
                 <div className="record-actions">
-                  <button className="ghost" disabled={isPending("exactOverride")} onClick={async () => {
+                  <button className="ghost" disabled={!canWriteData || isPending("exactOverride")} onClick={async () => {
                     try {
                       await withPending("exactOverride", () => api.deleteExactOverride(String(item.ip)));
                       setOverrides(await api.getOverrides());
@@ -162,7 +164,7 @@ export function OperationsDataSection({
               <option value="MOBILE">{t("data.decisions.mobile")}</option>
               <option value="SKIP">{t("data.decisions.skip")}</option>
             </select>
-            <button disabled={isPending("unsureOverride")} onClick={saveUnsureOverride}>{t("data.overrides.save")}</button>
+            <button disabled={!canWriteData || isPending("unsureOverride")} onClick={saveUnsureOverride}>{t("data.overrides.save")}</button>
           </div>
           <div className="record-list">
             {unsure.map((item) => (
@@ -175,7 +177,7 @@ export function OperationsDataSection({
                   <span>{formatDisplayDateTime(String(item.timestamp ?? ""), t("common.notAvailable"), language)}</span>
                 </div>
                 <div className="record-actions">
-                  <button className="ghost" disabled={isPending("unsureOverride")} onClick={async () => {
+                  <button className="ghost" disabled={!canWriteData || isPending("unsureOverride")} onClick={async () => {
                     try {
                       await withPending("unsureOverride", () => api.deleteUnsureOverride(String(item.ip_pattern)));
                       setOverrides(await api.getOverrides());
@@ -210,7 +212,7 @@ export function OperationsDataSection({
                 <span>{String(item.details || t("common.notAvailable"))}</span>
               </div>
               <div className="record-actions">
-                <button className="ghost" onClick={() => {
+                <button className="ghost" disabled={!canWriteData} onClick={() => {
                   setSelectedCacheIp(String(item.ip));
                   setCacheDraft({
                     status: String(item.status || ""),
@@ -219,7 +221,7 @@ export function OperationsDataSection({
                     asn: String(item.asn || "")
                   });
                 }}>{t("data.cache.edit")}</button>
-                <button className="ghost" onClick={async () => {
+                <button className="ghost" disabled={!canWriteData} onClick={async () => {
                   try {
                     await api.deleteCache(String(item.ip));
                     setCache(await api.getCache());
@@ -260,7 +262,7 @@ export function OperationsDataSection({
             <input placeholder={t("data.cache.asn")} value={cacheDraft.asn || ""} onChange={(event) => setCacheDraft((prev) => ({ ...prev, asn: event.target.value }))} />
           </div>
         </div>
-        <button onClick={saveCachePatch} disabled={!selectedCacheIp || isPending("cacheSave")}>{t("data.cache.save")}</button>
+        <button onClick={saveCachePatch} disabled={!canWriteData || !selectedCacheIp || isPending("cacheSave")}>{t("data.cache.save")}</button>
       </div>
     </div>
   );

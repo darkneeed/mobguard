@@ -12,3 +12,12 @@ class LocalLoginRequest(BaseModel):
 
 class TelegramVerifyRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class TotpChallengeRequest(BaseModel):
+    challenge_token: str
+
+
+class TotpCodeRequest(BaseModel):
+    challenge_token: str
+    code: str

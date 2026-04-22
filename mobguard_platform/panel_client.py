@@ -4,8 +4,9 @@ import json
 import re
 from typing import Any, Mapping, Optional
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
+from datetime import datetime, timedelta
 
 
 DEFAULT_FULL_ACCESS_SQUAD_NAME = "FULL"
@@ -116,6 +117,58 @@ class RemnawaveClient:
                 self._cache_user(user)
                 return user
         return None
+
+    def get_user_hwid_devices(self, user_uuid: str) -> list[dict[str, Any]]:
+        normalized_uuid = str(user_uuid or "").strip()
+        if not self.enabled:
+            self.last_error = "Panel client is disabled"
+            return []
+        if not normalized_uuid:
+            self.last_error = "User UUID is empty"
+            return []
+
+        self.last_error = None
+        for endpoint in (
+            f"/api/hwid/devices/{quote(normalized_uuid)}",
+            f"/api/v2/users/{quote(normalized_uuid)}/hwid-devices",
+        ):
+            payload = self._request("GET", endpoint)
+            devices = self._extract_devices(payload)
+            if devices:
+                return devices
+        return []
+
+    def get_user_traffic_stats(
+        self,
+        user_uuid: str,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+        top_nodes_limit: int = 50,
+    ) -> Optional[dict[str, Any]]:
+        normalized_uuid = str(user_uuid or "").strip()
+        if not self.enabled:
+            self.last_error = "Panel client is disabled"
+            return None
+        if not normalized_uuid:
+            self.last_error = "User UUID is empty"
+            return None
+
+        now = datetime.utcnow()
+        start_value = start or (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        end_value = end or (now + timedelta(days=1)).strftime("%Y-%m-%d")
+        query = urlencode(
+            {
+                "start": start_value,
+                "end": end_value,
+                "topNodesLimit": max(int(top_nodes_limit), 1),
+            }
+        )
+        payload = self._request("GET", f"/api/bandwidth-stats/users/{quote(normalized_uuid)}?{query}")
+        if not payload:
+            return None
+        response = payload.get("response", payload)
+        return response if isinstance(response, dict) else None
 
     def list_internal_squads(self) -> list[dict[str, Any]]:
         if not self.enabled:
@@ -251,6 +304,30 @@ class RemnawaveClient:
         if isinstance(response, dict):
             return response
         return None
+
+    def _extract_devices(self, payload: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not payload:
+            return []
+        response = payload.get("response", payload)
+        if isinstance(response, list):
+            return [item for item in response if isinstance(item, dict)]
+        if isinstance(response, dict):
+            devices = response.get("devices", [])
+            if isinstance(devices, list):
+                return [item for item in devices if isinstance(item, dict)]
+        return []
+
+    def _extract_devices(self, payload: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not payload:
+            return []
+        response = payload.get("response", payload)
+        if isinstance(response, list):
+            return [item for item in response if isinstance(item, dict)]
+        if isinstance(response, dict):
+            devices = response.get("devices", [])
+            if isinstance(devices, list):
+                return [item for item in devices if isinstance(item, dict)]
+        return []
 
 
 PanelClient = RemnawaveClient

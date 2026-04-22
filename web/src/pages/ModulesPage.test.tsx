@@ -17,6 +17,13 @@ vi.mock("../api/client", () => ({
 }));
 
 describe("ModulesPage", () => {
+  const ownerSession = {
+    telegram_id: 1,
+    username: "owner",
+    expires_at: "2026-04-11T00:00:00Z",
+    permissions: ["modules.read", "modules.write", "modules.token_reveal"]
+  };
+
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -61,7 +68,7 @@ describe("ModulesPage", () => {
       }
     });
 
-    renderWithProviders(<ModulesPage />);
+    renderWithProviders(<ModulesPage session={ownerSession} />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Create module" }));
 
@@ -140,7 +147,7 @@ describe("ModulesPage", () => {
       module_token: "revealed-token"
     });
 
-    renderWithProviders(<ModulesPage />);
+    renderWithProviders(<ModulesPage session={ownerSession} />);
 
     await screen.findByText("Node Alpha");
     expect(api.getModuleDetail).not.toHaveBeenCalled();

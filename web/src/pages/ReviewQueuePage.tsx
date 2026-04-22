@@ -1,8 +1,9 @@
 import { MouseEvent, startTransition, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
+import { hasPermission } from "../app/permissions";
 import { prefetchRouteModule } from "../app/routeModules";
-import { api, ReviewItem, ReviewListResponse } from "../api/client";
+import { api, ReviewItem, ReviewListResponse, Session } from "../api/client";
 import { useToast } from "../components/ToastProvider";
 import { useI18n } from "../localization";
 import { buildSearchParams } from "../shared/api/request";
@@ -29,6 +30,7 @@ type ReviewFilters = {
 };
 
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
+const SAVED_FILTERS_KEY = "mobguard.reviewQueue.savedFilters";
 
 const DEFAULT_FILTERS: ReviewFilters = {
   status: "OPEN",
@@ -47,7 +49,7 @@ const DEFAULT_FILTERS: ReviewFilters = {
   repeat_count_max: "",
   page: 1,
   page_size: 24,
-  sort: "updated_desc"
+  sort: "priority_desc"
 };
 
 function normalizePageSize(value: string | null): number {
@@ -77,7 +79,11 @@ function normalizeFilters(searchParams: URLSearchParams): ReviewFilters {
   };
 }
 
-export function ReviewQueuePage() {
+function filtersForStorage(filters: ReviewFilters): ReviewFilters {
+  return { ...filters, page: 1 };
+}
+
+export function ReviewQueuePage({ session }: { session?: Session }) {
   const { t, language } = useI18n();
   const { pushToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -95,6 +101,9 @@ export function ReviewQueuePage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState(filters.q);
+  const [savedFiltersPresent, setSavedFiltersPresent] = useState(
+    () => Boolean(window.localStorage.getItem(SAVED_FILTERS_KEY))
+  );
 
   useEffect(() => {
     const nextFilters = normalizeFilters(searchParams);
@@ -121,6 +130,8 @@ export function ReviewQueuePage() {
   );
   const queueSearch = useMemo(() => buildSearchParams(effectiveFilters), [effectiveFilters]);
   const visibleQueueIds = useMemo(() => list.items.map((item) => item.id), [list.items]);
+  const canResolve = hasPermission(session, "reviews.resolve");
+  const canRecheck = hasPermission(session, "reviews.recheck");
 
   function formatIdentifier(label: string, value: string | number | null | undefined) {
     return `${label}: ${value === null || value === undefined || value === "" ? t("common.notAvailable") : value}`;
@@ -202,6 +213,47 @@ export function ReviewQueuePage() {
     } finally {
       setResolvingId(null);
     }
+  }
+
+  async function recheckVisible() {
+    try {
+      const payload = await api.recheckReviews({
+        limit: Math.max(1, Math.min(list.items.length || filters.page_size, 100)),
+        module_id: filters.module_id || undefined,
+        review_reason: filters.review_reason || undefined
+      });
+      const refreshed = await api.listReviews(effectiveFilters);
+      setList(refreshed);
+      pushToast("success", t("reviewQueue.actions.recheckDone", { count: Number(payload.count || 0) }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("reviewQueue.errors.resolveFailed");
+      setError(message);
+      pushToast("error", message);
+    }
+  }
+
+  function saveCurrentFilters() {
+    window.localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(filtersForStorage(filters)));
+    setSavedFiltersPresent(true);
+    pushToast("success", t("reviewQueue.savedFilters.saved"));
+  }
+
+  function applySavedFilters() {
+    const raw = window.localStorage.getItem(SAVED_FILTERS_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as ReviewFilters;
+      setFilters({ ...DEFAULT_FILTERS, ...parsed, page: 1, page_size: normalizePageSize(String(parsed.page_size || DEFAULT_FILTERS.page_size)) });
+      pushToast("info", t("reviewQueue.savedFilters.applied"));
+    } catch {
+      pushToast("error", t("reviewQueue.savedFilters.invalid"));
+    }
+  }
+
+  function clearSavedFilters() {
+    window.localStorage.removeItem(SAVED_FILTERS_KEY);
+    setSavedFiltersPresent(false);
+    pushToast("info", t("reviewQueue.savedFilters.cleared"));
   }
 
   const allSelected = list.items.length > 0 && selectedIds.length === list.items.length;
@@ -310,6 +362,25 @@ export function ReviewQueuePage() {
           <button className="ghost icon-button" onClick={() => setFilters(DEFAULT_FILTERS)} title={t("reviewQueue.clearFilters")}>
             {t("reviewQueue.clearFilters")}
           </button>
+          <button className="ghost icon-button" onClick={saveCurrentFilters} title={t("reviewQueue.savedFilters.save")}>
+            {t("reviewQueue.savedFilters.save")}
+          </button>
+          <button
+            className="ghost icon-button"
+            onClick={applySavedFilters}
+            disabled={!savedFiltersPresent}
+            title={t("reviewQueue.savedFilters.apply")}
+          >
+            {t("reviewQueue.savedFilters.apply")}
+          </button>
+          <button
+            className="ghost icon-button"
+            onClick={clearSavedFilters}
+            disabled={!savedFiltersPresent}
+            title={t("reviewQueue.savedFilters.clear")}
+          >
+            {t("reviewQueue.savedFilters.clear")}
+          </button>
           <label className="queue-page-size-picker">
             <span>{t("reviewQueue.pageSize.label")}</span>
             <select
@@ -346,23 +417,32 @@ export function ReviewQueuePage() {
             </span>
           </div>
           <div className="queue-bulk-actions">
+            {canRecheck ? (
+              <button
+                className="ghost small-button"
+                disabled={resolvingId !== null}
+                onClick={recheckVisible}
+              >
+                {t("reviewQueue.actions.recheckVisible")}
+              </button>
+            ) : null}
             <button
               className="small-button"
-              disabled={selectedIds.length === 0 || resolvingId !== null}
+              disabled={!canResolve || selectedIds.length === 0 || resolvingId !== null}
               onClick={() => resolveSelected("MOBILE")}
             >
               {t("reviewQueue.actions.bulkMobile")}
             </button>
             <button
               className="small-button"
-              disabled={selectedIds.length === 0 || resolvingId !== null}
+              disabled={!canResolve || selectedIds.length === 0 || resolvingId !== null}
               onClick={() => resolveSelected("HOME")}
             >
               {t("reviewQueue.actions.bulkHome")}
             </button>
             <button
               className="ghost small-button"
-              disabled={selectedIds.length === 0 || resolvingId !== null}
+              disabled={!canResolve || selectedIds.length === 0 || resolvingId !== null}
               onClick={() => resolveSelected("SKIP")}
             >
               {t("reviewQueue.actions.bulkSkip")}
@@ -497,6 +577,8 @@ export function ReviewQueuePage() {
           value={filters.sort}
           onChange={(event) => setFilters((prev) => ({ ...prev, sort: event.target.value }))}
         >
+          <option value="priority_desc">{t("reviewQueue.filters.sortPriorityDesc")}</option>
+          <option value="priority_asc">{t("reviewQueue.filters.sortPriorityAsc")}</option>
           <option value="updated_desc">{t("reviewQueue.filters.sortUpdatedDesc")}</option>
           <option value="score_desc">{t("reviewQueue.filters.sortScoreDesc")}</option>
           <option value="repeat_desc">{t("reviewQueue.filters.sortRepeatDesc")}</option>
@@ -574,11 +656,23 @@ export function ReviewQueuePage() {
               <span className={item.punitive_eligible ? "tag punitive" : "tag review-only"}>
                 {item.punitive_eligible ? t("reviewQueue.card.punitiveEligible") : t("reviewQueue.card.reviewOnly")}
               </span>
+              {typeof item.usage_profile_priority === "number" ? (
+                <span className="tag">{t("reviewQueue.card.priority", { value: item.usage_profile_priority })}</span>
+              ) : null}
+              {typeof item.usage_profile_signal_count === "number" && item.usage_profile_signal_count > 0 ? (
+                <span className="tag">{t("reviewQueue.card.usageSignals", { count: item.usage_profile_signal_count })}</span>
+              ) : null}
             </div>
             <p>{item.isp}</p>
+            {item.usage_profile_summary ? <p>{item.usage_profile_summary}</p> : null}
             <div className="queue-card-tags">
               {item.reason_codes.slice(0, 4).map((code) => (
                 <span key={code} className="tag">
+                  {code}
+                </span>
+              ))}
+              {(item.usage_profile_soft_reasons || []).slice(0, 3).map((code) => (
+                <span key={`usage-${code}`} className="tag">
                   {code}
                 </span>
               ))}
@@ -598,7 +692,7 @@ export function ReviewQueuePage() {
                 {t("reviewQueue.actions.openCase")}
               </Link>
             </div>
-            {item.status === "OPEN" ? (
+            {item.status === "OPEN" && canResolve ? (
               <div className="action-row">
                 <button className="small-button" disabled={resolvingId === item.id} onClick={(event) => quickResolve(event, item, "MOBILE")}>
                   {resolvingId === item.id ? t("reviewQueue.actions.processing") : t("reviewQueue.actions.mobile")}
@@ -613,6 +707,11 @@ export function ReviewQueuePage() {
             ) : null}
             <div className="queue-card-bottom">
               <span>{t("reviewQueue.card.repeat", { count: item.repeat_count })}</span>
+              <span>
+                {t("reviewQueue.card.ongoing", {
+                  value: item.usage_profile_ongoing_duration_text || t("common.notAvailable")
+                })}
+              </span>
               <span>{t("reviewQueue.card.opened", { value: formatDisplayDateTime(item.opened_at, t("common.notAvailable"), language) })}</span>
               <span>{formatDisplayDateTime(item.updated_at, t("common.notAvailable"), language)}</span>
             </div>

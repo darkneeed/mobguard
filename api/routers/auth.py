@@ -5,8 +5,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, Response
 
 from ..dependencies import get_container, get_session
-from ..schemas.auth import LocalLoginRequest, TelegramVerifyRequest
-from ..services.auth import auth_start_payload, clear_session_cookie, local_login, verify_telegram_login
+from ..schemas.auth import LocalLoginRequest, TelegramVerifyRequest, TotpChallengeRequest, TotpCodeRequest
+from ..services.auth import (
+    auth_start_payload,
+    clear_session_cookie,
+    local_login,
+    totp_confirm_setup,
+    totp_setup,
+    totp_verify,
+    verify_telegram_login,
+)
 
 
 router = APIRouter(prefix="/admin", tags=["auth"])
@@ -27,6 +35,29 @@ def auth_local(body: LocalLoginRequest, response: Response, container=Depends(ge
     return local_login(container, body.username, body.password, response)
 
 
+@router.post("/auth/totp/setup")
+def auth_totp_setup(body: TotpChallengeRequest, container=Depends(get_container)) -> dict[str, Any]:
+    return totp_setup(container, body.challenge_token)
+
+
+@router.post("/auth/totp/confirm")
+def auth_totp_confirm(
+    body: TotpCodeRequest,
+    response: Response,
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    return totp_confirm_setup(container, body.challenge_token, body.code, response)
+
+
+@router.post("/auth/totp/verify")
+def auth_totp_verify(
+    body: TotpCodeRequest,
+    response: Response,
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    return totp_verify(container, body.challenge_token, body.code, response)
+
+
 @router.post("/logout")
 def logout(response: Response, session: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, bool]:
     container.store.delete_admin_session(session["token"])
@@ -41,5 +72,12 @@ def get_me(session: dict[str, Any] = Depends(get_session)) -> dict[str, Any]:
         "username": session.get("username"),
         "first_name": session.get("first_name"),
         "expires_at": session["expires_at"],
+        "subject": session.get("subject", ""),
+        "auth_method": session.get("auth_method", ""),
+        "role": session.get("role", ""),
+        "permissions": list(session.get("permissions") or []),
+        "totp_enabled": bool(session.get("totp_enabled")),
+        "totp_verified": bool(session.get("totp_verified")),
+        "totp_verified_at": session.get("totp_verified_at", ""),
         "payload": session.get("payload", {}),
     }

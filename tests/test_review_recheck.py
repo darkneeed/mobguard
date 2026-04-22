@@ -33,7 +33,7 @@ class ReviewRecheckTests(unittest.TestCase):
                     ],
                     "settings": {
                         "review_ui_base_url": "https://mobguard.example.com",
-                        "remnawave_api_url": "https://admpanel.mwnd.ru",
+                        "remnawave_api_url": "https://panel.example.com",
                         "provider_conflict_review_only": True,
                     },
                 },

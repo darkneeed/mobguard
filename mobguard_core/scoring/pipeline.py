@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from mobguard_platform import DecisionBundle, derive_punitive_eligibility
 from mobguard_platform.runtime import ProviderProfile, RuntimeRuleView
+from mobguard_platform.usage_profile import normalize_geo_context
 
 
 AsyncBehaviorAnalyzer = Callable[[str, str, str], Awaitable[dict[str, Any]]]
@@ -372,6 +373,9 @@ async def evaluate_mobile_network(
     state.hostname = ipinfo_data.get("hostname", "")
     state.asn = deps.parse_asn(state.org)
     state.isp_name = deps.normalize_isp_name(state.org)
+    geo_context = normalize_geo_context(ipinfo_data)
+    if geo_context:
+        state.bundle.signal_flags["geo"] = geo_context
     state.bundle.asn = state.asn
     state.bundle.isp = state.isp_name
     state.bundle.details = state.isp_name

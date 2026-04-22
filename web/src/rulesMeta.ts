@@ -1,5 +1,7 @@
 export type RuleListKey =
   | "admin_tg_ids"
+  | "moderator_tg_ids"
+  | "viewer_tg_ids"
   | "exempt_ids"
   | "exempt_tg_ids"
   | "pure_mobile_asns"
@@ -92,6 +94,8 @@ export type RuleSettingFieldMeta = {
 
 export const RULE_LIST_FIELDS: RuleListFieldMeta[] = [
   { key: "admin_tg_ids", sectionKey: "access", itemType: "number" },
+  { key: "moderator_tg_ids", sectionKey: "access", itemType: "number" },
+  { key: "viewer_tg_ids", sectionKey: "access", itemType: "number" },
   { key: "exempt_ids", sectionKey: "access", itemType: "number" },
   { key: "exempt_tg_ids", sectionKey: "access", itemType: "number" },
   { key: "pure_mobile_asns", sectionKey: "asnLists", itemType: "number" },

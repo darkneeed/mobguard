@@ -1,6 +1,6 @@
 from .config import deep_merge, read_json_file, update_json_file
 from .context import RuntimeContext, ensure_runtime_layout, load_runtime_context
-from .env import env_field_payload, get_env_file_status, read_env_file, update_env_file
+from .env import env_field_payload, get_env_file_status, read_env_file, read_env_file_only, update_env_file
 from .paths import (
     DB_FILENAME,
     DEFAULT_RUNTIME_DIR,
@@ -45,6 +45,7 @@ __all__ = [
     "load_runtime_context",
     "normalize_runtime_bound_settings",
     "read_env_file",
+    "read_env_file_only",
     "read_json_file",
     "resolve_runtime_dir",
     "runtime_db_path",

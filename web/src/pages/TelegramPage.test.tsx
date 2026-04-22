@@ -33,6 +33,9 @@ describe("TelegramPage", () => {
         telegram_notify_admin_warning_only_enabled: true,
         telegram_notify_admin_warning_enabled: true,
         telegram_notify_admin_ban_enabled: true,
+        telegram_notify_admin_usage_profile_risk_enabled: true,
+        telegram_notify_admin_violation_continues_enabled: true,
+        telegram_notify_admin_traffic_limit_exceeded_enabled: true,
         telegram_notify_user_warning_only_enabled: true,
         telegram_notify_user_warning_enabled: true,
         telegram_notify_user_ban_enabled: true
@@ -75,7 +78,10 @@ describe("TelegramPage", () => {
         admin_warning_only_template: "",
         admin_warning_template: "",
         admin_ban_template: "",
-        admin_review_template: ""
+        admin_review_template: "",
+        admin_usage_profile_risk_template: "",
+        admin_violation_continues_template: "",
+        admin_traffic_limit_exceeded_template: ""
       }
     });
     vi.mocked(api.updateTelegramSettings).mockResolvedValue({
@@ -90,6 +96,9 @@ describe("TelegramPage", () => {
         telegram_notify_admin_warning_only_enabled: true,
         telegram_notify_admin_warning_enabled: true,
         telegram_notify_admin_ban_enabled: true,
+        telegram_notify_admin_usage_profile_risk_enabled: true,
+        telegram_notify_admin_violation_continues_enabled: true,
+        telegram_notify_admin_traffic_limit_exceeded_enabled: true,
         telegram_notify_user_warning_only_enabled: true,
         telegram_notify_user_warning_enabled: true,
         telegram_notify_user_ban_enabled: true

@@ -1,8 +1,9 @@
-import { Suspense, lazy, type ComponentType, useMemo } from "react";
+import { Suspense, lazy, type ComponentType, type ReactElement, useMemo } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { api, BrandingConfig, Session } from "../api/client";
 import { PaletteName, ThemeMode } from "./appearance";
+import { AppPermission, firstAccessibleRoute, hasPermission } from "./permissions";
 import {
   loadAccessPage,
   loadDataPage,
@@ -60,6 +61,21 @@ function RouteFallback() {
   );
 }
 
+function PermissionRoute({
+  session,
+  permission,
+  children
+}: {
+  session: Session;
+  permission: AppPermission;
+  children: ReactElement;
+}) {
+  if (!hasPermission(session, permission)) {
+    return <Navigate to={firstAccessibleRoute(session)} replace />;
+  }
+  return children;
+}
+
 export function AppRouter({
   session,
   language,
@@ -86,6 +102,7 @@ export function AppRouter({
             <Layout
               branding={branding}
               username={displayName}
+              session={session}
               language={language}
               onLanguageChange={setLanguage}
               palette={palette}
@@ -101,23 +118,83 @@ export function AppRouter({
           </Suspense>
         }
       >
-        <Route path="/" element={<Navigate to="/overview" replace />} />
-        <Route path="/overview" element={<OverviewPage />} />
-        <Route path="/modules" element={<ModulesPage />} />
-        <Route path="/queue" element={<ReviewQueuePage />} />
-        <Route path="/reviews/:caseId" element={<ReviewDetailPage />} />
+        <Route path="/" element={<Navigate to={firstAccessibleRoute(session)} replace />} />
+        <Route
+          path="/overview"
+          element={
+            <PermissionRoute session={session} permission="overview.read">
+              <OverviewPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/modules"
+          element={
+            <PermissionRoute session={session} permission="modules.read">
+              <ModulesPage session={session} />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/queue"
+          element={
+            <PermissionRoute session={session} permission="reviews.read">
+              <ReviewQueuePage session={session} />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/reviews/:caseId"
+          element={
+            <PermissionRoute session={session} permission="reviews.read">
+              <ReviewDetailPage session={session} />
+            </PermissionRoute>
+          }
+        />
         <Route path="/rules" element={<Navigate to="/rules/general" replace />} />
-        <Route path="/rules/:section" element={<RulesPage />} />
-        <Route path="/telegram" element={<TelegramPage />} />
+        <Route
+          path="/rules/:section"
+          element={
+            <PermissionRoute session={session} permission="rules.read">
+              <RulesPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/telegram"
+          element={
+            <PermissionRoute session={session} permission="settings.telegram.read">
+              <TelegramPage />
+            </PermissionRoute>
+          }
+        />
         <Route
           path="/access"
-          element={<AccessPage branding={branding} onBrandingChange={setBranding} />}
+          element={
+            <PermissionRoute session={session} permission="settings.access.read">
+              <AccessPage branding={branding} onBrandingChange={setBranding} />
+            </PermissionRoute>
+          }
         />
         <Route path="/data" element={<Navigate to="/data/users" replace />} />
-        <Route path="/data/:section" element={<DataPage />} />
-        <Route path="/quality" element={<QualityPage />} />
+        <Route
+          path="/data/:section"
+          element={
+            <PermissionRoute session={session} permission="data.read">
+              <DataPage session={session} />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/quality"
+          element={
+            <PermissionRoute session={session} permission="quality.read">
+              <QualityPage />
+            </PermissionRoute>
+          }
+        />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to={firstAccessibleRoute(session)} replace />} />
     </Routes>
   );
 }

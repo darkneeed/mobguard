@@ -13,6 +13,7 @@ type Props = {
   language: Language;
   learning: LearningAdminResponse | null;
   cases: ReviewListResponse | null;
+  canWriteData?: boolean;
   setLearning: (value: LearningAdminResponse) => void;
   pushToast: (kind: "success" | "error" | "warning" | "info", message: string) => void;
 };
@@ -23,6 +24,7 @@ export function LearningCasesSection({
   language,
   learning,
   cases,
+  canWriteData = true,
   setLearning,
   pushToast,
 }: Props) {
@@ -106,7 +108,7 @@ export function LearningCasesSection({
                 <span>{t("data.learning.confidence", { value: String(item.confidence) })}</span>
               </div>
               <div className="record-actions">
-                <button className="ghost" onClick={async () => {
+                <button className="ghost" disabled={!canWriteData} onClick={async () => {
                   try {
                     await api.patchLegacyLearning(Number(item.id), { confidence: Number(item.confidence) + 1 });
                     setLearning(await api.getLearningAdmin());
@@ -115,7 +117,7 @@ export function LearningCasesSection({
                     pushToast("error", err instanceof Error ? err.message : t("data.errors.loadTabFailed"));
                   }
                 }}>{t("data.learning.plusOneConfidence")}</button>
-                <button className="ghost" onClick={async () => {
+                <button className="ghost" disabled={!canWriteData} onClick={async () => {
                   try {
                     await api.deleteLegacyLearning(Number(item.id));
                     setLearning(await api.getLearningAdmin());

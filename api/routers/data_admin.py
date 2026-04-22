@@ -4,7 +4,8 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query, Response
 
-from ..dependencies import get_container, get_session
+from ..dependencies import get_container, require_permission
+from ..permissions import PERMISSION_AUDIT_READ, PERMISSION_DATA_READ, PERMISSION_DATA_WRITE
 from ..schemas.data_admin import (
     CachePatchRequest,
     LegacyLearningPatchRequest,
@@ -15,6 +16,7 @@ from ..schemas.data_admin import (
     UserStrikesRequest,
     UserWarningsRequest,
 )
+from ..services.admin_audit import record_admin_action
 from ..services import data_admin as data_service
 from ..services import reviews as review_service
 
@@ -23,17 +25,29 @@ router = APIRouter(prefix="/admin/data", tags=["data-admin"])
 
 
 @router.get("/users/search")
-def search_users(query: str = Query(min_length=1), _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def search_users(
+    query: str = Query(min_length=1),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return data_service.search_users(container, query)
 
 
 @router.get("/users/{identifier}")
-def get_user_card(identifier: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def get_user_card(
+    identifier: str,
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return data_service.get_user_card(container, identifier)
 
 
 @router.get("/users/{identifier}/export")
-def export_user_card(identifier: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def export_user_card(
+    identifier: str,
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return data_service.get_user_card_export(container, identifier)
 
 
@@ -41,73 +55,146 @@ def export_user_card(identifier: str, _: dict[str, Any] = Depends(get_session), 
 def ban_user(
     identifier: str,
     body: UserBanRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.ban_user(container, identifier, body.minutes)
+    payload = data_service.ban_user(container, identifier, body.minutes)
+    record_admin_action(
+        container,
+        session,
+        action="data.user.ban",
+        target_type="user",
+        target_id=identifier,
+        details={"minutes": body.minutes},
+    )
+    return payload
 
 
 @router.post("/users/{identifier}/unban")
-def unban_user(identifier: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
-    return data_service.unban_user(container, identifier)
+def unban_user(
+    identifier: str,
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    payload = data_service.unban_user(container, identifier)
+    record_admin_action(
+        container,
+        session,
+        action="data.user.unban",
+        target_type="user",
+        target_id=identifier,
+        details={},
+    )
+    return payload
 
 
 @router.post("/users/{identifier}/traffic-cap")
 def apply_user_traffic_cap(
     identifier: str,
     body: UserTrafficCapRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.apply_user_traffic_cap(container, identifier, body.gigabytes)
+    payload = data_service.apply_user_traffic_cap(container, identifier, body.gigabytes)
+    record_admin_action(
+        container,
+        session,
+        action="data.user.traffic_cap.apply",
+        target_type="user",
+        target_id=identifier,
+        details={"gigabytes": body.gigabytes},
+    )
+    return payload
 
 
 @router.post("/users/{identifier}/traffic-cap/restore")
 def restore_user_traffic_cap(
     identifier: str,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.restore_user_traffic_cap(container, identifier)
+    payload = data_service.restore_user_traffic_cap(container, identifier)
+    record_admin_action(
+        container,
+        session,
+        action="data.user.traffic_cap.restore",
+        target_type="user",
+        target_id=identifier,
+        details={},
+    )
+    return payload
 
 
 @router.post("/users/{identifier}/warnings")
 def update_user_warnings(
     identifier: str,
     body: UserWarningsRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.update_user_warnings(container, identifier, body.action.lower(), body.count)
+    payload = data_service.update_user_warnings(container, identifier, body.action.lower(), body.count)
+    record_admin_action(
+        container,
+        session,
+        action="data.user.warnings",
+        target_type="user",
+        target_id=identifier,
+        details={"action": body.action.lower(), "count": body.count},
+    )
+    return payload
 
 
 @router.post("/users/{identifier}/strikes")
 def update_user_strikes(
     identifier: str,
     body: UserStrikesRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.update_user_strikes(container, identifier, body.action.lower(), body.count)
+    payload = data_service.update_user_strikes(container, identifier, body.action.lower(), body.count)
+    record_admin_action(
+        container,
+        session,
+        action="data.user.strikes",
+        target_type="user",
+        target_id=identifier,
+        details={"action": body.action.lower(), "count": body.count},
+    )
+    return payload
 
 
 @router.post("/users/{identifier}/exempt")
 def update_user_exemptions(
     identifier: str,
     body: UserExemptRequest,
-    session: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.update_user_exemptions(container, identifier, body.kind.lower(), body.enabled, session)
+    payload = data_service.update_user_exemptions(container, identifier, body.kind.lower(), body.enabled, session)
+    record_admin_action(
+        container,
+        session,
+        action="data.user.exemptions",
+        target_type="user",
+        target_id=identifier,
+        details={"kind": body.kind.lower(), "enabled": bool(body.enabled)},
+    )
+    return payload
 
 
 @router.get("/violations")
-def list_violations(_: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def list_violations(
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return data_service.list_violations(container)
 
 
 @router.get("/overrides")
-def list_overrides(_: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def list_overrides(
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return data_service.list_overrides(container)
 
 
@@ -115,7 +202,7 @@ def list_overrides(_: dict[str, Any] = Depends(get_session), container=Depends(g
 def upsert_exact_ip_override(
     ip: str,
     body: OverrideUpsertRequest,
-    session: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     container.store.set_ip_override(
@@ -126,31 +213,77 @@ def upsert_exact_ip_override(
         session["telegram_id"],
         ttl_days=body.ttl_days,
     )
+    record_admin_action(
+        container,
+        session,
+        action="data.overrides.exact.upsert",
+        target_type="ip_override",
+        target_id=ip,
+        details={"decision": body.decision.upper(), "ttl_days": body.ttl_days},
+    )
     return {"ok": True, "ip": ip, "decision": body.decision.upper()}
 
 
 @router.delete("/overrides/ip/{ip}")
-def delete_exact_ip_override(ip: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
-    return data_service.delete_exact_override(container, ip)
+def delete_exact_ip_override(
+    ip: str,
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    payload = data_service.delete_exact_override(container, ip)
+    record_admin_action(
+        container,
+        session,
+        action="data.overrides.exact.delete",
+        target_type="ip_override",
+        target_id=ip,
+        details={},
+    )
+    return payload
 
 
 @router.put("/overrides/unsure/{ip}")
 def upsert_unsure_override(
     ip: str,
     body: OverrideUpsertRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.upsert_unsure_override(container, ip, body.decision.upper())
+    payload = data_service.upsert_unsure_override(container, ip, body.decision.upper())
+    record_admin_action(
+        container,
+        session,
+        action="data.overrides.unsure.upsert",
+        target_type="unsure_override",
+        target_id=ip,
+        details={"decision": body.decision.upper()},
+    )
+    return payload
 
 
 @router.delete("/overrides/unsure/{ip}")
-def delete_unsure_override(ip: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
-    return data_service.delete_unsure_override(container, ip)
+def delete_unsure_override(
+    ip: str,
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    payload = data_service.delete_unsure_override(container, ip)
+    record_admin_action(
+        container,
+        session,
+        action="data.overrides.unsure.delete",
+        target_type="unsure_override",
+        target_id=ip,
+        details={},
+    )
+    return payload
 
 
 @router.get("/cache")
-def list_cache(_: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def list_cache(
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return data_service.list_cache(container)
 
 
@@ -158,15 +291,38 @@ def list_cache(_: dict[str, Any] = Depends(get_session), container=Depends(get_c
 def patch_cache(
     ip: str,
     body: CachePatchRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.patch_cache(container, ip, {key: value for key, value in body.model_dump().items() if value is not None})
+    changes = {key: value for key, value in body.model_dump().items() if value is not None}
+    payload = data_service.patch_cache(container, ip, changes)
+    record_admin_action(
+        container,
+        session,
+        action="data.cache.patch",
+        target_type="cache_entry",
+        target_id=ip,
+        details={"fields": sorted(changes.keys())},
+    )
+    return payload
 
 
 @router.delete("/cache/{ip}")
-def delete_cache(ip: str, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
-    return data_service.delete_cache(container, ip)
+def delete_cache(
+    ip: str,
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    payload = data_service.delete_cache(container, ip)
+    record_admin_action(
+        container,
+        session,
+        action="data.cache.delete",
+        target_type="cache_entry",
+        target_id=ip,
+        details={},
+    )
+    return payload
 
 
 @router.get("/exports/calibration")
@@ -177,7 +333,7 @@ def export_calibration(
     provider_key: Optional[str] = None,
     include_unknown: bool = False,
     status: str = Query(default="resolved_only"),
-    _: dict[str, Any] = Depends(get_session),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
     container=Depends(get_container),
 ) -> Response:
     payload = data_service.build_calibration_export(
@@ -209,7 +365,7 @@ def preview_calibration_export(
     provider_key: Optional[str] = None,
     include_unknown: bool = False,
     status: str = Query(default="resolved_only"),
-    _: dict[str, Any] = Depends(get_session),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     return data_service.build_calibration_preview(
@@ -226,7 +382,10 @@ def preview_calibration_export(
 
 
 @router.get("/learning")
-def get_learning_admin(_: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
+def get_learning_admin(
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
     return data_service.get_learning_admin(container)
 
 
@@ -234,15 +393,38 @@ def get_learning_admin(_: dict[str, Any] = Depends(get_session), container=Depen
 def patch_legacy_learning(
     row_id: int,
     body: LegacyLearningPatchRequest,
-    _: dict[str, Any] = Depends(get_session),
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
-    return data_service.patch_legacy_learning(container, row_id, {key: value for key, value in body.model_dump().items() if value is not None})
+    changes = {key: value for key, value in body.model_dump().items() if value is not None}
+    payload = data_service.patch_legacy_learning(container, row_id, changes)
+    record_admin_action(
+        container,
+        session,
+        action="data.learning.patch",
+        target_type="legacy_learning",
+        target_id=str(row_id),
+        details={"fields": sorted(changes.keys())},
+    )
+    return payload
 
 
 @router.delete("/learning/legacy/{row_id}")
-def delete_legacy_learning(row_id: int, _: dict[str, Any] = Depends(get_session), container=Depends(get_container)) -> dict[str, Any]:
-    return data_service.delete_legacy_learning(container, row_id)
+def delete_legacy_learning(
+    row_id: int,
+    session: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_WRITE)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    payload = data_service.delete_legacy_learning(container, row_id)
+    record_admin_action(
+        container,
+        session,
+        action="data.learning.delete",
+        target_type="legacy_learning",
+        target_id=str(row_id),
+        details={},
+    )
+    return payload
 
 
 @router.get("/cases")
@@ -264,11 +446,11 @@ def list_cases(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     sort: str = Query(default="updated_desc"),
-    _: dict[str, Any] = Depends(get_session),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
     container=Depends(get_container),
 ) -> dict[str, Any]:
     return review_service.list_reviews(
-        container.store,
+        container,
         {
             "status": status,
             "confidence_band": confidence_band,
@@ -289,3 +471,12 @@ def list_cases(
             "sort": sort,
         },
     )
+
+
+@router.get("/audit")
+def list_audit(
+    limit: int = Query(default=100, ge=1, le=500),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_AUDIT_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    return data_service.list_admin_audit(container, limit=limit)
