@@ -446,15 +446,9 @@ class ModuleAdminRepository(SQLiteRepository):
         payload: dict[str, Any],
     ) -> bool:
         with self.connect() as conn:
-            existing = conn.execute(
-                "SELECT 1 FROM ingested_raw_events WHERE event_uid = ?",
-                (event_uid,),
-            ).fetchone()
-            if existing:
-                return False
-            conn.execute(
+            cursor = conn.execute(
                 """
-                INSERT INTO ingested_raw_events (
+                INSERT OR IGNORE INTO ingested_raw_events (
                     event_uid, module_id, module_name, occurred_at, log_offset,
                     subject_uuid, username, system_id, telegram_id, ip, tag, raw_payload_json
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -475,7 +469,10 @@ class ModuleAdminRepository(SQLiteRepository):
                 ),
             )
             conn.commit()
-            return True
+            if cursor.rowcount is not None:
+                return int(cursor.rowcount) > 0
+            row = conn.execute("SELECT changes() AS cnt").fetchone()
+            return bool(row and int(row["cnt"]) > 0)
 
     def mark_raw_event_processed(
         self,
