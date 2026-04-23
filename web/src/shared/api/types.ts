@@ -162,6 +162,8 @@ export type ModuleRecord = {
   first_seen_at?: string;
   last_seen_at: string;
   healthy?: boolean;
+  seconds_since_last_seen?: number | null;
+  stale_after_seconds?: number;
   open_review_cases?: number;
   analysis_events_count?: number;
 };
@@ -360,6 +362,29 @@ export type AnalysisEventListResponse = {
   count: number;
   page: number;
   page_size: number;
+};
+
+export type ConsoleEntry = {
+  id: string;
+  timestamp: string;
+  source: "system" | "module_event" | "module_heartbeat";
+  level: "info" | "warn" | "error";
+  message: string;
+  service_name?: string | null;
+  logger_name?: string | null;
+  module_id?: string | null;
+  module_name?: string | null;
+  event_uid?: string | null;
+  payload?: Record<string, unknown> | null;
+  meta?: Record<string, unknown> | null;
+};
+
+export type ConsoleListResponse = {
+  items: ConsoleEntry[];
+  count: number;
+  page: number;
+  page_size: number;
+  source_counts?: Record<string, number>;
 };
 
 export type PipelineStatus = {

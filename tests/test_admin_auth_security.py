@@ -69,6 +69,14 @@ class AdminAuthSecurityTests(unittest.TestCase):
         else:
             os.environ["BAN_SYSTEM_DIR"] = previous_runtime_dir
 
+    def _rebuild_container(self) -> None:
+        self.container = build_container(self.root)
+        self.container.store.update_live_rules(
+            {"admin_tg_ids": [1], "moderator_tg_ids": [2], "viewer_tg_ids": [3]},
+            "bootstrap",
+            1,
+        )
+
     def test_role_resolution_uses_owner_moderator_and_viewer_lists(self):
         self.assertEqual(self.container.store.get_admin_role_for_tg_id(1), "owner")
         self.assertEqual(self.container.store.get_admin_role_for_tg_id(2), "moderator")
@@ -136,6 +144,42 @@ class AdminAuthSecurityTests(unittest.TestCase):
         self.assertTrue(session["totp_verified"])
         self.assertEqual(session["auth_method"], "local")
 
+    def test_local_login_ignores_process_env_totp_bypass_without_env_file_override(self):
+        previous_bypass = os.environ.get("PANEL_LOCAL_BYPASS_TOTP")
+        self.addCleanup(self._restore_process_env, "PANEL_LOCAL_BYPASS_TOTP", previous_bypass)
+        os.environ["PANEL_LOCAL_BYPASS_TOTP"] = "true"
+        self._rebuild_container()
+
+        challenge = auth_service.local_login(self.container, "owner", "secret", Response())
+
+        self.assertTrue(challenge["requires_totp"])
+        self.assertTrue(challenge["totp_setup_required"])
+
+    def test_local_login_bypasses_totp_when_runtime_env_file_explicitly_enables_it(self):
+        env_path = self.root / ".env"
+        env_path.write_text(
+            "\n".join(
+                [
+                    "TG_ADMIN_BOT_TOKEN=admin-token",
+                    "TG_ADMIN_BOT_USERNAME=adminbot",
+                    "PANEL_LOCAL_USERNAME=owner",
+                    "PANEL_LOCAL_PASSWORD=secret",
+                    "PANEL_LOCAL_BYPASS_TOTP=true",
+                    "MOBGUARD_MODULE_SECRET_KEY=test-secret-key",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        self._rebuild_container()
+
+        session = auth_service.local_login(self.container, "owner", "secret", Response())
+
+        self.assertEqual(session["role"], ROLE_OWNER)
+        self.assertFalse(session["totp_enabled"])
+        self.assertTrue(session["totp_verified"])
+        self.assertEqual(session["auth_method"], "local")
+
     def test_admin_audit_records_and_lists_events(self):
         session = {
             "subject": "local:owner",
@@ -157,6 +201,12 @@ class AdminAuthSecurityTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["action"], "modules.token_reveal")
         self.assertEqual(events[0]["details"]["source"], "test")
+
+    def _restore_process_env(self, key: str, previous_value: str | None) -> None:
+        if previous_value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = previous_value
 
 
 if __name__ == "__main__":

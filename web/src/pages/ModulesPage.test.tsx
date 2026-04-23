@@ -191,7 +191,7 @@ describe("ModulesPage", () => {
     expect(screen.getAllByText("Access log path not found")).toHaveLength(2);
   });
 
-  it("polls modules and labels stale pipeline snapshots", async () => {
+  it("polls modules and refreshes heartbeat freshness state", async () => {
     const intervalCallbacks: Array<{ callback: TimerHandler; delay?: number }> = [];
     vi.spyOn(window, "setInterval").mockImplementation(((callback: TimerHandler, delay?: number) => {
       intervalCallbacks.push({ callback, delay });
@@ -218,7 +218,9 @@ describe("ModulesPage", () => {
             access_log_exists: true,
             first_seen_at: "2026-04-12T00:00:00",
             last_seen_at: "2026-04-12T00:01:00",
-            healthy: true,
+            healthy: false,
+            seconds_since_last_seen: 902673,
+            stale_after_seconds: 180,
             open_review_cases: 0,
             analysis_events_count: 1
           }
@@ -256,6 +258,8 @@ describe("ModulesPage", () => {
             first_seen_at: "2026-04-12T00:00:00",
             last_seen_at: "2026-04-12T00:01:00",
             healthy: true,
+            seconds_since_last_seen: 18,
+            stale_after_seconds: 180,
             open_review_cases: 0,
             analysis_events_count: 1
           }
@@ -276,8 +280,8 @@ describe("ModulesPage", () => {
 
     renderWithProviders(<ModulesPage session={ownerSession} />);
 
-    expect((await screen.findAllByText("902673 · stale snapshot")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Snapshot age 12s").length).toBeGreaterThan(0);
+    expect(await screen.findByText("heartbeat overdue")).toBeInTheDocument();
+    expect(screen.queryByText("Ingest pipeline")).not.toBeInTheDocument();
 
     const refreshInterval = intervalCallbacks.find((entry) => entry.delay === 15000);
     expect(refreshInterval).toBeTruthy();
@@ -287,8 +291,8 @@ describe("ModulesPage", () => {
       expect(api.getModules).toHaveBeenCalledTimes(2);
     });
     await waitFor(() => {
-      expect(screen.queryAllByText("902673 · stale snapshot")).toHaveLength(0);
+      expect(screen.queryByText("heartbeat overdue")).not.toBeInTheDocument();
     });
-    expect(screen.getAllByText("Snapshot age 1s").length).toBeGreaterThan(0);
+    expect(screen.getByText("heartbeat fresh")).toBeInTheDocument();
   });
 });

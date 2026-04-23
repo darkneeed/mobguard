@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 
 from .context import build_container
+from .logging_console import ensure_console_logging
 from .routers.auth import router as auth_router
 from .routers.data_admin import router as data_admin_router
 from .routers.health import router as health_router
@@ -19,17 +20,20 @@ from .services.ingest_pipeline import enforcement_dispatcher_loop, ingest_worker
 
 
 container = build_container()
+ensure_console_logging(container.runtime.db_path, service_name="mobguard-api")
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("MobGuard API startup complete")
     maintenance_task = asyncio.create_task(db_maintenance_loop(app.state.container))
     ingest_worker_task = asyncio.create_task(ingest_worker_loop(app.state.container))
     enforcement_dispatcher_task = asyncio.create_task(enforcement_dispatcher_loop(app.state.container))
     try:
         yield
     finally:
+        logger.info("MobGuard API shutdown requested")
         maintenance_task.cancel()
         ingest_worker_task.cancel()
         enforcement_dispatcher_task.cancel()

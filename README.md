@@ -75,3 +75,29 @@ docker compose up -d
 ```
 
 Panel binds the web container to `127.0.0.1:8080` and expects a reverse proxy such as Caddy in front of it.
+
+## Local dev without Docker
+
+For real-time UI work with Vite HMR and backend auto-reload, see [docs/local-dev.md](./docs/local-dev.md).
+
+Main entrypoints:
+
+Windows:
+
+```powershell
+.\scripts\start-stack.ps1
+.\scripts\status-stack.ps1
+.\scripts\logs-stack.ps1
+.\scripts\stop-stack.ps1
+```
+
+Linux/macOS:
+
+```bash
+./scripts/start-stack.sh
+./scripts/status-stack.sh
+./scripts/logs-stack.sh
+./scripts/stop-stack.sh
+```
+
+The launcher writes merged runtime env, PID files, logs, and audit reports only into ignored `runtime/dev/`.

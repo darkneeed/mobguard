@@ -236,6 +236,8 @@ esac
         self.assertIn("compose up -d --build", self._read_log())
 
     def test_dbip_provider_downloads_mmdb_file(self):
+        if os.name == "nt":
+            self.skipTest("Git sh on Windows does not reliably resolve curl/gzip/date test stubs")
         self._write_env(
             required_tokens=True,
             maxmind_key="",

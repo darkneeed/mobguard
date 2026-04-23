@@ -132,6 +132,118 @@ class DataAdminDomainTests(unittest.TestCase):
         self.assertTrue(payload["items"][0]["has_review_case"])
         self.assertEqual(payload["items"][0]["review_case_status"], "OPEN")
 
+    def test_console_facade_merges_system_logs_and_module_inputs(self):
+        with self.store._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO system_console_events (
+                    service_name, logger_name, level, message, details_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "mobguard-api",
+                    "api.services.ingest_pipeline",
+                    "WARNING",
+                    "Pipeline snapshot refresh skipped because SQLite is busy",
+                    json.dumps({"lineno": 720}, ensure_ascii=False),
+                    "2026-04-12T12:00:02",
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO ingested_raw_events (
+                    event_uid, module_id, module_name, received_at, occurred_at, log_offset,
+                    subject_uuid, username, system_id, telegram_id, ip, tag, raw_payload_json,
+                    processing_state, processing_owner, processing_started_at, attempt_count,
+                    next_attempt_at, last_error, last_error_at, processed_at, analysis_event_id, review_case_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "evt-1",
+                    "node-a",
+                    "Node A",
+                    "2026-04-12T12:00:01",
+                    "2026-04-12T12:00:00",
+                    10,
+                    "uuid-1",
+                    "alice",
+                    42,
+                    "1001",
+                    "1.2.3.4",
+                    "TAG-A",
+                    json.dumps({"ip": "1.2.3.4", "tag": "TAG-A"}, ensure_ascii=False),
+                    "queued",
+                    "",
+                    "",
+                    0,
+                    "2026-04-12T12:00:01",
+                    "",
+                    "",
+                    None,
+                    None,
+                    None,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO modules (
+                    module_id, module_name, token_hash, token_ciphertext, status, version, protocol_version,
+                    config_revision_applied, first_seen_at, last_seen_at, install_state, managed,
+                    health_status, error_text, last_validation_at, spool_depth, access_log_exists, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "node-a",
+                    "Node A",
+                    "hash",
+                    "",
+                    "online",
+                    "1.0.0",
+                    "v1",
+                    3,
+                    "2026-04-12T11:59:00",
+                    "2026-04-12T12:00:00",
+                    "online",
+                    0,
+                    "ok",
+                    "",
+                    "2026-04-12T12:00:00",
+                    0,
+                    1,
+                    "{}",
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO module_heartbeats (
+                    module_id, status, version, protocol_version, config_revision_applied, details_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "node-a",
+                    "online",
+                    "1.0.0",
+                    "v1",
+                    3,
+                    json.dumps({"health_status": "ok"}, ensure_ascii=False),
+                    "2026-04-12T12:00:03",
+                ),
+            )
+            conn.commit()
+
+        payload = data_admin_service.list_console_entries(
+            self.container,
+            {"page": 1, "page_size": 10},
+        )
+
+        self.assertEqual(payload["count"], 3)
+        self.assertEqual(payload["items"][0]["source"], "module_heartbeat")
+        self.assertEqual(payload["items"][1]["source"], "system")
+        self.assertEqual(payload["items"][2]["source"], "module_event")
+        self.assertEqual(payload["source_counts"]["system"], 1)
+        self.assertEqual(payload["source_counts"]["module_event"], 1)
+        self.assertEqual(payload["source_counts"]["module_heartbeat"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

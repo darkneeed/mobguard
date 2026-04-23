@@ -3,22 +3,15 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { BrandingConfig, Session } from "../api/client";
 import { getSecondaryNavigation, primaryNavigation } from "../app/navigation";
-import { PaletteName, ThemeMode } from "../app/appearance";
 import { hasPermission } from "../app/permissions";
 import { prefetchRouteModule } from "../app/routeModules";
 import { BrandLogo } from "./BrandLogo";
-import { Language, useI18n } from "../localization";
+import { useI18n } from "../localization";
 
 type LayoutProps = {
   branding: BrandingConfig;
   onLogout: () => void;
   username?: string;
-  language: Language;
-  onLanguageChange: (language: Language) => void;
-  palette: PaletteName;
-  onPaletteChange: (palette: PaletteName) => void;
-  theme: ThemeMode;
-  onThemeChange: (theme: ThemeMode) => void;
   session: Session;
 };
 
@@ -26,28 +19,24 @@ export function Layout({
   branding,
   onLogout,
   username,
-  language,
-  onLanguageChange,
-  palette,
-  onPaletteChange,
-  theme,
-  onThemeChange,
-  session
+  session,
 }: LayoutProps) {
   const { t } = useI18n();
   const location = useLocation();
   const secondaryNavigation = getSecondaryNavigation(location.pathname).filter(
-    (item) => !item.permission || hasPermission(session, item.permission)
+    (item) => !item.permission || hasPermission(session, item.permission),
   );
   const visiblePrimaryNavigation = primaryNavigation
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.permission || hasPermission(session, item.permission))
+      items: group.items.filter(
+        (item) => !item.permission || hasPermission(session, item.permission),
+      ),
     }))
     .filter((group) => group.items.length > 0);
 
   useEffect(() => {
-    const targets = ["/queue", "/rules/general", "/data/users", "/quality"];
+    const targets = ["/queue", "/rules/general", "/data/console", "/data/users", "/quality"];
     const browserWindow = window as Window & {
       requestIdleCallback?: (cb: () => void) => number;
       cancelIdleCallback?: (id: number) => void;
@@ -69,16 +58,18 @@ export function Layout({
     <div className="shell app-shell">
       <aside className="sidebar">
         <Link to="/" className="brand">
-          <BrandLogo logoUrl={branding.panel_logo_url} alt={branding.panel_name} />
-          <div>
+          <BrandLogo
+            logoUrl={branding.panel_logo_url}
+            alt={branding.panel_name}
+          />
+          <div className="branding-info">
             <strong>{branding.panel_name}</strong>
             <small>{t("layout.brandSubtitle")}</small>
           </div>
         </Link>
-        <div className="sidebar-kicker">
-          <span className="chip">{t("layout.consoleBadge")}</span>
-          <small>{t("layout.consoleDescription")}</small>
-        </div>
+        <span className="sidebar-username chip">
+          Пользователь: {username || t("common.admin")}
+        </span>
         {visiblePrimaryNavigation.map((group) => (
           <div className="sidebar-group" key={group.titleKey}>
             <span className="sidebar-group-title">{t(group.titleKey)}</span>
@@ -98,45 +89,21 @@ export function Layout({
           </div>
         ))}
         <div className="sidebar-footer">
-          <label className="theme-picker">
-            <span>{t("layout.language.label")}</span>
-            <select value={language} onChange={(event) => onLanguageChange(event.target.value as Language)}>
-              <option value="ru">{t("layout.language.ru")}</option>
-              <option value="en">{t("layout.language.en")}</option>
-            </select>
-          </label>
-          <label className="theme-picker">
-            <span>{t("layout.palette.label")}</span>
-            <select value={palette} onChange={(event) => onPaletteChange(event.target.value as PaletteName)}>
-              <option value="green">{t("layout.palette.green")}</option>
-              <option value="orange">{t("layout.palette.orange")}</option>
-              <option value="blue">{t("layout.palette.blue")}</option>
-              <option value="purple">{t("layout.palette.purple")}</option>
-              <option value="red">{t("layout.palette.red")}</option>
-            </select>
-          </label>
-          <label className="theme-picker">
-            <span>{t("layout.theme.label")}</span>
-            <select value={theme} onChange={(event) => onThemeChange(event.target.value as ThemeMode)}>
-              <option value="system">{t("layout.theme.system")}</option>
-              <option value="light">{t("layout.theme.light")}</option>
-              <option value="dark">{t("layout.theme.dark")}</option>
-            </select>
-          </label>
-          <span>{username || t("common.admin")}</span>
           <button onClick={onLogout}>{t("layout.logout")}</button>
         </div>
       </aside>
       <div className="content-shell">
         {secondaryNavigation.length > 0 ? (
           <div className="section-tabs">
-              {secondaryNavigation.map((item) => (
+            {secondaryNavigation.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 onMouseEnter={() => prefetchRouteModule(item.to)}
                 onFocus={() => prefetchRouteModule(item.to)}
-                className={({ isActive }) => `section-tab${isActive ? " active" : ""}`}
+                className={({ isActive }) =>
+                  `section-tab${isActive ? " active" : ""}`
+                }
               >
                 {t(item.labelKey)}
               </NavLink>

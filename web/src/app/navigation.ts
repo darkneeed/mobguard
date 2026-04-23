@@ -32,7 +32,10 @@ export const primaryNavigation: NavigationGroup[] = [
   },
   {
     titleKey: "layout.groups.operate",
-    items: [{ to: "/data/users", labelKey: "layout.nav.data", permission: "data.read" }]
+    items: [
+      { to: "/data/console", labelKey: "layout.nav.console", permission: "data.read" },
+      { to: "/data/users", labelKey: "layout.nav.data", permission: "data.read" }
+    ]
   }
 ];
 
@@ -47,6 +50,7 @@ export const rulesNavigation: NavigationItem[] = [
 ];
 
 export const dataNavigation: NavigationItem[] = [
+  { to: "/data/console", labelKey: "layout.subnav.data.console", permission: "data.read" },
   { to: "/data/users", labelKey: "layout.subnav.data.users", permission: "data.read" },
   { to: "/data/violations", labelKey: "layout.subnav.data.violations", permission: "data.read" },
   { to: "/data/overrides", labelKey: "layout.subnav.data.overrides", permission: "data.read" },

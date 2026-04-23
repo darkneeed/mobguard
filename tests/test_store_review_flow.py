@@ -195,6 +195,32 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertEqual(second_summary.repeat_count, 1)
         self.assertEqual(third_summary.repeat_count, 2)
 
+    def test_repeat_count_increments_at_exactly_five_minutes(self):
+        user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
+        bundle = DecisionBundle(
+            ip="10.10.10.16",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-A",
+        )
+
+        first_event = self.store.record_analysis_event(user, bundle.ip, "TAG", bundle)
+        with self.store._connect() as conn:
+            conn.execute("UPDATE analysis_events SET created_at = ? WHERE id = ?", ("2026-04-01T10:00:00", first_event))
+            conn.commit()
+        first_summary = self.store.ensure_review_case(user, bundle.ip, "TAG", bundle, first_event, "unsure")
+
+        second_event = self.store.record_analysis_event(user, bundle.ip, "TAG", bundle)
+        with self.store._connect() as conn:
+            conn.execute("UPDATE analysis_events SET created_at = ? WHERE id = ?", ("2026-04-01T10:05:00", second_event))
+            conn.commit()
+        second_summary = self.store.ensure_review_case(user, bundle.ip, "TAG", bundle, second_event, "unsure")
+
+        self.assertEqual(first_summary.id, second_summary.id)
+        self.assertEqual(second_summary.repeat_count, 2)
+
     def test_recheck_review_case_can_auto_skip_when_manual_review_is_no_longer_needed(self):
         user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42, "module_id": "node-a", "module_name": "Node A"}
         original_bundle = DecisionBundle(
@@ -626,6 +652,82 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertEqual(second_case.repeat_count, 2)
         self.assertEqual(detail["target_scope_type"], "ip_device")
         self.assertEqual(detail["device_scope_key"], "device:dev-1")
+
+    def test_list_review_cases_batches_same_device_ip_history(self):
+        user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
+        first_bundle = DecisionBundle(
+            ip="10.10.10.50",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-A",
+        )
+        second_bundle = DecisionBundle(
+            ip="10.10.10.70",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-B",
+        )
+
+        first_event = self.store.record_analysis_event(
+            user,
+            first_bundle.ip,
+            "TAG",
+            first_bundle,
+            observation={"client_device_id": "dev-1", "client_device_label": "Pixel 8"},
+        )
+        first_case = self.store.ensure_review_case(
+            user,
+            first_bundle.ip,
+            "TAG",
+            first_bundle,
+            first_event,
+            "unsure",
+        )
+        self.store.record_analysis_event(
+            user,
+            "10.10.10.51",
+            "TAG",
+            first_bundle,
+            observation={"client_device_id": "dev-1", "client_device_label": "Pixel 8"},
+        )
+        second_event = self.store.record_analysis_event(
+            user,
+            second_bundle.ip,
+            "TAG",
+            second_bundle,
+            observation={"client_device_id": "dev-2", "client_device_label": "Pixel 9"},
+        )
+        second_case = self.store.ensure_review_case(
+            user,
+            second_bundle.ip,
+            "TAG",
+            second_bundle,
+            second_event,
+            "unsure",
+        )
+
+        with patch.object(
+            self.store.review_admin,
+            "_same_device_ip_history",
+            side_effect=AssertionError("review listing should batch same-device history"),
+        ):
+            listing = self.store.list_review_cases({})
+
+        items = {item["id"]: item for item in listing["items"]}
+        self.assertEqual({first_case.id, second_case.id}, set(items))
+        self.assertEqual(
+            {entry["ip"] for entry in items[first_case.id]["same_device_ip_history"]},
+            {"10.10.10.50", "10.10.10.51"},
+        )
+        self.assertEqual(len(items[first_case.id]["same_device_ip_history"]), 2)
+        self.assertEqual(
+            {entry["ip"] for entry in items[second_case.id]["same_device_ip_history"]},
+            {"10.10.10.70"},
+        )
 
     def test_quality_metrics_use_persisted_provider_summary_without_bundle_decode(self):
         user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}

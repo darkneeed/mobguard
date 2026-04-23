@@ -50,7 +50,7 @@ function isAllowedRawText(text) {
 }
 
 function isCodeLikeRawText(text) {
-  return /Promise|\.join\(|=>|\)\s*:\s*|^\d+\s*\?|^\?\s|:\s*t\(/.test(text);
+  return /Promise|\.join\(|=>|\)\s*:\s*|^\d+\s*\?|^\?\s|:\s*t\(|formatDisplayDateTime\(|strike_number|punishment_duration|created_at\s*\?\?|timestamp\s*\?\?|\?\.\w+\)|\.\w+\)\}|Record<string, unknown>|^AS[A-Za-z0-9]+$/.test(text);
 }
 
 function collectRawUiTextIssues(filePath) {

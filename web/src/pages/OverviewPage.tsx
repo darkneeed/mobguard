@@ -62,7 +62,11 @@ export function OverviewPage({ session }: { session?: Session }) {
         setLastLoadedAt(new Date().toISOString());
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : t("overview.errors.loadFailed"));
+          setError(
+            err instanceof Error
+              ? err.message
+              : t("overview.errors.loadFailed"),
+          );
         }
       } finally {
         if (!cancelled) {
@@ -86,14 +90,21 @@ export function OverviewPage({ session }: { session?: Session }) {
   const queue = data?.latest_cases || null;
   const pipeline = data?.pipeline || null;
   const freshness = data?.freshness || null;
-  const overviewStale = Boolean((freshness?.overview_age_seconds ?? 0) > OVERVIEW_STALE_AFTER_SECONDS);
+  const overviewStale = Boolean(
+    (freshness?.overview_age_seconds ?? 0) > OVERVIEW_STALE_AFTER_SECONDS,
+  );
   const pipelineStale = Boolean(pipeline?.stale);
 
   const systemStatusClass =
-    health?.status === "ok" ? "status-resolved" : health?.status ? "severity-high" : "severity-low";
+    health?.status === "ok"
+      ? "status-resolved"
+      : health?.status
+        ? "severity-high"
+        : "severity-low";
 
   const rulesOwner =
-    !quality?.live_rules_updated_by || quality.live_rules_updated_by === "bootstrap"
+    !quality?.live_rules_updated_by ||
+    quality.live_rules_updated_by === "bootstrap"
       ? t("common.system")
       : quality.live_rules_updated_by;
   const coreStatusLabel =
@@ -106,15 +117,15 @@ export function OverviewPage({ session }: { session?: Session }) {
           value: formatDisplayDateTime(
             health?.core.updated_at || "",
             t("common.notAvailable"),
-            language
-          )
+            language,
+          ),
         })
       : t("overview.health.updated", {
           value: formatDisplayDateTime(
             health?.core.updated_at || "",
             t("common.notAvailable"),
-            language
-          )
+            language,
+          ),
         });
 
   function formatAge(seconds?: number | null): string {
@@ -127,6 +138,38 @@ export function OverviewPage({ session }: { session?: Session }) {
     return `${Math.round(total / 3600)}h`;
   }
 
+  const attentionItems: string[] = [];
+  if (overviewStale) {
+    attentionItems.push(t("overview.attentionItems.overviewStale"));
+  }
+  if (pipelineStale) {
+    attentionItems.push(t("overview.attentionItems.pipelineStale"));
+  }
+  if ((pipeline?.failed_count ?? 0) > 0) {
+    attentionItems.push(
+      t("overview.attentionItems.failedQueue", {
+        count: pipeline?.failed_count ?? 0,
+      }),
+    );
+  }
+  if ((quality?.open_cases ?? 0) > 0) {
+    attentionItems.push(
+      t("overview.attentionItems.openCases", {
+        count: quality?.open_cases ?? 0,
+      }),
+    );
+  }
+  if ((quality?.mixed_providers.conflict_cases ?? 0) > 0) {
+    attentionItems.push(
+      t("overview.attentionItems.mixedConflicts", {
+        count: quality?.mixed_providers.conflict_cases ?? 0,
+      }),
+    );
+  }
+  if (!attentionItems.length) {
+    attentionItems.push(t("overview.attentionItems.quiet"));
+  }
+
   return (
     <section className="page">
       <div className="page-header page-header-stack">
@@ -136,18 +179,28 @@ export function OverviewPage({ session }: { session?: Session }) {
           <p className="page-lede">{t("overview.description")}</p>
         </div>
         <div className="dashboard-meta">
-          <span className={`status-badge ${systemStatusClass}`}>{health?.status || t("common.loading")}</span>
           <span className="muted">
             {t("overview.lastUpdated", {
               value: formatDisplayDateTime(
                 freshness?.overview_updated_at || lastLoadedAt,
                 t("common.notAvailable"),
-                language
-              )
+                language,
+              ),
             })}
           </span>
-          {overviewStale ? <span className="tag severity-high">{t("overview.snapshotStale")}</span> : null}
-          {pipelineStale ? <span className="tag severity-high">{t("overview.pipeline.stale")}</span> : null}
+          <span className={`status-badge ${systemStatusClass}`}>
+            {health?.status || t("common.loading")}
+          </span>
+          {overviewStale ? (
+            <span className="tag severity-high">
+              {t("overview.snapshotStale")}
+            </span>
+          ) : null}
+          {pipelineStale ? (
+            <span className="tag severity-high">
+              {t("overview.pipeline.stale")}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -156,46 +209,57 @@ export function OverviewPage({ session }: { session?: Session }) {
           {error}
           {data
             ? ` ${t("overview.errors.showingLastGood", {
-                value: formatAge(freshness?.overview_age_seconds)
+                value: formatAge(freshness?.overview_age_seconds),
               })}`
             : ""}
         </div>
       ) : null}
 
       <div className="dashboard-grid dashboard-grid-hero">
-          <div className="panel panel-hero">
-            <div className="panel-heading panel-heading-row">
-              <div>
-                <h2>{t("overview.systemStatusTitle")}</h2>
-                <p className="muted">{t("overview.systemStatusDescription")}</p>
-              </div>
-              <span className="tag status-resolved">{t("overview.cards.core")}</span>
+        <div className="panel panel-hero overview-attention-panel">
+          <div className="panel-heading panel-heading-row">
+            <div>
+              <h2>{t("overview.attentionTitle")}</h2>
+              <p className="muted">{t("overview.attentionDescription")}</p>
             </div>
+            <span
+              className={`tag ${pipelineStale || overviewStale ? "severity-high" : "status-resolved"}`}
+            >
+              {pipelineStale || overviewStale
+                ? t("overview.snapshotStale")
+                : health?.status || t("common.loading")}
+            </span>
+          </div>
           <div className="stats-grid">
             <div className="stat-card">
               <span>{t("overview.cards.openQueue")}</span>
               <strong>{quality?.open_cases ?? queue?.count ?? "—"}</strong>
             </div>
             <div className="stat-card">
-              <span>{t("overview.cards.core")}</span>
+              <span>{t("overview.cards.failedQueue")}</span>
+              <strong>{pipeline?.failed_count ?? "—"}</strong>
+            </div>
+            <div className="stat-card">
+              <span>{t("overview.cards.mixedConflicts")}</span>
+              <strong>{quality?.mixed_providers.conflict_cases ?? "—"}</strong>
+            </div>
+            <div className="stat-card">
+              <span>{t("overview.cards.promotedPatterns")}</span>
               <strong>
-                {health?.core.mode === "embedded"
-                  ? t("overview.cards.embeddedValue")
-                  : health?.core.healthy
-                    ? t("common.on")
-                    : t("common.off")}
+                {quality?.learning.promoted.active_patterns ?? "—"}
               </strong>
             </div>
-            <div className="stat-card">
-              <span>{t("overview.cards.ipinfo")}</span>
-              <strong>{health?.ipinfo_token_present ? t("common.on") : t("common.off")}</strong>
-            </div>
-            <div className="stat-card">
-              <span>{t("overview.cards.adminSessions")}</span>
-              <strong>{health?.admin_sessions ?? "—"}</strong>
-            </div>
           </div>
-          <div className="hero-links">
+          <div className="record-list overview-signal-list">
+            {attentionItems.map((item) => (
+              <div className="record-item" key={item}>
+                <div className="record-main">
+                  <span className="record-title">{item}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hero-links overview-action-grid">
             <Link
               to="/queue"
               className="hero-link"
@@ -222,10 +286,10 @@ export function OverviewPage({ session }: { session?: Session }) {
             </Link>
             {canReadData ? (
               <Link
-                to="/data/events"
+                to="/data/console"
                 className="hero-link"
-                onMouseEnter={() => prefetchRouteModule("/data/events")}
-                onFocus={() => prefetchRouteModule("/data/events")}
+                onMouseEnter={() => prefetchRouteModule("/data/console")}
+                onFocus={() => prefetchRouteModule("/data/console")}
               >
                 <span>{t("overview.quickLinks.events")}</span>
               </Link>
@@ -251,19 +315,27 @@ export function OverviewPage({ session }: { session?: Session }) {
           <div className="metric-list">
             <div className="metric-row">
               <div className="record-main">
-                <span className="record-title">{t("overview.health.core")}</span>
-                <span className={`tag ${health?.core.healthy ? "status-resolved" : "severity-high"}`}>
+                <span className="record-title">
+                  {t("overview.health.core")}
+                </span>
+                <span
+                  className={`tag ${health?.core.healthy ? "status-resolved" : "severity-high"}`}
+                >
                   {coreStatusLabel}
                 </span>
               </div>
-              <div className="record-meta">
-                {coreRuntimeMeta}
-              </div>
+              <div className="record-meta">{coreRuntimeMeta}</div>
             </div>
             <div className="metric-row">
               <div className="record-main">
                 <span className="record-title">{t("overview.health.db")}</span>
-                <span className={health?.db.healthy ? "tag status-resolved" : "tag severity-high"}>
+                <span
+                  className={
+                    health?.db.healthy
+                      ? "tag status-resolved"
+                      : "tag severity-high"
+                  }
+                >
                   {health?.db.healthy ? t("common.on") : t("common.off")}
                 </span>
               </div>
@@ -273,100 +345,149 @@ export function OverviewPage({ session }: { session?: Session }) {
             </div>
             <div className="metric-row">
               <div className="record-main">
-                <span className="record-title">{t("overview.health.rules")}</span>
-                <span>{t("rules.revision", { value: quality?.live_rules_revision ?? "—" })}</span>
-              </div>
-              <div className="record-meta">
-                {t("overview.health.rulesBy", {
-                  value: rulesOwner
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-heading panel-heading-row">
-            <div>
-              <h2>{t("overview.pipelineTitle")}</h2>
-              <p className="muted">{t("overview.pipelineDescription")}</p>
-            </div>
-            <span className={`tag ${pipelineStale ? "severity-high" : "review-only"}`}>
-              {pipelineStale ? t("overview.pipeline.stale") : pipeline?.worker_status || t("common.notAvailable")}
-            </span>
-          </div>
-          <div className="metric-list">
-            <div className="metric-row">
-              <div className="record-main">
-                <span className="record-title">{t("overview.pipeline.queueDepth")}</span>
-                <span>{pipeline?.queue_depth ?? "—"}</span>
-              </div>
-              <div className="record-meta">
-                {t("overview.pipeline.queueMeta", {
-                  queued: pipeline?.queued_count ?? 0,
-                  processing: pipeline?.processing_count ?? 0
-                })}
-              </div>
-            </div>
-            <div className="metric-row">
-              <div className="record-main">
-                <span className="record-title">{t("overview.pipeline.failed")}</span>
-                <span>{pipeline?.failed_count ?? "—"}</span>
-              </div>
-              <div className="record-meta">
-                {t("overview.pipeline.pendingRemote", {
-                  count: pipeline?.enforcement_pending_count ?? 0
-                })}
-              </div>
-            </div>
-            <div className="metric-row">
-              <div className="record-main">
-                <span className="record-title">{t("overview.pipeline.lag")}</span>
-                <span>{formatAge(pipeline?.current_lag_seconds)}</span>
-              </div>
-              <div className="record-meta">
-                {t("overview.pipeline.oldestQueued", {
-                  value: formatAge(pipeline?.oldest_queued_age_seconds)
-                })}
-              </div>
-            </div>
-            <div className="metric-row">
-              <div className="record-main">
-                <span className="record-title">{t("overview.pipeline.lastDrain")}</span>
+                <span className="record-title">
+                  {t("overview.health.rules")}
+                </span>
                 <span>
-                  {formatDisplayDateTime(
-                    pipeline?.last_successful_drain_at || "",
-                    t("common.notAvailable"),
-                    language
-                  )}
+                  {t("rules.revision", {
+                    value: quality?.live_rules_revision ?? "—",
+                  })}
                 </span>
               </div>
               <div className="record-meta">
-                {t("overview.pipeline.snapshotAge", {
-                  value: formatAge(pipeline?.snapshot_age_seconds ?? freshness?.pipeline_age_seconds)
+                {t("overview.health.rulesBy", {
+                  value: rulesOwner,
                 })}
+              </div>
+            </div>
+            <div className="metric-row">
+              <div className="record-main">
+                <span className="record-title">
+                  {t("overview.cards.adminSessions")}
+                </span>
+                <span>{health?.admin_sessions ?? "—"}</span>
+              </div>
+              <div className="record-meta">
+                {t("overview.cards.ipinfo")} ·{" "}
+                {health?.ipinfo_token_present
+                  ? t("common.on")
+                  : t("common.off")}
+              </div>
+            </div>
+            <div className="metric-row">
+              <div className="record-main">
+                <span className="record-title">
+                  {t("overview.cards.scoreZeroRatio")}
+                </span>
+                <span>
+                  {health
+                    ? `${Math.round(health.analysis_24h.score_zero_ratio * 100)}%`
+                    : "—"}
+                </span>
+              </div>
+              <div className="record-meta">
+                {t("overview.cards.asnMissingRatio")} ·{" "}
+                {health
+                  ? `${Math.round(health.analysis_24h.asn_missing_ratio * 100)}%`
+                  : "—"}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="stats-grid stats-grid-emphasis">
-        <div className="stat-card stat-card-emphasis">
-          <span>{t("overview.cards.scoreZeroRatio")}</span>
-          <strong>{health ? `${Math.round(health.analysis_24h.score_zero_ratio * 100)}%` : "—"}</strong>
+      <div className="panel">
+        <div className="panel-heading panel-heading-row">
+          <div>
+            <h2>{t("overview.pipelineTitle")}</h2>
+            <p className="muted">{t("overview.pipelineDescription")}</p>
+          </div>
+          <div className="action-row">
+            <span
+              className={`tag ${pipelineStale ? "severity-high" : "review-only"}`}
+            >
+              {pipelineStale
+                ? t("overview.pipeline.stale")
+                : pipeline?.worker_status || t("common.notAvailable")}
+            </span>
+            <span className="muted">
+              {t("overview.pipeline.snapshotAge", {
+                value: formatAge(
+                  pipeline?.snapshot_age_seconds ??
+                    freshness?.pipeline_age_seconds,
+                ),
+              })}
+            </span>
+          </div>
         </div>
-        <div className="stat-card stat-card-emphasis">
-          <span>{t("overview.cards.asnMissingRatio")}</span>
-          <strong>{health ? `${Math.round(health.analysis_24h.asn_missing_ratio * 100)}%` : "—"}</strong>
-        </div>
-        <div className="stat-card stat-card-emphasis">
-          <span>{t("overview.cards.mixedConflicts")}</span>
-          <strong>{quality?.mixed_providers.conflict_cases ?? "—"}</strong>
-        </div>
-        <div className="stat-card stat-card-emphasis">
-          <span>{t("overview.cards.promotedPatterns")}</span>
-          <strong>{quality?.learning.promoted.active_patterns ?? "—"}</strong>
+        <div className="dashboard-grid overview-pipeline-grid">
+          <div className="metric-list">
+            <div className="metric-row">
+              <div className="record-main">
+                <span className="record-title">
+                  {t("overview.pipeline.queueDepth")}
+                </span>
+                <span>{pipeline?.queue_depth ?? "—"}</span>
+              </div>
+              <div className="record-meta">
+                {t("overview.pipeline.queueMeta", {
+                  queued: pipeline?.queued_count ?? 0,
+                  processing: pipeline?.processing_count ?? 0,
+                })}
+              </div>
+            </div>
+            <div className="metric-row">
+              <div className="record-main">
+                <span className="record-title">
+                  {t("overview.pipeline.failed")}
+                </span>
+                <span>{pipeline?.failed_count ?? "—"}</span>
+              </div>
+              <div className="record-meta">
+                {t("overview.pipeline.pendingRemote", {
+                  count: pipeline?.enforcement_pending_count ?? 0,
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="metric-list">
+            <div className="metric-row">
+              <div className="record-main">
+                <span className="record-title">
+                  {t("overview.pipeline.lag")}
+                </span>
+                <span>{formatAge(pipeline?.current_lag_seconds)}</span>
+              </div>
+              <div className="record-meta">
+                {t("overview.pipeline.oldestQueued", {
+                  value: formatAge(pipeline?.oldest_queued_age_seconds),
+                })}
+              </div>
+            </div>
+            <div className="metric-row">
+              <div className="record-main">
+                <span className="record-title">
+                  {t("overview.pipeline.lastDrain")}
+                </span>
+                <span>
+                  {formatDisplayDateTime(
+                    pipeline?.last_successful_drain_at || "",
+                    t("common.notAvailable"),
+                    language,
+                  )}
+                </span>
+              </div>
+              <div className="record-meta">
+                {formatDisplayDateTime(
+                  pipeline?.snapshot_updated_at ||
+                    freshness?.pipeline_updated_at ||
+                    "",
+                  t("common.notAvailable"),
+                  language,
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -390,32 +511,58 @@ export function OverviewPage({ session }: { session?: Session }) {
             <div className="panel-heading panel-heading-row">
               <div>
                 <h2>{t("overview.mixedProvidersTitle")}</h2>
-                <p className="muted">{t("overview.mixedProvidersDescription")}</p>
+                <p className="muted">
+                  {t("overview.mixedProvidersDescription")}
+                </p>
               </div>
             </div>
             <div className="record-list">
               {quality?.mixed_providers.top_open_cases.length ? (
-                quality.mixed_providers.top_open_cases.slice(0, 5).map((item) => (
-                  <div className="record-item" key={item.provider_key}>
-                    <div className="record-main">
-                      <span className="record-title">{item.provider_key}</span>
+                quality.mixed_providers.top_open_cases
+                  .slice(0, 5)
+                  .map((item) => (
+                    <div className="record-item" key={item.provider_key}>
+                      <div className="record-main">
+                        <span className="record-title">
+                          {item.provider_key}
+                        </span>
+                      </div>
+                      <div className="record-grid">
+                        <div className="record-kv">
+                          <strong>
+                            {t("overview.mixedProvidersMetrics.open")}
+                          </strong>
+                          <span>{item.open_cases}</span>
+                        </div>
+                        <div className="record-kv">
+                          <strong>
+                            {t("overview.mixedProvidersMetrics.conflicts")}
+                          </strong>
+                          <span>{item.conflict_cases}</span>
+                        </div>
+                        <div className="record-kv">
+                          <strong>
+                            {t("overview.mixedProvidersMetrics.home")}
+                          </strong>
+                          <span>{item.home_cases}</span>
+                        </div>
+                        <div className="record-kv">
+                          <strong>
+                            {t("overview.mixedProvidersMetrics.mobile")}
+                          </strong>
+                          <span>{item.mobile_cases}</span>
+                        </div>
+                      </div>
+                      <div className="record-meta">
+                        {t("overview.mixedProvidersItem", {
+                          open: item.open_cases,
+                          conflict: item.conflict_cases,
+                          home: item.home_cases,
+                          mobile: item.mobile_cases,
+                        })}
+                      </div>
                     </div>
-                    <div className="record-grid">
-                      <div className="record-kv"><strong>{t("overview.mixedProvidersMetrics.open")}</strong><span>{item.open_cases}</span></div>
-                      <div className="record-kv"><strong>{t("overview.mixedProvidersMetrics.conflicts")}</strong><span>{item.conflict_cases}</span></div>
-                      <div className="record-kv"><strong>{t("overview.mixedProvidersMetrics.home")}</strong><span>{item.home_cases}</span></div>
-                      <div className="record-kv"><strong>{t("overview.mixedProvidersMetrics.mobile")}</strong><span>{item.mobile_cases}</span></div>
-                    </div>
-                    <div className="record-meta">
-                      {t("overview.mixedProvidersItem", {
-                        open: item.open_cases,
-                        conflict: item.conflict_cases,
-                        home: item.home_cases,
-                        mobile: item.mobile_cases
-                      })}
-                    </div>
-                  </div>
-                ))
+                  ))
               ) : (
                 <div className="provider-empty">
                   <span>{t("overview.emptyMixedProviders")}</span>
@@ -437,7 +584,9 @@ export function OverviewPage({ session }: { session?: Session }) {
                   <div className="record-item" key={item.asn_key}>
                     <div className="record-main">
                       <span className="record-title">{item.asn_key}</span>
-                      <span className="tag">{t("overview.noisyAsnItem", { count: item.cnt })}</span>
+                      <span className="tag">
+                        {t("overview.noisyAsnItem", { count: item.cnt })}
+                      </span>
                     </div>
                   </div>
                 ))
@@ -463,7 +612,9 @@ export function OverviewPage({ session }: { session?: Session }) {
                     to={`/reviews/${item.id}`}
                     className="record-item inline-link"
                     key={item.id}
-                    onMouseEnter={() => prefetchRouteModule(`/reviews/${item.id}`)}
+                    onMouseEnter={() =>
+                      prefetchRouteModule(`/reviews/${item.id}`)
+                    }
                     onFocus={() => prefetchRouteModule(`/reviews/${item.id}`)}
                   >
                     <div className="record-main">
@@ -473,11 +624,12 @@ export function OverviewPage({ session }: { session?: Session }) {
                       <span className="tag">{item.review_reason}</span>
                     </div>
                     <div className="record-meta">
-                        {item.review_reason} · {item.ip} · {formatDisplayDateTime(
-                          item.updated_at,
-                          t("common.notAvailable"),
-                          language
-                        )}
+                      {item.review_reason} · {item.ip} ·{" "}
+                      {formatDisplayDateTime(
+                        item.updated_at,
+                        t("common.notAvailable"),
+                        language,
+                      )}
                     </div>
                   </Link>
                 ))

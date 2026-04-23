@@ -194,7 +194,7 @@ describe("ReviewQueuePage", () => {
     expect(screen.getAllByText("Decision for this IP only").length).toBeGreaterThan(0);
     expect(screen.getByText("ISP A")).toBeInTheDocument();
     expect(screen.getByText("Provider conflict")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Event console" })).toHaveAttribute("href", "/data/events");
+    expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute("href", "/data/console");
 
     const [pageSizeSelect] = screen.getAllByLabelText("Cards per page");
     await userEvent.selectOptions(pageSizeSelect, "48");

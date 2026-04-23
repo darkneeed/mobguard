@@ -204,6 +204,113 @@ class ReviewAdminRepository(SQLiteRepository):
             history.append(payload)
         return history
 
+    def _batch_same_device_ip_history(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        device_scope_keys: list[str],
+        limit: int = 8,
+    ) -> dict[str, list[dict[str, Any]]]:
+        normalized_scope_keys: list[str] = []
+        seen_scope_keys: set[str] = set()
+        for value in device_scope_keys:
+            normalized = clean_text(value)
+            if not normalized or normalized in seen_scope_keys:
+                continue
+            seen_scope_keys.add(normalized)
+            normalized_scope_keys.append(normalized)
+        if not normalized_scope_keys:
+            return {}
+
+        placeholders = ", ".join("?" for _ in normalized_scope_keys)
+        rows = conn.execute(
+            f"""
+            WITH per_ip AS (
+                SELECT device_scope_key,
+                       ip,
+                       COUNT(*) AS hit_count,
+                       MIN(created_at) AS first_seen_at,
+                       MAX(created_at) AS last_seen_at
+                FROM analysis_events
+                WHERE device_scope_key IN ({placeholders})
+                GROUP BY device_scope_key, ip
+            ),
+            latest AS (
+                SELECT ae.device_scope_key,
+                       ae.ip,
+                       ae.isp,
+                       ae.asn,
+                       ae.country,
+                       ae.region,
+                       ae.city,
+                       ae.module_id,
+                       ae.module_name,
+                       ae.tag,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY ae.device_scope_key, ae.ip
+                           ORDER BY ae.created_at DESC, ae.id DESC
+                       ) AS row_rank
+                FROM analysis_events ae
+                WHERE ae.device_scope_key IN ({placeholders})
+            ),
+            ranked AS (
+                SELECT per_ip.device_scope_key,
+                       per_ip.ip,
+                       per_ip.hit_count,
+                       per_ip.first_seen_at,
+                       per_ip.last_seen_at,
+                       latest.isp,
+                       latest.asn,
+                       latest.country,
+                       latest.region,
+                       latest.city,
+                       latest.module_id,
+                       latest.module_name,
+                       latest.tag,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY per_ip.device_scope_key
+                           ORDER BY per_ip.last_seen_at DESC, per_ip.ip ASC
+                       ) AS scope_rank
+                FROM per_ip
+                LEFT JOIN latest
+                    ON latest.device_scope_key = per_ip.device_scope_key
+                   AND latest.ip = per_ip.ip
+                   AND latest.row_rank = 1
+            )
+            SELECT device_scope_key,
+                   ip,
+                   hit_count,
+                   first_seen_at,
+                   last_seen_at,
+                   isp,
+                   asn,
+                   country,
+                   region,
+                   city,
+                   module_id,
+                   module_name,
+                   tag
+            FROM ranked
+            WHERE scope_rank <= ?
+            ORDER BY device_scope_key ASC, last_seen_at DESC, ip ASC
+            """,
+            (*normalized_scope_keys, *normalized_scope_keys, max(int(limit), 1)),
+        ).fetchall()
+
+        history: dict[str, list[dict[str, Any]]] = {scope_key: [] for scope_key in normalized_scope_keys}
+        for row in rows:
+            payload = dict(row)
+            scope_key = clean_text(payload.pop("device_scope_key"))
+            payload["isp"] = clean_text(payload.get("isp")) or None
+            payload["country"] = clean_text(payload.get("country")) or None
+            payload["region"] = clean_text(payload.get("region")) or None
+            payload["city"] = clean_text(payload.get("city")) or None
+            payload["module_id"] = clean_text(payload.get("module_id")) or None
+            payload["module_name"] = clean_text(payload.get("module_name")) or None
+            payload["inbound_tag"] = clean_text(payload.pop("tag")) or None
+            history.setdefault(scope_key, []).append(payload)
+        return history
+
     def _record_analysis_event(
         self,
         conn: sqlite3.Connection,
@@ -1209,11 +1316,15 @@ class ReviewAdminRepository(SQLiteRepository):
                 )
                 for item in items
             ]
+            same_device_history = self._batch_same_device_ip_history(
+                conn,
+                device_scope_keys=[clean_text(item.get("device_scope_key")) for item in items],
+                limit=6,
+            )
             for item in items:
-                item["same_device_ip_history"] = self._same_device_ip_history(
-                    conn,
-                    device_scope_key=clean_text(item.get("device_scope_key")),
-                    limit=6,
+                item["same_device_ip_history"] = same_device_history.get(
+                    clean_text(item.get("device_scope_key")),
+                    [],
                 )
         return {
             "items": items,

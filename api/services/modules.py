@@ -97,6 +97,39 @@ def _module_runtime(settings: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _module_runtime_settings(container: APIContainer) -> dict[str, Any]:
+    runtime_settings: dict[str, Any] = {}
+    runtime = getattr(container, "runtime", None)
+    runtime_config = getattr(runtime, "config", None)
+    if isinstance(runtime_config, dict):
+        candidate = runtime_config.get("settings")
+        if isinstance(candidate, dict):
+            runtime_settings = dict(candidate)
+    live_settings = _runtime_settings(container)
+    return {**runtime_settings, **live_settings}
+
+
+def _module_stale_after_seconds(container: APIContainer) -> int:
+    heartbeat_interval_seconds = max(
+        int(_module_runtime(_module_runtime_settings(container))["heartbeat_interval_seconds"]),
+        1,
+    )
+    return max(heartbeat_interval_seconds * 4, 180)
+
+
+def _apply_module_freshness(module: dict[str, Any], *, stale_after_seconds: int) -> dict[str, Any]:
+    payload = dict(module)
+    last_seen_raw = str(payload.get("last_seen_at") or "").strip()
+    last_seen = datetime.fromisoformat(last_seen_raw) if last_seen_raw else None
+    seconds_since_last_seen: int | None = None
+    if last_seen:
+        seconds_since_last_seen = max(int((datetime.utcnow().replace(microsecond=0) - last_seen).total_seconds()), 0)
+    payload["stale_after_seconds"] = int(stale_after_seconds)
+    payload["seconds_since_last_seen"] = seconds_since_last_seen
+    payload["healthy"] = bool(seconds_since_last_seen is not None and seconds_since_last_seen <= stale_after_seconds)
+    return payload
+
+
 def _remnawave_client(container: APIContainer) -> PanelClient:
     runtime_settings = {}
     runtime = getattr(container, "runtime", None)
@@ -603,9 +636,10 @@ def register_module(container: APIContainer, payload: dict[str, Any], token: str
         if not is_sqlite_busy_error(exc):
             raise
         raise ModuleStorageBusyError(MODULE_INGEST_BUSY_DETAIL) from exc
+    stale_after_seconds = _module_stale_after_seconds(container)
     return {
         "protocol_version": protocol_version,
-        "module": module,
+        "module": _apply_module_freshness(module, stale_after_seconds=stale_after_seconds),
         "config": get_module_config(container, module)["config"],
     }
 
@@ -626,16 +660,17 @@ def record_module_heartbeat(container: APIContainer, payload: dict[str, Any], to
         if not is_sqlite_busy_error(exc):
             raise
         raise ModuleStorageBusyError(MODULE_INGEST_BUSY_DETAIL) from exc
+    stale_after_seconds = _module_stale_after_seconds(container)
     return {
         "protocol_version": protocol_version,
-        "module": updated,
+        "module": _apply_module_freshness(updated, stale_after_seconds=stale_after_seconds),
         "desired_config_revision": container.store.get_live_rules_state()["revision"],
     }
 
 
 def get_module_config(container: APIContainer, module: dict[str, Any] | None) -> dict[str, Any]:
     rules_state = container.store.get_live_rules_state()
-    settings = rules_state["rules"].get("settings", {})
+    settings = _module_runtime_settings(container)
     rules = copy.deepcopy(rules_state["rules"])
     inbound_tags = list((module or {}).get("inbound_tags") or [])
     rules["inbound_tags"] = inbound_tags
@@ -689,10 +724,18 @@ async def ingest_module_events(container: APIContainer, payload: dict[str, Any],
 
 
 def list_modules(container: APIContainer) -> dict[str, Any]:
+    stale_after_seconds = _module_stale_after_seconds(container)
     try:
-        modules = container.store.list_modules(include_counters=False, fast_read=True)
+        modules = container.store.list_modules(
+            stale_after_seconds=stale_after_seconds,
+            include_counters=False,
+            fast_read=True,
+        )
         return {
-            "items": modules,
+            "items": [
+                _apply_module_freshness(module, stale_after_seconds=stale_after_seconds)
+                for module in modules
+            ],
             "count": len(modules),
             "pipeline": container.store.get_ingest_pipeline_status(fast_read=True),
         }
@@ -715,8 +758,9 @@ def create_managed_module(container: APIContainer, payload: dict[str, Any]) -> d
         protocol_version=PROTOCOL_VERSION,
         metadata=normalized["metadata"],
     )
+    stale_after_seconds = _module_stale_after_seconds(container)
     return {
-        "module": module,
+        "module": _apply_module_freshness(module, stale_after_seconds=stale_after_seconds),
         "install": {
             **_module_install_payload(container, module),
             "module_token": token,
@@ -728,7 +772,10 @@ def get_module_detail(container: APIContainer, module_id: str) -> dict[str, Any]
     module = container.store.get_module(module_id)
     if not module:
         raise ValueError("Module is not registered")
-    return _module_detail_response(container, module)
+    return _module_detail_response(
+        container,
+        _apply_module_freshness(module, stale_after_seconds=_module_stale_after_seconds(container)),
+    )
 
 
 def update_module_detail(container: APIContainer, module_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -738,7 +785,10 @@ def update_module_detail(container: APIContainer, module_id: str, payload: dict[
         module_name=normalized["module_name"],
         metadata=normalized["metadata"],
     )
-    return _module_detail_response(container, module)
+    return _module_detail_response(
+        container,
+        _apply_module_freshness(module, stale_after_seconds=_module_stale_after_seconds(container)),
+    )
 
 
 def reveal_module_token(container: APIContainer, module_id: str) -> dict[str, Any]:

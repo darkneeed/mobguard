@@ -2,6 +2,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -73,6 +74,8 @@ class ModuleProvisioningTests(unittest.TestCase):
         detail = module_service.get_module_detail(self.container, module["module_id"])
         self.assertEqual(detail["module"]["inbound_tags"], ["DEFAULT-INBOUND", "CANARY-INBOUND"])
         self.assertTrue(detail["module"]["token_reveal_available"])
+        self.assertIn("healthy", detail["module"])
+        self.assertIn("stale_after_seconds", detail["module"])
         self.assertIn(MODULE_TOKEN_PLACEHOLDER, detail["install"]["compose_yaml"])
 
         revealed = module_service.reveal_module_token(self.container, module["module_id"])
@@ -89,6 +92,47 @@ class ModuleProvisioningTests(unittest.TestCase):
             install["module_token"],
         )
         self.assertEqual(registered["module"]["install_state"], "online")
+        self.assertTrue(registered["module"]["healthy"])
+
+    def test_module_detail_uses_runtime_heartbeat_window_for_stale_status(self):
+        self.env_path.write_text("MOBGUARD_MODULE_SECRET_KEY=test-secret\n", encoding="utf-8")
+        config_payload = json.loads(self.config_path.read_text(encoding="utf-8"))
+        config_payload.setdefault("settings", {})
+        config_payload["settings"]["module_heartbeat_interval_seconds"] = 120
+        self.config_path.write_text(json.dumps(config_payload, ensure_ascii=False), encoding="utf-8")
+        self.container.runtime.config = config_payload
+
+        created = module_service.create_managed_module(
+            self.container,
+            {
+                "module_name": "Node Alpha",
+                "inbound_tags": ["DEFAULT-INBOUND"],
+            },
+        )
+        module = created["module"]
+        install = created["install"]
+        module_service.register_module(
+            self.container,
+            {
+                "module_id": module["module_id"],
+                "module_name": "Node Alpha",
+                "version": "1.0.0",
+                "protocol_version": "v1",
+            },
+            install["module_token"],
+        )
+
+        with self.store._connect() as conn:
+            conn.execute(
+                "UPDATE modules SET last_seen_at = ? WHERE module_id = ?",
+                ((datetime.utcnow().replace(microsecond=0) - timedelta(seconds=240)).isoformat(), module["module_id"]),
+            )
+            conn.commit()
+
+        detail = module_service.get_module_detail(self.container, module["module_id"])
+
+        self.assertEqual(detail["module"]["stale_after_seconds"], 480)
+        self.assertTrue(detail["module"]["healthy"])
 
     def test_create_module_requires_secret_key(self):
         self.env_path.write_text("", encoding="utf-8")

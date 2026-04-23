@@ -265,10 +265,24 @@ def local_login(container: APIContainer, username: str, password: str, response:
     env_values = load_env_values(container)
     expected_username = env_values.get("PANEL_LOCAL_USERNAME", "")
     expected_password = env_values.get("PANEL_LOCAL_PASSWORD", "")
+    bypass_totp = str(env_values.get("PANEL_LOCAL_BYPASS_TOTP", "")).strip().lower() in {"1", "true", "yes", "on"}
     if not expected_username or not expected_password:
         raise HTTPException(status_code=400, detail="Local auth is not configured")
     if not secrets.compare_digest(username, expected_username) or not secrets.compare_digest(password, expected_password):
         raise HTTPException(status_code=401, detail="Invalid local credentials")
+    if bypass_totp:
+        payload = _build_identity_payload(
+            subject=f"local:{expected_username}",
+            auth_method="local",
+            role=ROLE_OWNER,
+            telegram_id=None,
+            username=expected_username,
+            first_name="Local Admin",
+            totp_enabled=False,
+            totp_verified=True,
+            totp_verified_at=_utcnow(),
+        )
+        return _issue_session(container, response, payload)
     return _resolve_success_or_totp(
         container,
         response,

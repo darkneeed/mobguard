@@ -20,6 +20,7 @@ from .data_admin_learning import (
     get_learning_admin,
     patch_legacy_learning,
 )
+from .data_admin_console import list_console_entries as _list_console_entries_impl
 from .data_admin_overrides_cache import (
     delete_cache,
     delete_exact_override,
@@ -60,6 +61,10 @@ def list_admin_audit(container: APIContainer, limit: int = 100) -> dict[str, Any
 
 def list_analysis_events(container: APIContainer, filters: dict[str, Any]) -> dict[str, Any]:
     return _list_analysis_events_impl(container.store, filters)
+
+
+def list_console_entries(container: APIContainer, filters: dict[str, Any]) -> dict[str, Any]:
+    return _list_console_entries_impl(container, filters)
 
 
 def _runtime_settings(container: APIContainer) -> dict[str, Any]:

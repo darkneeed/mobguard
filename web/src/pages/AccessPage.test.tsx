@@ -81,6 +81,12 @@ describe("AccessPage", () => {
       <AccessPage
         branding={{ panel_name: "MobGuard", panel_logo_url: "" }}
         onBrandingChange={() => undefined}
+        language="en"
+        onLanguageChange={() => undefined}
+        palette="green"
+        onPaletteChange={() => undefined}
+        theme="system"
+        onThemeChange={() => undefined}
       />
     );
 
@@ -114,6 +120,12 @@ describe("AccessPage", () => {
       <AccessPage
         branding={{ panel_name: "MobGuard", panel_logo_url: "" }}
         onBrandingChange={onBrandingChange}
+        language="en"
+        onLanguageChange={() => undefined}
+        palette="green"
+        onPaletteChange={() => undefined}
+        theme="system"
+        onThemeChange={() => undefined}
       />
     );
 
@@ -122,7 +134,7 @@ describe("AccessPage", () => {
     await userEvent.clear(serviceNameInput);
     await userEvent.type(serviceNameInput, "Acme Shield");
     await userEvent.type(logoUrlInput, "https://cdn.example.com/logo.png");
-    await userEvent.click(screen.getByRole("button", { name: "Save branding" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save appearance" }));
 
     await waitFor(() => {
       expect(api.updateAccessSettings).toHaveBeenCalledWith({

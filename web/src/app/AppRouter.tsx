@@ -103,12 +103,6 @@ export function AppRouter({
               branding={branding}
               username={displayName}
               session={session}
-              language={language}
-              onLanguageChange={setLanguage}
-              palette={palette}
-              onPaletteChange={setPalette}
-              theme={theme}
-              onThemeChange={setTheme}
               onLogout={async () => {
                 await api.logout().catch(() => undefined);
                 setSession(null);
@@ -172,7 +166,16 @@ export function AppRouter({
           path="/access"
           element={
             <PermissionRoute session={session} permission="settings.access.read">
-              <AccessPage branding={branding} onBrandingChange={setBranding} />
+              <AccessPage
+                branding={branding}
+                onBrandingChange={setBranding}
+                language={language}
+                onLanguageChange={setLanguage}
+                palette={palette}
+                onPaletteChange={setPalette}
+                theme={theme}
+                onThemeChange={setTheme}
+              />
             </PermissionRoute>
           }
         />

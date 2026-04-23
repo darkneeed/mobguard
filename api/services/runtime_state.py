@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from mobguard_platform.runtime import (
     env_field_payload,
     normalize_runtime_bound_settings,
-    read_env_file,
+    read_env_file_only,
     read_json_file,
     update_json_file,
 )
@@ -42,12 +42,16 @@ TELEGRAM_ENV_FIELDS = {
 ACCESS_ENV_FIELDS = {
     "PANEL_LOCAL_USERNAME": False,
     "PANEL_LOCAL_PASSWORD": True,
+    "PANEL_LOCAL_BYPASS_TOTP": False,
     "MOBGUARD_MODULE_SECRET_KEY": True,
 }
 TELEGRAM_CONFIG_KEYS = tuple(TELEGRAM_RUNTIME_SETTINGS_DEFAULTS.keys())
 ENFORCEMENT_CONFIG_KEYS = tuple(ENFORCEMENT_SETTINGS_DEFAULTS.keys()) + tuple(
     ENFORCEMENT_TEMPLATE_DEFAULTS.keys()
 )
+LOCAL_DEV_ONLY_ENV_FIELDS = {
+    "PANEL_LOCAL_BYPASS_TOTP",
+}
 
 
 def coerce_optional_int(value: Any) -> Optional[int]:
@@ -76,7 +80,14 @@ def load_runtime_config(container: APIContainer) -> dict[str, Any]:
 
 
 def load_env_values(container: APIContainer) -> dict[str, str]:
-    return read_env_file(str(container.runtime.env_path))
+    runtime_env = getattr(getattr(container, "runtime", None), "env", {}) or {}
+    values = {
+        str(key): str(value)
+        for key, value in runtime_env.items()
+        if key not in LOCAL_DEV_ONLY_ENV_FIELDS
+    }
+    values.update(read_env_file_only(str(container.runtime.env_path)))
+    return values
 
 
 def get_auth_capabilities(container: APIContainer, env_values: Optional[dict[str, str]] = None) -> dict[str, Any]:

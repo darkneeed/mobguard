@@ -41,7 +41,7 @@
   align-items: center;
   gap: 0.4rem;
   border-radius: 999px;
-  padding: 0.35rem 0.7rem;
+  padding: 8px 16px;
   border: 1px solid var(--line);
   font-size: 0.82rem;
 }
@@ -88,7 +88,6 @@
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  align-items: center;
   flex-wrap: wrap;
 }
 
@@ -128,10 +127,12 @@
 .detail-grid {
   display: grid;
   gap: 1rem;
+  margin-top: 16px;
 }
 
 .queue-grid {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-top: 16px;
 }
 
 .stats-grid {
@@ -153,7 +154,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
   min-width: 0;
 }
 
@@ -416,13 +419,14 @@
 }
 
 .note-box.tall {
-  min-height: 220px;
+  min-height: 150px;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.85rem;
+  margin-top: 16px;
 }
 
 .field-heading {
@@ -465,8 +469,12 @@
 .settings-group {
   border: 1px solid var(--line);
   border-radius: 22px;
-  padding: 1rem;
+  padding: 8px 16px;
   background: var(--surface-soft);
+}
+
+.settings-group h3 {
+  margin: 8px 0px;
 }
 
 .provider-card-header {
@@ -492,6 +500,8 @@
 
 .settings-group-stack {
   flex-direction: column;
+  gap: 1rem;
+  margin-top: 16px;
 }
 
 .settings-group-collapsible {
@@ -645,6 +655,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  margin-top: 16px;
 }
 
 .metric-row,
@@ -681,6 +692,104 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.record-json-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.record-json {
+  border-top: 1px dashed var(--line);
+  padding-top: 0.65rem;
+}
+
+.record-json summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.record-json pre {
+  margin: 0.75rem 0 0;
+  padding: 0.85rem;
+  overflow: auto;
+  border-radius: 14px;
+  background: var(--surface-soft);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.console-panel {
+  min-height: 32rem;
+}
+
+.console-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.console-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--surface-strong) 78%, black 22%);
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+}
+
+.console-entry-info {
+  border-left-color: var(--accent);
+}
+
+.console-entry-warn {
+  border-left-color: var(--warning);
+}
+
+.console-entry-error {
+  border-left-color: var(--danger);
+}
+
+.console-entry-head,
+.console-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.console-entry-time {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.console-entry-message {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.console-entry-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.console-level-info {
+  color: var(--accent);
+}
+
+.console-level-warn {
+  color: var(--warning);
+}
+
+.console-level-error {
+  color: var(--danger);
 }
 
 .record-grid {
@@ -726,7 +835,10 @@
   opacity: 0;
   visibility: hidden;
   transform: translateY(-4px);
-  transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    visibility 160ms ease;
   pointer-events: none;
 }
 
@@ -778,7 +890,7 @@
 
 .stat-card strong {
   font-family: "Space Grotesk", sans-serif;
-  font-size: 1.8rem;
+  font-size: 18px;
 }
 
 .error-box,
@@ -862,13 +974,12 @@
 .skeleton-chip {
   display: block;
   border-radius: 999px;
-  background:
-    linear-gradient(
-      90deg,
-      var(--skeleton-base) 0%,
-      var(--skeleton-glow) 50%,
-      var(--skeleton-base) 100%
-    );
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-base) 0%,
+    var(--skeleton-glow) 50%,
+    var(--skeleton-base) 100%
+  );
   background-size: 220% 100%;
   animation: shimmer 1.35s linear infinite;
 }

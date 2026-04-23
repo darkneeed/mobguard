@@ -1,18 +1,96 @@
 {
   "pure_mobile_asns": [
-    199599, 51547, 201776, 205638, 48190, 31499, 49724, 201302, 212621, 206673
+    199599,
+    51547,
+    201776,
+    205638,
+    48190,
+    31499,
+    49724,
+    201302,
+    212621,
+    206673
   ],
   "pure_home_asns": [
-    9049, 12768, 12772, 13094, 20807, 31363, 34533, 34590, 39435, 41668, 41682,
-    41733, 41754, 41786, 41843, 42116, 42682, 43149, 47911, 48858, 50498, 50512,
-    50543, 50544, 51028, 51178, 51570, 51604, 51645, 51819, 52207, 56420, 56981,
-    57026, 57044, 57378, 58157, 199110, 204040, 204952, 42420, 8648, 35598,
-    20002, 8342, 31200, 16058, 47119, 39593, 2495, 35807, 28773, 25061, 28840,
-    31257, 5128, 41539, 29497
+    9049,
+    12768,
+    12772,
+    13094,
+    20807,
+    31363,
+    34533,
+    34590,
+    39435,
+    41668,
+    41682,
+    41733,
+    41754,
+    41786,
+    41843,
+    42116,
+    42682,
+    43149,
+    47911,
+    48858,
+    50498,
+    50512,
+    50543,
+    50544,
+    51028,
+    51178,
+    51570,
+    51604,
+    51645,
+    51819,
+    52207,
+    56420,
+    56981,
+    57026,
+    57044,
+    57378,
+    58157,
+    199110,
+    204040,
+    204952,
+    42420,
+    8648,
+    35598,
+    20002,
+    8342,
+    31200,
+    16058,
+    47119,
+    39593,
+    2495,
+    35807,
+    28773,
+    25061,
+    28840,
+    31257,
+    5128,
+    41539,
+    29497
   ],
   "mixed_asns": [
-    8359, 25159, 3216, 12389, 20485, 42437, 12958, 13238, 41798, 28917, 21127,
-    42668, 12714, 16345, 60299, 39927, 31133, 31163, 8373
+    8359,
+    25159,
+    3216,
+    12389,
+    20485,
+    42437,
+    12958,
+    13238,
+    41798,
+    28917,
+    21127,
+    42668,
+    12714,
+    16345,
+    60299,
+    39927,
+    31133,
+    31163,
+    8373
   ],
   "exclude_isp_keywords": [
     "datacenter",
@@ -64,42 +142,120 @@
     {
       "key": "mts",
       "classification": "mixed",
-      "aliases": ["mts", "mgts"],
-      "mobile_markers": ["mobile", "lte", "5g", "pgw"],
-      "home_markers": ["fiber", "gpon", "fttb", "ftth", "mgts"],
-      "asns": [8359, 12389]
+      "aliases": [
+        "mts",
+        "mgts"
+      ],
+      "mobile_markers": [
+        "mobile",
+        "lte",
+        "5g",
+        "pgw"
+      ],
+      "home_markers": [
+        "fiber",
+        "gpon",
+        "fttb",
+        "ftth",
+        "mgts"
+      ],
+      "asns": [
+        8359,
+        12389
+      ]
     },
     {
       "key": "beeline",
       "classification": "mixed",
-      "aliases": ["beeline", "vimpelcom", "vimpel"],
-      "mobile_markers": ["mobile", "lte", "5g", "pgw"],
-      "home_markers": ["fiber", "gpon", "fttb", "ftth", "home"],
-      "asns": [3216, 16345]
+      "aliases": [
+        "beeline",
+        "vimpelcom",
+        "vimpel"
+      ],
+      "mobile_markers": [
+        "mobile",
+        "lte",
+        "5g",
+        "pgw"
+      ],
+      "home_markers": [
+        "fiber",
+        "gpon",
+        "fttb",
+        "ftth",
+        "home"
+      ],
+      "asns": [
+        3216,
+        16345
+      ]
     },
     {
       "key": "rostelecom",
       "classification": "mixed",
-      "aliases": ["rostelecom", "onlime"],
-      "mobile_markers": ["mobile", "lte"],
-      "home_markers": ["fiber", "gpon", "fttb", "ftth", "onlime"],
-      "asns": [12389, 25159]
+      "aliases": [
+        "rostelecom",
+        "onlime"
+      ],
+      "mobile_markers": [
+        "mobile",
+        "lte"
+      ],
+      "home_markers": [
+        "fiber",
+        "gpon",
+        "fttb",
+        "ftth",
+        "onlime"
+      ],
+      "asns": [
+        12389,
+        25159
+      ]
     },
     {
       "key": "megafon",
       "classification": "mobile",
-      "aliases": ["megafon", "megaphone"],
-      "mobile_markers": ["mobile", "lte", "5g", "pgw"],
-      "home_markers": ["fiber", "gpon", "fttb", "ftth"],
-      "asns": [31163, 31213]
+      "aliases": [
+        "megafon",
+        "megaphone"
+      ],
+      "mobile_markers": [
+        "mobile",
+        "lte",
+        "5g",
+        "pgw"
+      ],
+      "home_markers": [
+        "fiber",
+        "gpon",
+        "fttb",
+        "ftth"
+      ],
+      "asns": [
+        31163,
+        31213
+      ]
     },
     {
       "key": "t2",
       "classification": "mobile",
-      "aliases": ["t2", "tele2", "tele 2", "t2 mobile"],
-      "mobile_markers": ["mobile", "lte", "5g", "pgw"],
+      "aliases": [
+        "t2",
+        "tele2",
+        "tele 2",
+        "t2 mobile"
+      ],
+      "mobile_markers": [
+        "mobile",
+        "lte",
+        "5g",
+        "pgw"
+      ],
       "home_markers": [],
-      "asns": [8373]
+      "asns": [
+        8373
+      ]
     },
     {
       "key": "domru",
@@ -112,9 +268,20 @@
         "wifire",
         "netbynet"
       ],
-      "mobile_markers": ["mobile", "lte"],
-      "home_markers": ["fiber", "gpon", "fttb", "ftth", "ethernet"],
-      "asns": [12714]
+      "mobile_markers": [
+        "mobile",
+        "lte"
+      ],
+      "home_markers": [
+        "fiber",
+        "gpon",
+        "fttb",
+        "ftth",
+        "ethernet"
+      ],
+      "asns": [
+        12714
+      ]
     }
   ],
   "mobile_tags": [],

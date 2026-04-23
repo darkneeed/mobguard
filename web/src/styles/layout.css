@@ -66,11 +66,20 @@
   display: flex;
   gap: 1rem;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 16px;
+}
+
+.sidebar-username {
+  font-size: 16px !important;
+  margin-bottom: 16px;
 }
 
 .branding-preview-card .brand {
   margin-bottom: 0;
+}
+
+.branding-preview-card {
+  align-content: center;
 }
 
 .brand-mark {
@@ -82,6 +91,11 @@
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   color: white;
   font-family: "Space Grotesk", sans-serif;
+}
+
+.branding-info small {
+  display: flex;
+  flex-direction: column;
 }
 
 .brand-mark-image {
@@ -116,6 +130,10 @@
   color: var(--muted);
 }
 
+.muted {
+  margin: 0;
+}
+
 .brand-hero-mark {
   width: 72px;
   height: 72px;
@@ -132,7 +150,9 @@
 .section-tab {
   padding: 0.85rem 1rem;
   border-radius: 14px;
-  transition: background 160ms ease, color 160ms ease;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .nav a.active,

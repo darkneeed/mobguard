@@ -515,6 +515,30 @@ def list_analysis_events(
     )
 
 
+@router.get("/console")
+def list_console_entries(
+    source: Optional[str] = None,
+    level: Optional[str] = None,
+    module_id: Optional[str] = None,
+    q: Optional[str] = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    _: dict[str, Any] = Depends(require_permission(PERMISSION_DATA_READ)),
+    container=Depends(get_container),
+) -> dict[str, Any]:
+    return data_service.list_console_entries(
+        container,
+        {
+            "source": source,
+            "level": level,
+            "module_id": module_id,
+            "q": q,
+            "page": page,
+            "page_size": page_size,
+        },
+    )
+
+
 @router.get("/audit")
 def list_audit(
     limit: int = Query(default=100, ge=1, le=500),

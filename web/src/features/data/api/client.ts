@@ -4,6 +4,7 @@ import {
   AuditTrailResponse,
   CacheAdminResponse,
   CalibrationExportPreview,
+  ConsoleListResponse,
   HealthSnapshot,
   LearningAdminResponse,
   ModuleDetailResponse,
@@ -106,6 +107,8 @@ export const dataApi = {
     request<CalibrationExportPreview>(`/admin/data/exports/calibration/preview?${buildSearchParams(params)}`),
   listCases: (params: ReviewListParams) =>
     request<ReviewListResponse>(`/admin/data/cases?${buildSearchParams(params)}`),
+  getConsoleEntries: (params: Record<string, string | number | boolean | undefined>) =>
+    request<ConsoleListResponse>(`/admin/data/console?${buildSearchParams(params)}`),
   getAnalysisEvents: (params: Record<string, string | number | boolean | undefined>) =>
     request<AnalysisEventListResponse>(`/admin/data/events?${buildSearchParams(params)}`),
   getQuality: (params: Record<string, string | number | boolean | undefined> = {}) =>

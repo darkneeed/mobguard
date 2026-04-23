@@ -142,7 +142,7 @@ describe("OverviewPage", () => {
 
     expect(await screen.findByText("provider_conflict")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /alpha/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open event console" })).toHaveAttribute("href", "/data/events");
+    expect(screen.getByRole("link", { name: "Open console" })).toHaveAttribute("href", "/data/console");
     expect(api.getOverview).toHaveBeenCalledTimes(1);
   });
 

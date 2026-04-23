@@ -24,12 +24,12 @@ type LoginPageProps = {
 export function LoginPage({
   branding,
   initialAuth,
-  palette,
+  palette: _palette,
   onAuthCapabilitiesLoaded,
-  onPaletteChange,
+  onPaletteChange: _onPaletteChange,
   onAuthenticated
 }: LoginPageProps) {
-  const { t, language, setLanguage } = useI18n();
+  const { t } = useI18n();
   const [error, setError] = useState("");
   const [auth, setAuth] = useState<AuthCapabilities | null>(initialAuth);
   const [localUsername, setLocalUsername] = useState("");
@@ -155,25 +155,6 @@ export function LoginPage({
           </div>
         </div>
         <span className="eyebrow">{t("login.eyebrow")}</span>
-        <div className="action-row">
-          <label className="theme-picker">
-            <span>{t("layout.language.label")}</span>
-            <select value={language} onChange={(event) => setLanguage(event.target.value as "ru" | "en")}>
-              <option value="ru">{t("layout.language.ru")}</option>
-              <option value="en">{t("layout.language.en")}</option>
-            </select>
-          </label>
-          <label className="theme-picker">
-            <span>{t("layout.palette.label")}</span>
-            <select value={palette} onChange={(event) => onPaletteChange(event.target.value as PaletteName)}>
-              <option value="green">{t("layout.palette.green")}</option>
-              <option value="orange">{t("layout.palette.orange")}</option>
-              <option value="blue">{t("layout.palette.blue")}</option>
-              <option value="purple">{t("layout.palette.purple")}</option>
-              <option value="red">{t("layout.palette.red")}</option>
-            </select>
-          </label>
-        </div>
         <h1>{t("login.title")}</h1>
         <p>{t("login.description")}</p>
         {challengeToken ? (

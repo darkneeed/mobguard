@@ -9,6 +9,7 @@ import {
   CacheAdminResponse,
   CalibrationExportPreview,
   CalibrationReadinessCheck,
+  ConsoleListResponse,
   LearningAdminResponse,
   OverridesResponse,
   ReviewListResponse,
@@ -23,12 +24,35 @@ import { useI18n } from "../localization";
 import { downloadBlob } from "../shared/api/request";
 import { ExportsDataSection } from "./data/ExportsDataSection";
 import { AuditTrailSection } from "./data/AuditTrailSection";
+import { ConsoleDataSection } from "./data/ConsoleDataSection";
 import { EventsDataSection } from "./data/EventsDataSection";
 import { LearningCasesSection } from "./data/LearningCasesSection";
 import { OperationsDataSection } from "./data/OperationsDataSection";
 import { UserDataSection } from "./data/UserDataSection";
 
-type DataTab = "users" | "violations" | "overrides" | "cache" | "learning" | "cases" | "events" | "exports" | "audit";
+type DataTab = "console" | "users" | "violations" | "overrides" | "cache" | "learning" | "cases" | "events" | "exports" | "audit";
+type ConsoleFilters = {
+  q: string;
+  source: string;
+  level: string;
+  module_id: string;
+  page: number;
+  page_size: number;
+};
+type EventFilters = {
+  q: string;
+  ip: string;
+  device_id: string;
+  module_id: string;
+  tag: string;
+  provider: string;
+  asn: string;
+  verdict: string;
+  confidence_band: string;
+  has_review_case: string;
+  page: number;
+  page_size: number;
+};
 type PendingKey =
   | "userSearch"
   | "userLoad"
@@ -41,6 +65,7 @@ type PendingKey =
   | "calibrationExport";
 
 const DATA_TABS: DataTab[] = [
+  "console",
   "users",
   "violations",
   "overrides",
@@ -78,9 +103,18 @@ export function DataPage({ session }: { session?: Session }) {
   const [learning, setLearning] = useState<LearningAdminResponse | null>(null);
   const [cases, setCases] = useState<ReviewListResponse | null>(null);
   const [events, setEvents] = useState<AnalysisEventListResponse | null>(null);
+  const [consoleData, setConsoleData] = useState<ConsoleListResponse | null>(null);
   const [audit, setAudit] = useState<AuditTrailResponse | null>(null);
   const canWriteData = hasPermission(session, "data.write");
-  const [eventFilters, setEventFilters] = useState({
+  const [consoleFilters, setConsoleFilters] = useState<ConsoleFilters>({
+    q: "",
+    source: "",
+    level: "",
+    module_id: "",
+    page: 1,
+    page_size: 100
+  });
+  const [eventFilters, setEventFilters] = useState<EventFilters>({
     q: "",
     ip: "",
     device_id: "",
@@ -90,7 +124,9 @@ export function DataPage({ session }: { session?: Session }) {
     asn: "",
     verdict: "",
     confidence_band: "",
-    has_review_case: ""
+    has_review_case: "",
+    page: 1,
+    page_size: 50
   });
 
   const [exactOverrideIp, setExactOverrideIp] = useState("");
@@ -181,7 +217,10 @@ export function DataPage({ session }: { session?: Session }) {
 
     async function load() {
       try {
-        if (tab === "violations") {
+        if (tab === "console") {
+          const payload = await api.getConsoleEntries(consoleFilters);
+          if (!cancelled) setConsoleData(payload);
+        } else if (tab === "violations") {
           const payload = await api.getViolations();
           if (!cancelled) setViolations(payload);
         } else if (tab === "overrides") {
@@ -197,7 +236,7 @@ export function DataPage({ session }: { session?: Session }) {
           const payload = await api.listCases({ page: 1, page_size: 50 });
           if (!cancelled) setCases(payload);
         } else if (tab === "events") {
-          const payload = await api.getAnalysisEvents({ ...eventFilters, page: 1, page_size: 50, sort: "created_desc" });
+          const payload = await api.getAnalysisEvents({ ...eventFilters, sort: "created_desc" });
           if (!cancelled) setEvents(payload);
         } else if (tab === "audit") {
           const payload = await api.getAuditTrail();
@@ -211,10 +250,17 @@ export function DataPage({ session }: { session?: Session }) {
     }
 
     load();
+    if (tab !== "console") {
+      return () => {
+        cancelled = true;
+      };
+    }
+    const interval = window.setInterval(load, 3000);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
-  }, [eventFilters, tab, t]);
+  }, [consoleFilters, eventFilters, tab, t]);
 
   useEffect(() => {
     if (tab !== "exports") return undefined;
@@ -424,6 +470,14 @@ export function DataPage({ session }: { session?: Session }) {
           formatPanelSquads={formatPanelSquads}
           formatTrafficBytes={formatTrafficBytes}
           renderProviderEvidence={renderProviderEvidence}
+        />
+      ) : null}
+      {tab === "console" ? (
+        <ConsoleDataSection
+          t={t}
+          consoleData={consoleData}
+          filters={consoleFilters}
+          setFilters={(updater) => setConsoleFilters((prev) => updater(prev))}
         />
       ) : null}
       {tab === "violations" || tab === "overrides" || tab === "cache" ? (

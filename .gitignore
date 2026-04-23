@@ -24,15 +24,18 @@ yarn-error.log*
 runtime/*.db
 runtime/*.db-*
 runtime/health/
+runtime/dev/
 
 # Local environment files
 .env
 .env.*
 !.env.example
+.env.local.dev
 happ/
 
 # Logs
 *.log
+*.pid
 
 # Editor and OS files
 .vscode/

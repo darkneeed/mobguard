@@ -144,6 +144,7 @@ READ_MODEL_INGEST_PIPELINE = "ingest_pipeline"
 READ_MODEL_REVIEW_USAGE_PROFILE = "review_usage_profile"
 LAST_GOOD_OVERVIEW_SNAPSHOT_CACHE_KEY = "__last_good_overview_snapshot__"
 LAST_GOOD_INGEST_PIPELINE_CACHE_KEY = "__last_good_ingest_pipeline__"
+SYSTEM_CONSOLE_RETENTION_DAYS = 14
 
 
 class ReadSnapshotUnavailableError(RuntimeError):
@@ -901,6 +902,19 @@ class PlatformStore:
             )
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS system_console_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    service_name TEXT NOT NULL,
+                    logger_name TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    details_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS analysis_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     created_at TEXT NOT NULL,
@@ -1478,6 +1492,12 @@ class PlatformStore:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_ingested_raw_events_module_id ON ingested_raw_events(module_id, occurred_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_system_console_events_created_at ON system_console_events(created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_system_console_events_service_level ON system_console_events(service_name, level, created_at DESC)"
             )
             conn.execute(
                 """
@@ -2835,6 +2855,9 @@ class PlatformStore:
         orphan_analysis_events_cutoff = (
             now_utc - timedelta(days=settings["orphan_analysis_events_retention_days"])
         ).isoformat()
+        system_console_cutoff = (
+            now_utc - timedelta(days=SYSTEM_CONSOLE_RETENTION_DAYS)
+        ).isoformat()
         deleted: dict[str, int] = {}
         report = {
             "mode": normalized_mode,
@@ -2911,6 +2934,13 @@ class PlatformStore:
                         WHERE COALESCE(processed_at, occurred_at) < ?
                         """,
                         (ingested_raw_events_cutoff,),
+                    )
+
+                if self._table_exists(conn, "system_console_events"):
+                    deleted["system_console_events"] = _execute_with_changes(
+                        conn,
+                        "DELETE FROM system_console_events WHERE created_at < ?",
+                        (system_console_cutoff,),
                     )
 
                 if self._table_exists(conn, "ip_history"):

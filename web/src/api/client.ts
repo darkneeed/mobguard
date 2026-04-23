@@ -15,6 +15,8 @@ export type {
   CalibrationExportPreview,
   CalibrationReadiness,
   CalibrationReadinessCheck,
+  ConsoleEntry,
+  ConsoleListResponse,
   DetectionSettingsResponse,
   EnvFieldState,
   EnforcementSettingsResponse,

@@ -50,6 +50,7 @@ export const enDictionary: TranslationDictionary = {
       overview: "Overview",
       modules: "Modules",
       queue: "Queue",
+      console: "Console",
       rules: "Detection Rules",
       telegram: "Telegram",
       access: "Access",
@@ -67,6 +68,7 @@ export const enDictionary: TranslationDictionary = {
         retention: "Retention"
       },
       data: {
+        console: "Console",
         users: "Users",
         violations: "Violations",
         overrides: "Overrides",
@@ -101,20 +103,30 @@ export const enDictionary: TranslationDictionary = {
   },
   overview: {
     eyebrow: "Operator Overview",
-    title: "System health, queue pressure, and runtime posture",
-    description: "One screen for live state, moderation pressure, learning quality, and risky hotspots.",
+    title: "What needs attention now",
+    description: "A clearer main view of queue pressure, ingest backlog, panel health, and the hotspots worth checking first.",
     lastUpdated: "Last synced {value}",
     errors: {
       loadFailed: "Failed to load overview data",
       showingLastGood: "Showing the last good snapshot ({value} old)."
     },
     snapshotStale: "overview snapshot is stale",
+    attentionTitle: "Attention board",
+    attentionDescription: "The highest-signal moderation and ingest indicators without drilling into other sections.",
     systemStatusTitle: "Live operator status",
-    systemStatusDescription: "Core, queue, runtime rules, and export readiness in one glance.",
-    healthTitle: "Health snapshot",
-    healthDescription: "Back-end heartbeat and control-plane status.",
+    systemStatusDescription: "Database, scoring runtime, live rules, and the control-plane basics in one place.",
+    healthTitle: "Panel health",
+    healthDescription: "Shows whether the database, embedded scoring runtime, and live rules state look healthy.",
     pipelineTitle: "Pipeline backlog",
-    pipelineDescription: "Durable ingest queue, worker lag, and pending remote enforcement state.",
+    pipelineDescription: "Durable ingest queue, worker lag, and pending remote enforcement state. This stays on the main overview only.",
+    attentionItems: {
+      overviewStale: "The overview snapshot is stale. Check background read-model refreshes.",
+      pipelineStale: "The ingest snapshot is stale. Queue numbers may be lagging behind live state.",
+      failedQueue: "The ingest pipeline has failures: {count}. Review retry and dead-letter pressure.",
+      openCases: "There are {count} open review cases in the queue.",
+      mixedConflicts: "Mixed providers produced {count} conflict-heavy cases.",
+      quiet: "No critical signals right now."
+    },
     health: {
       core: "Scoring runtime",
       db: "Database",
@@ -126,6 +138,7 @@ export const enDictionary: TranslationDictionary = {
     },
     cards: {
       openQueue: "Open queue",
+      failedQueue: "Ingest failures",
       core: "Scoring runtime",
       embeddedValue: "embedded",
       ipinfo: "IPINFO token",
@@ -139,7 +152,7 @@ export const enDictionary: TranslationDictionary = {
       queue: "Open queue",
       quality: "Go to quality",
       policy: "Review policy",
-      events: "Open event console",
+      events: "Open console",
       exports: "Calibration exports"
     },
     mixedProvidersTitle: "Top mixed providers",
@@ -309,7 +322,7 @@ export const enDictionary: TranslationDictionary = {
       home: "Home",
       skip: "Skip",
       openCase: "Open case",
-      openEvents: "Event console",
+      openEvents: "Console",
       bulkMobile: "Set selected to MOBILE",
       bulkHome: "Set selected to HOME",
       bulkSkip: "Skip selected",
@@ -333,7 +346,7 @@ export const enDictionary: TranslationDictionary = {
   modules: {
     eyebrow: "Fleet",
     title: "MobGuard Modules",
-    description: "Manage provisioned collector modules, per-module INBOUND tags, and the latest runtime health snapshot.",
+    description: "Manage provisioned collector modules, per-module INBOUND tags, and the latest heartbeat and health state.",
     count: "{count} modules",
     loadFailed: "Failed to load modules",
     listTitle: "Provisioned modules",
@@ -352,6 +365,10 @@ export const enDictionary: TranslationDictionary = {
     saveFailed: "Failed to save module",
     pendingInstall: "pending install",
     stale: "stale",
+    freshnessTitle: "Heartbeat",
+    freshnessHint: "A module becomes stale when it misses heartbeats for longer than {value}.",
+    lastHeartbeatAge: "Heartbeat age",
+    staleWindow: "Heartbeat window",
     inboundTags: "INBOUND tags",
     lastSeen: "Last heartbeat",
     appliedRevision: "Applied revision",
@@ -394,6 +411,10 @@ export const enDictionary: TranslationDictionary = {
       warn: "warn",
       error: "error"
     },
+    freshness: {
+      ok: "heartbeat fresh",
+      stale: "heartbeat overdue"
+    },
     fields: {
       moduleName: "Display name",
       moduleId: "Generated module ID",
@@ -402,8 +423,10 @@ export const enDictionary: TranslationDictionary = {
     cards: {
       total: "Total modules",
       pending: "Pending install",
+      healthy: "Healthy",
+      warn: "Needs attention",
       error: "Error",
-      stale: "Stale",
+      stale: "Heartbeat overdue",
       queueDepth: "Queue depth",
       failedQueue: "Dead-letter"
     },
@@ -662,10 +685,10 @@ export const enDictionary: TranslationDictionary = {
       telegramPanel: "Telegram panel auth",
       localFallback: "Local fallback auth"
     },
-    brandingTitle: "Service branding",
-    brandingDescription: "Set the service name and logo URL used across login, loading, and the operator shell.",
-    brandingSaved: "Branding updated",
-    saveBranding: "Save branding",
+    brandingTitle: "Appearance",
+    brandingDescription: "Service name, logo, and local interface preferences for this panel.",
+    brandingSaved: "Appearance updated",
+    saveBranding: "Save appearance",
     brandingFields: {
       serviceName: "Service name",
       serviceNameDescription: "Visible service name in the panel shell and login screen.",
@@ -673,6 +696,9 @@ export const enDictionary: TranslationDictionary = {
       logoUrlDescription: "Public image URL for the service logo. Leave empty to use the default built-in logo.",
       logoUrlPlaceholder: "https://example.com/logo.png"
     },
+    interfaceTitle: "Interface on this device",
+    interfaceDescription: "Language, palette, and theme are applied immediately and stored locally in the browser.",
+    interfaceSavedHint: "These settings do not require a separate server-side save.",
     listsTitle: "Access lists",
     listsDescription: "Panel admins and runtime exclusions are managed separately.",
     envTitle: "Access .env",
@@ -683,6 +709,7 @@ export const enDictionary: TranslationDictionary = {
     eyebrow: "Data",
     title: "Operational runtime data admin",
     sectionDescriptions: {
+      console: "Unified operator console with panel system logs, module heartbeats, and incoming module payloads.",
       users: "Primary operator workflow for user lookup, card inspection, exemptions, restrictions, and export snapshots.",
       violations: "Global view of active restrictions and violation history stored in runtime state.",
       overrides: "Manual IP and unsure-pattern overrides that short-circuit detection decisions.",
@@ -694,6 +721,7 @@ export const enDictionary: TranslationDictionary = {
       audit: "Operator action history for moderation, data mutations, settings, and module operations."
     },
     tabs: {
+      console: "console",
       users: "users",
       violations: "violations",
       overrides: "overrides",
@@ -872,12 +900,53 @@ export const enDictionary: TranslationDictionary = {
       description: "Read-only log of admin actions that changed moderation state, rules, settings, or modules.",
       empty: "No audit events yet"
     },
+    console: {
+      title: "Console",
+      description: "Live operator stream for panel logs, module heartbeats, and incoming module events.",
+      filtersTitle: "Console filters",
+      count: "{count} entries",
+      empty: "No console entries for the current filters",
+      payload: "Payload",
+      metaPayload: "Metadata",
+      filters: {
+        search: "Search message / payload",
+        anySource: "Any source",
+        anyLevel: "Any level",
+        moduleId: "Module ID"
+      },
+      sources: {
+        system: "System",
+        module_event: "Module event",
+        module_heartbeat: "Heartbeat"
+      },
+      levels: {
+        info: "Info",
+        warn: "Warn",
+        error: "Error"
+      },
+      sourceCount: {
+        system: "System: {count}",
+        moduleEvents: "Events: {count}",
+        moduleHeartbeats: "Heartbeats: {count}"
+      },
+      meta: {
+        moduleName: "Module: {value}",
+        logger: "Logger: {value}",
+        eventUid: "Event UID: {value}"
+      },
+      pagination: {
+        previous: "Prev",
+        next: "Next",
+        page: "Page {page} of {total}",
+        pageSizeOption: "{value} per page"
+      }
+    },
     cases: {
       title: "Cases"
     },
     events: {
       title: "Analysis events",
-      description: "Normalized analysis events with links to IP, device context, and related review cases.",
+      description: "Normalized analysis event stream with filters, review links, and expandable raw details.",
       filtersTitle: "Event filters",
       count: "{count} found",
       empty: "No events for the current filters",
@@ -893,6 +962,7 @@ export const enDictionary: TranslationDictionary = {
         asn: "ASN",
         anyVerdict: "Any verdict",
         anyConfidence: "Any confidence",
+        highMobile: "HIGH_MOBILE",
         anyCase: "With and without case",
         withCase: "With case only",
         withoutCase: "Without case only"
@@ -904,6 +974,18 @@ export const enDictionary: TranslationDictionary = {
         asn: "ASN: {value}",
         scope: "Scope: {value}",
         case: "Case: {value}"
+      },
+      details: {
+        providerEvidence: "Provider evidence",
+        reasons: "Reasons",
+        signalFlags: "Signal flags",
+        rawBundle: "Raw bundle"
+      },
+      pagination: {
+        previous: "Prev",
+        next: "Next",
+        page: "Page {page} of {total}",
+        pageSizeOption: "{value} per page"
       }
     },
     exports: {

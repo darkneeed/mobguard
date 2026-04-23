@@ -432,10 +432,10 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
           <div className="queue-bulk-actions">
             {canReadData ? (
               <Link
-                to="/data/events"
+                to="/data/console"
                 className="button-link ghost small-button"
-                onMouseEnter={() => prefetchRouteModule("/data/events")}
-                onFocus={() => prefetchRouteModule("/data/events")}
+                onMouseEnter={() => prefetchRouteModule("/data/console")}
+                onFocus={() => prefetchRouteModule("/data/console")}
               >
                 {t("reviewQueue.actions.openEvents")}
               </Link>
