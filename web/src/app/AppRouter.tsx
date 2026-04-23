@@ -123,7 +123,7 @@ export function AppRouter({
           path="/overview"
           element={
             <PermissionRoute session={session} permission="overview.read">
-              <OverviewPage />
+              <OverviewPage session={session} />
             </PermissionRoute>
           }
         />

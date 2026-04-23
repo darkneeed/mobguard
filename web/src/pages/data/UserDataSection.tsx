@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { api, UserCardExportResponse, UserCardResponse, UserSearchResponse } from "../../api/client";
 import type { Language } from "../../localization/types";
+import { formatUsageDeviceInventory, hasPanelUsageDevices } from "../../shared/usageDevices";
 import { formatDisplayDateTime } from "../../utils/datetime";
 
 type PendingKey = "userSearch" | "userLoad" | "userAction" | "userExport";
@@ -78,6 +79,8 @@ export function UserDataSection({
   const usageGeo = (usageProfile?.geo_summary || {}) as Record<string, unknown>;
   const usageTopIps = (Array.isArray(usageProfile?.top_ips) ? usageProfile.top_ips : []) as Array<Record<string, unknown>>;
   const usageTopProviders = (Array.isArray(usageProfile?.top_providers) ? usageProfile.top_providers : []) as Array<Record<string, unknown>>;
+  const usageDeviceText = formatUsageDeviceInventory(usageProfile?.devices, usageProfile?.device_labels, t);
+  const usageHasPanelDevices = hasPanelUsageDevices(usageProfile?.devices);
   const panelUser = userCard?.panel_user || undefined;
   const userTraffic =
     panelUser && typeof panelUser === "object" && "userTraffic" in panelUser
@@ -221,17 +224,14 @@ export function UserDataSection({
               ) : null}
               <li>
                 <strong>{t("data.users.usageProfileDevices")}</strong>
-                <span>
-                  {Array.isArray(usageProfile?.device_labels) && usageProfile.device_labels.length > 0
-                    ? usageProfile.device_labels.join(", ")
-                    : t("common.notAvailable")}
-                </span>
+                <span>{usageDeviceText}</span>
                 <span>
                   {t("data.users.usageProfileOs")} ·{" "}
                   {Array.isArray(usageProfile?.os_families) && usageProfile.os_families.length > 0
                     ? usageProfile.os_families.join(", ")
                     : t("common.notAvailable")}
                 </span>
+                {usageHasPanelDevices ? <span>{t("data.users.usageProfileDeviceInventoryNote")}</span> : null}
               </li>
               <li>
                 <strong>{t("data.users.usageProfileNodes")}</strong>

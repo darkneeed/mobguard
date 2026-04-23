@@ -153,7 +153,7 @@ def enrich_panel_user_devices(client: PanelClient, panel_user: Optional[dict[str
         return panel_user
     if any(
         key in panel_user and isinstance(panel_user.get(key), list) and panel_user.get(key)
-        for key in ("hwidDevices", "hwid_devices", "devices", "clients")
+        for key in ("hwidDevices", "hwid_devices")
     ):
         return panel_user
 

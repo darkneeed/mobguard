@@ -314,6 +314,26 @@ class PanelClientTests(unittest.TestCase):
         self.assertEqual(enriched["hwidDevices"][0]["hwid"], "hwid-1")
         self.assertEqual(enriched["hwidDeviceCount"], 1)
 
+    def test_enrich_panel_user_devices_fetches_hwid_inventory_even_with_generic_device_lists(self):
+        client = PanelClient("https://panel.example.com", "secret")
+        with patch.object(
+            client,
+            "get_user_hwid_devices",
+            return_value=[{"hwid": "hwid-1", "platform": "Android", "deviceModel": "Pixel 8"}],
+        ) as mocked_devices:
+            enriched = enrich_panel_user_devices(
+                client,
+                {
+                    "uuid": "user-uuid",
+                    "username": "alice",
+                    "devices": [{"deviceModel": "Legacy Device"}],
+                },
+            )
+
+        mocked_devices.assert_called_once_with("user-uuid")
+        self.assertEqual(enriched["hwidDevices"][0]["hwid"], "hwid-1")
+        self.assertEqual(enriched["devices"][0]["deviceModel"], "Legacy Device")
+
     def test_get_user_traffic_stats_uses_bandwidth_stats_endpoint(self):
         client = PanelClient("https://panel.example.com", "secret")
         calls = []

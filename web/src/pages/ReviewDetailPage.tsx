@@ -13,6 +13,7 @@ import {
 import { useToast } from "../components/ToastProvider";
 import { describeReasonCode, describeSoftReason } from "../features/reviews/lib/signalBadges";
 import { useI18n } from "../localization";
+import { formatUsageDeviceInventory, hasPanelUsageDevices, usageDevicePrimaryLabel } from "../shared/usageDevices";
 import { formatDisplayDateTime } from "../utils/datetime";
 
 type ReviewReason = {
@@ -206,12 +207,15 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
   const usageTopProviders = (Array.isArray(usageProfile?.top_providers) ? usageProfile.top_providers : []) as Array<Record<string, unknown>>;
   const usageRecentLocations = (Array.isArray(usageGeo.recent_locations) ? usageGeo.recent_locations : []) as Array<Record<string, unknown>>;
   const impossibleTravel = (Array.isArray(usageTravel.impossible_travel) ? usageTravel.impossible_travel : []) as Array<Record<string, unknown>>;
+  const usageDeviceText = formatUsageDeviceInventory(usageProfile?.devices, usageProfile?.device_labels, t);
+  const usageDeviceSummary = usageDevicePrimaryLabel(usageProfile?.devices, usageProfile?.device_labels);
+  const usageHasPanelDevices = hasPanelUsageDevices(usageProfile?.devices);
   const queueIndex = typeof queueState?.reviewQueueCurrentIndex === "number" ? queueState.reviewQueueCurrentIndex : -1;
   const queueCount = queueState?.reviewQueueItemIds?.length || 0;
   const sameDeviceHistory = Array.isArray(data?.same_device_ip_history) && data.same_device_ip_history.length > 0
     ? data.same_device_ip_history
     : ipInventory;
-  const deviceDisplay = formatValue(data?.device_display as string | undefined);
+  const deviceDisplay = formatValue((data?.device_display as string | undefined) || usageDeviceSummary);
   const inboundTag = formatValue(((data?.inbound_tag || data?.tag || (sameDeviceHistory[0] as Record<string, unknown> | undefined)?.inbound_tag)) as string | undefined);
   const providerDisplay = formatValue(((data?.isp || data?.provider_key || sameDeviceHistory[0]?.isp)) as string | undefined);
   const primaryIp = formatValue((data?.target_ip || data?.ip) as string | undefined);
@@ -479,10 +483,15 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
                   ) : null}
                   <li className="review-detail-item">
                     <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.devices")}</strong>
-                    <span className="review-detail-item-copy">{formatList(usageProfile?.device_labels)}</span>
+                    <span className="review-detail-item-copy">{usageDeviceText}</span>
                     <span className="review-detail-item-meta">
                       {t("reviewDetail.usageProfile.osFamilies")} · {formatList(usageProfile?.os_families)}
                     </span>
+                    {usageHasPanelDevices ? (
+                      <span className="review-detail-item-meta">
+                        {t("reviewDetail.usageProfile.deviceInventoryNote")}
+                      </span>
+                    ) : null}
                   </li>
                   <li className="review-detail-item">
                     <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.nodes")}</strong>

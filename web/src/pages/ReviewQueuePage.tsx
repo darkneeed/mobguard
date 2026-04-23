@@ -140,6 +140,7 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
   const visibleQueueIds = useMemo(() => list.items.map((item) => item.id), [list.items]);
   const canResolve = hasPermission(session, "reviews.resolve");
   const canRecheck = hasPermission(session, "reviews.recheck");
+  const canReadData = hasPermission(session, "data.read");
 
   function formatIdentifier(label: string, value: string | number | null | undefined) {
     return `${label}: ${value === null || value === undefined || value === "" ? t("common.notAvailable") : value}`;
@@ -429,6 +430,16 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
             </span>
           </div>
           <div className="queue-bulk-actions">
+            {canReadData ? (
+              <Link
+                to="/data/events"
+                className="button-link ghost small-button"
+                onMouseEnter={() => prefetchRouteModule("/data/events")}
+                onFocus={() => prefetchRouteModule("/data/events")}
+              >
+                {t("reviewQueue.actions.openEvents")}
+              </Link>
+            ) : null}
             {canRecheck ? (
               <button
                 className="ghost small-button"

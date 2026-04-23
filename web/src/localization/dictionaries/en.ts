@@ -31,7 +31,11 @@ export const enDictionary: TranslationDictionary = {
     runtimeValue: "Runtime value managed through .env.",
     leaveBlankToKeep: "Leave blank to keep the current secret value",
     restartRequired: "restart required",
-    close: "Close"
+    close: "Close",
+    deviceSources: {
+      panelUser: "Remnawave HWID",
+      event: "access log"
+    }
   },
   layout: {
     brandSubtitle: "Admin panel",
@@ -131,6 +135,7 @@ export const enDictionary: TranslationDictionary = {
       queue: "Open queue",
       quality: "Go to quality",
       policy: "Review policy",
+      events: "Open event console",
       exports: "Calibration exports"
     },
     mixedProvidersTitle: "Top mixed providers",
@@ -289,6 +294,7 @@ export const enDictionary: TranslationDictionary = {
       home: "Home",
       skip: "Skip",
       openCase: "Open case",
+      openEvents: "Event console",
       bulkMobile: "Set selected to MOBILE",
       bulkHome: "Set selected to HOME",
       bulkSkip: "Skip selected",
@@ -461,6 +467,7 @@ export const enDictionary: TranslationDictionary = {
       empty: "No usage-profile evidence yet",
       summary: "Snapshot",
       devices: "Devices",
+      deviceInventoryNote: "Includes Remnawave HWID inventory when it is available.",
       osFamilies: "OS families",
       nodes: "Node spread",
       softReasons: "Soft reasons",
@@ -712,6 +719,7 @@ export const enDictionary: TranslationDictionary = {
       usageProfileSummary: "Snapshot",
       usageProfileOngoing: "Ongoing duration",
       usageProfileDevices: "Devices",
+      usageProfileDeviceInventoryNote: "Includes Remnawave HWID inventory when it is available.",
       usageProfileOs: "OS families",
       usageProfileNodes: "Node spread",
       usageProfileSignals: "Soft reasons",

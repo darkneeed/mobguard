@@ -12,6 +12,13 @@ vi.mock("../api/client", () => ({
 }));
 
 describe("OverviewPage", () => {
+  const session = {
+    telegram_id: 1,
+    username: "owner",
+    expires_at: "2026-04-11T00:00:00Z",
+    permissions: ["overview.read", "data.read"]
+  };
+
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -110,10 +117,11 @@ describe("OverviewPage", () => {
       }
     });
 
-    renderWithProviders(<OverviewPage />, { route: "/overview" });
+    renderWithProviders(<OverviewPage session={session} />, { route: "/overview" });
 
     expect(await screen.findByText("provider_conflict")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /alpha/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open event console" })).toHaveAttribute("href", "/data/events");
     expect(api.getOverview).toHaveBeenCalledTimes(1);
   });
 });

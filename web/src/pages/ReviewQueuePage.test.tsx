@@ -18,7 +18,7 @@ describe("ReviewQueuePage", () => {
     telegram_id: 1,
     username: "owner",
     expires_at: "2026-04-11T00:00:00Z",
-    permissions: ["reviews.read", "reviews.resolve", "reviews.recheck"]
+    permissions: ["reviews.read", "reviews.resolve", "reviews.recheck", "data.read"]
   };
 
   beforeEach(() => {
@@ -194,6 +194,7 @@ describe("ReviewQueuePage", () => {
     expect(screen.getAllByText("Decision for this IP only").length).toBeGreaterThan(0);
     expect(screen.getByText("ISP A")).toBeInTheDocument();
     expect(screen.getByText("Provider conflict")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Event console" })).toHaveAttribute("href", "/data/events");
 
     const [pageSizeSelect] = screen.getAllByLabelText("Cards per page");
     await userEvent.selectOptions(pageSizeSelect, "48");

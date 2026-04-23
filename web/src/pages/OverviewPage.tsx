@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { hasPermission } from "../app/permissions";
 import { prefetchRouteModule } from "../app/routeModules";
-import { api, OverviewMetricsResponse } from "../api/client";
+import { api, OverviewMetricsResponse, Session } from "../api/client";
 import { useI18n } from "../localization";
 import { formatDisplayDateTime } from "../utils/datetime";
 
@@ -40,12 +41,13 @@ type QualityPayload = {
 
 const OVERVIEW_REFRESH_MS = 30000;
 
-export function OverviewPage() {
+export function OverviewPage({ session }: { session?: Session }) {
   const { t, language } = useI18n();
   const [data, setData] = useState<OverviewMetricsResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastLoadedAt, setLastLoadedAt] = useState<string>("");
+  const canReadData = session ? hasPermission(session, "data.read") : true;
 
   useEffect(() => {
     let cancelled = false;
@@ -188,6 +190,16 @@ export function OverviewPage() {
             >
               <span>{t("overview.quickLinks.policy")}</span>
             </Link>
+            {canReadData ? (
+              <Link
+                to="/data/events"
+                className="hero-link"
+                onMouseEnter={() => prefetchRouteModule("/data/events")}
+                onFocus={() => prefetchRouteModule("/data/events")}
+              >
+                <span>{t("overview.quickLinks.events")}</span>
+              </Link>
+            ) : null}
             <Link
               to="/data/exports"
               className="hero-link"

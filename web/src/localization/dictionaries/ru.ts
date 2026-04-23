@@ -31,7 +31,11 @@ export const ruDictionary: TranslationDictionary = {
     runtimeValue: "Runtime-значение, управляемое через .env.",
     leaveBlankToKeep: "Оставьте пустым, чтобы сохранить текущее секретное значение",
     restartRequired: "нужен перезапуск",
-    close: "Закрыть"
+    close: "Закрыть",
+    deviceSources: {
+      panelUser: "Remnawave HWID",
+      event: "access log"
+    }
   },
   layout: {
     brandSubtitle: "Панель администратора",
@@ -131,6 +135,7 @@ export const ruDictionary: TranslationDictionary = {
       queue: "Открыть очередь",
       quality: "Перейти в quality",
       policy: "Проверить policy",
+      events: "Открыть консоль событий",
       exports: "Calibration exports"
     },
     mixedProvidersTitle: "Проблемные mixed-провайдеры",
@@ -289,6 +294,7 @@ export const ruDictionary: TranslationDictionary = {
       home: "Home",
       skip: "Skip",
       openCase: "Открыть кейс",
+      openEvents: "Консоль событий",
       bulkMobile: "Поставить selected в MOBILE",
       bulkHome: "Поставить selected в HOME",
       bulkSkip: "Пропустить selected",
@@ -461,6 +467,7 @@ export const ruDictionary: TranslationDictionary = {
       empty: "Данных usage-profile пока нет",
       summary: "Снапшот",
       devices: "Устройства",
+      deviceInventoryNote: "Если доступен HWID-инвентарь Remnawave, он уже подмешан в этот список.",
       osFamilies: "Семейства ОС",
       nodes: "Распределение по нодам",
       softReasons: "Soft reasons",
@@ -712,6 +719,7 @@ export const ruDictionary: TranslationDictionary = {
       usageProfileSummary: "Снапшот",
       usageProfileOngoing: "Длительность окна",
       usageProfileDevices: "Устройства",
+      usageProfileDeviceInventoryNote: "Если доступен HWID-инвентарь Remnawave, он уже подмешан в этот список.",
       usageProfileOs: "Семейства ОС",
       usageProfileNodes: "Распределение по нодам",
       usageProfileSignals: "Soft reasons",
