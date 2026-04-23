@@ -106,7 +106,7 @@ async def _recheck_case_ids(
     changed_counts: Counter[str] = Counter()
     items: list[dict[str, Any]] = []
     for case_id in case_ids:
-        detail = container.store.get_review_case(case_id)
+        detail = await asyncio.to_thread(container.store.get_review_case, case_id)
         user_data = {
             "uuid": detail.get("uuid"),
             "username": detail.get("username"),
@@ -207,14 +207,15 @@ async def recheck_provider_sensitive_reviews(
     for review_reason in ("unsure", "provider_conflict"):
         page = 1
         while True:
-            listing = container.store.list_review_cases(
+            listing = await asyncio.to_thread(
+                container.store.list_review_cases,
                 {
                     "status": "OPEN",
                     "review_reason": review_reason,
                     "page": page,
                     "page_size": 100,
                     "sort": "updated_desc",
-                }
+                },
             )
             batch_ids = [int(item["id"]) for item in listing.get("items", [])]
             case_ids.extend(batch_ids)
