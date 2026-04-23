@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from .context import build_container
 from .logging_console import ensure_console_logging
 from .routers.auth import router as auth_router
+from .routers.decisions import router as decisions_router
 from .routers.data_admin import router as data_admin_router
 from .routers.health import router as health_router
 from .routers.metrics import router as metrics_router
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(reviews_router)
     app.include_router(settings_router)
     app.include_router(data_admin_router)
+    app.include_router(decisions_router)
     app.include_router(metrics_router)
     return app
 

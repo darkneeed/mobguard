@@ -13,6 +13,7 @@ from mobguard_platform.runtime_admin_defaults import (
 )
 
 from ..context import APIContainer
+from .automation_status import build_automation_status
 from .reviews import provider_tuning_changed, recheck_provider_sensitive_reviews, update_rules
 from .runtime_state import (
     ACCESS_ENV_FIELDS,
@@ -166,7 +167,10 @@ def get_enforcement_settings(container: APIContainer) -> dict[str, Any]:
         key: runtime_config.get("settings", {}).get(key, default)
         for key, default in ENFORCEMENT_TEMPLATE_DEFAULTS.items()
     }
-    return {"settings": {**enforcement_settings, **templates}}
+    return {
+        "settings": {**enforcement_settings, **templates},
+        "automation_status": build_automation_status(container),
+    }
 
 
 def update_enforcement_settings(container: APIContainer, payload: dict[str, Any]) -> dict[str, Any]:

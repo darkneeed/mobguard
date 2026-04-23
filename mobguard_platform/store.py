@@ -209,6 +209,35 @@ def _module_metadata_from_json(raw_value: Any) -> dict[str, Any]:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
+def _decision_source_from_bundle_payload(bundle_payload: Any, fallback: str = "rule_engine") -> str:
+    if not isinstance(bundle_payload, dict):
+        return str(fallback or "rule_engine").strip() or "rule_engine"
+    source = str(bundle_payload.get("source") or fallback or "rule_engine").strip()
+    return source or "rule_engine"
+
+
+def _backfill_analysis_event_decision_sources(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(analysis_events)").fetchall()}
+    if "decision_source" not in columns or "bundle_json" not in columns:
+        return
+    rows = conn.execute(
+        """
+        SELECT id, decision_source, bundle_json
+        FROM analysis_events
+        """
+    ).fetchall()
+    for row in rows:
+        bundle_payload = _module_metadata_from_json(row["bundle_json"])
+        normalized_source = _decision_source_from_bundle_payload(bundle_payload, str(row["decision_source"] or ""))
+        current_source = str(row["decision_source"] or "").strip() or "rule_engine"
+        if normalized_source == current_source:
+            continue
+        conn.execute(
+            "UPDATE analysis_events SET decision_source = ? WHERE id = ?",
+            (normalized_source, int(row["id"])),
+        )
+
+
 def _normalize_module_inbound_tags(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -968,6 +997,7 @@ class PlatformStore:
                     module_id TEXT,
                     module_name TEXT,
                     source_event_uid TEXT,
+                    decision_source TEXT NOT NULL DEFAULT 'rule_engine',
                     case_scope_key TEXT NOT NULL DEFAULT '',
                     device_scope_key TEXT NOT NULL DEFAULT '',
                     scope_type TEXT NOT NULL DEFAULT 'ip_only',
@@ -1340,6 +1370,10 @@ class PlatformStore:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN module_name TEXT")
             if analysis_event_columns and "source_event_uid" not in analysis_event_columns:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN source_event_uid TEXT")
+            if analysis_event_columns and "decision_source" not in analysis_event_columns:
+                conn.execute(
+                    "ALTER TABLE analysis_events ADD COLUMN decision_source TEXT NOT NULL DEFAULT 'rule_engine'"
+                )
             if analysis_event_columns and "case_scope_key" not in analysis_event_columns:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN case_scope_key TEXT NOT NULL DEFAULT ''")
             if analysis_event_columns and "device_scope_key" not in analysis_event_columns:
@@ -1484,6 +1518,8 @@ class PlatformStore:
             if module_columns and "access_log_exists" not in module_columns:
                 conn.execute("ALTER TABLE modules ADD COLUMN access_log_exists INTEGER NOT NULL DEFAULT 0")
 
+            _backfill_analysis_event_decision_sources(conn)
+
             now = _utcnow()
             conn.execute(
                 """
@@ -1596,6 +1632,9 @@ class PlatformStore:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_analysis_events_created_at ON analysis_events(created_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_analysis_events_source_created ON analysis_events(decision_source, created_at DESC)"
             )
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_events_source_event_uid ON analysis_events(source_event_uid)"

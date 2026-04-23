@@ -4,6 +4,7 @@ const routeLoaders: Array<{ match: string; loader: RouteLoader }> = [
   { match: "/overview", loader: () => import("../pages/OverviewPage") },
   { match: "/modules", loader: () => import("../pages/ModulesPage") },
   { match: "/queue", loader: () => import("../pages/ReviewQueuePage") },
+  { match: "/decisions", loader: () => import("../pages/DecisionsPage") },
   { match: "/reviews/", loader: () => import("../pages/ReviewDetailPage") },
   { match: "/rules", loader: () => import("../pages/RulesPage") },
   { match: "/telegram", loader: () => import("../pages/TelegramPage") },
@@ -24,6 +25,10 @@ export function loadModulesPage() {
 
 export function loadReviewQueuePage() {
   return import("../pages/ReviewQueuePage");
+}
+
+export function loadDecisionsPage() {
+  return import("../pages/DecisionsPage");
 }
 
 export function loadReviewDetailPage() {

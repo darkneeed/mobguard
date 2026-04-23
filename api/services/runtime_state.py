@@ -76,20 +76,35 @@ def coerce_int_list(values: list[Any]) -> list[int]:
 
 
 def load_runtime_config(container: APIContainer) -> dict[str, Any]:
-    return normalize_runtime_bound_settings(
-        read_json_file(str(container.runtime.config_path)),
-        container.runtime.runtime_dir,
-    )
+    runtime = getattr(container, "runtime", None)
+    if runtime is None:
+        return {"settings": {}}
+    config_path = getattr(runtime, "config_path", None)
+    runtime_dir = getattr(runtime, "runtime_dir", None)
+    if config_path and runtime_dir:
+        return normalize_runtime_bound_settings(
+            read_json_file(str(config_path)),
+            runtime_dir,
+        )
+    runtime_config = getattr(runtime, "config", {})
+    if isinstance(runtime_config, dict):
+        if runtime_dir:
+            return normalize_runtime_bound_settings(runtime_config, runtime_dir)
+        return dict(runtime_config)
+    return {"settings": {}}
 
 
 def load_env_values(container: APIContainer) -> dict[str, str]:
-    runtime_env = getattr(getattr(container, "runtime", None), "env", {}) or {}
+    runtime = getattr(container, "runtime", None)
+    runtime_env = getattr(runtime, "env", {}) or {}
     values = {
         str(key): str(value)
         for key, value in runtime_env.items()
         if key not in LOCAL_DEV_ONLY_ENV_FIELDS
     }
-    values.update(read_env_file_only(str(container.runtime.env_path)))
+    env_path = getattr(runtime, "env_path", None)
+    if env_path:
+        values.update(read_env_file_only(str(env_path)))
     return values
 
 
@@ -159,7 +174,15 @@ def panel_client(container: APIContainer) -> PanelClient:
     settings = runtime_config.get("settings", {})
     remnawave_url = str(settings.get("remnawave_api_url") or settings.get("panel_url") or "").strip()
     remnawave_token = env_values.get("REMNAWAVE_API_TOKEN") or env_values.get("PANEL_TOKEN", "")
-    return PanelClient(remnawave_url, remnawave_token)
+    signature = (remnawave_url.rstrip("/"), str(remnawave_token or ""))
+    cached = getattr(container, "_panel_client_cache", None)
+    cached_signature = getattr(container, "_panel_client_signature", None)
+    if isinstance(cached, PanelClient) and cached_signature == signature:
+        return cached
+    client = PanelClient(remnawave_url, remnawave_token)
+    setattr(container, "_panel_client_cache", client)
+    setattr(container, "_panel_client_signature", signature)
+    return client
 
 
 def enrich_panel_user_devices(client: PanelClient, panel_user: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
@@ -393,6 +416,7 @@ def _analysis_event_select(conn: Any, store: Any) -> str:
         "created_at",
         "ip",
         "tag",
+        "decision_source" if "decision_source" in analysis_event_columns else "NULL AS decision_source",
         "verdict",
         "confidence_band",
         "score",
@@ -481,6 +505,11 @@ def _enrich_analysis_event_row(row: dict[str, Any]) -> dict[str, Any]:
     payload["reasons"] = reasons
     payload["signal_flags"] = signal_flags
     payload["bundle"] = bundle
+    payload["decision_source"] = str(
+        payload.get("decision_source")
+        or (bundle.get("source") if isinstance(bundle, dict) else "")
+        or "rule_engine"
+    ).strip() or "rule_engine"
     provider_evidence = signal_flags.get("provider_evidence") if isinstance(signal_flags, dict) else None
     if isinstance(provider_evidence, dict):
         payload["provider_evidence"] = provider_evidence
@@ -726,6 +755,141 @@ def list_analysis_events(store: Any, filters: dict[str, Any]) -> dict[str, Any]:
     for item in items:
         review_case_id = item.get("review_case_id")
         item["review_url"] = store.build_review_url(int(review_case_id)) if review_case_id not in (None, "") else ""
+    return {
+        "items": items,
+        "count": int(count or 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+def list_auto_decisions(store: Any, filters: dict[str, Any]) -> dict[str, Any]:
+    page = max(int(filters.get("page", 1) or 1), 1)
+    page_size = min(max(int(filters.get("page_size", 50) or 50), 1), 200)
+    sort = str(filters.get("sort") or "created_desc").strip().lower()
+    order_by = "ae.created_at ASC" if sort == "created_asc" else "ae.created_at DESC"
+    clauses: list[str] = [
+        "COALESCE(ae.decision_source, 'rule_engine') != 'manual_override'",
+        "NOT EXISTS (SELECT 1 FROM review_cases rc WHERE rc.case_scope_key = ae.case_scope_key AND rc.status != 'MERGED')",
+    ]
+    params: list[Any] = []
+
+    if filters.get("module_id"):
+        clauses.append("ae.module_id = ?")
+        params.append(str(filters["module_id"]).strip())
+    if filters.get("provider"):
+        clauses.append("ae.isp LIKE ?")
+        params.append(f"%{str(filters['provider']).strip()}%")
+    if filters.get("verdict"):
+        clauses.append("ae.verdict = ?")
+        params.append(str(filters["verdict"]).strip())
+    if filters.get("decision_source"):
+        clauses.append("COALESCE(ae.decision_source, 'rule_engine') = ?")
+        params.append(str(filters["decision_source"]).strip())
+    if filters.get("q"):
+        search = f"%{str(filters['q']).strip()}%"
+        clauses.append(
+            "(ae.ip LIKE ? OR ae.isp LIKE ? OR ae.tag LIKE ? OR ae.module_name LIKE ? OR ae.client_device_id LIKE ? OR ae.client_device_label LIKE ?)"
+        )
+        params.extend([search] * 6)
+
+    enforcement_status = str(filters.get("enforcement_status") or "").strip().lower()
+    if enforcement_status:
+        if enforcement_status == "none":
+            clauses.append("NOT EXISTS (SELECT 1 FROM enforcement_jobs ej WHERE ej.analysis_event_id = ae.id)")
+        else:
+            clauses.append(
+                """
+                COALESCE((
+                    SELECT ej.status
+                    FROM enforcement_jobs ej
+                    WHERE ej.analysis_event_id = ae.id
+                    ORDER BY ej.created_at DESC, ej.id DESC
+                    LIMIT 1
+                ), 'none') = ?
+                """
+            )
+            params.append(enforcement_status)
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with store._connect() as conn:
+        select_sql = _analysis_event_select(conn, store)
+        enforcement_exists = store._table_exists(conn, "enforcement_jobs")
+        if enforcement_exists:
+            enforcement_status_sql = """
+                COALESCE((
+                    SELECT ej.status
+                    FROM enforcement_jobs ej
+                    WHERE ej.analysis_event_id = ae.id
+                    ORDER BY ej.created_at DESC, ej.id DESC
+                    LIMIT 1
+                ), 'none')
+            """
+            enforcement_job_type_sql = """
+                (
+                    SELECT ej.job_type
+                    FROM enforcement_jobs ej
+                    WHERE ej.analysis_event_id = ae.id
+                    ORDER BY ej.created_at DESC, ej.id DESC
+                    LIMIT 1
+                )
+            """
+            enforcement_attempt_count_sql = """
+                COALESCE((
+                    SELECT ej.attempt_count
+                    FROM enforcement_jobs ej
+                    WHERE ej.analysis_event_id = ae.id
+                    ORDER BY ej.created_at DESC, ej.id DESC
+                    LIMIT 1
+                ), 0)
+            """
+            enforcement_last_error_sql = """
+                (
+                    SELECT ej.last_error
+                    FROM enforcement_jobs ej
+                    WHERE ej.analysis_event_id = ae.id
+                    ORDER BY ej.created_at DESC, ej.id DESC
+                    LIMIT 1
+                )
+            """
+        else:
+            enforcement_status_sql = "'none'"
+            enforcement_job_type_sql = "NULL"
+            enforcement_attempt_count_sql = "0"
+            enforcement_last_error_sql = "NULL"
+
+        count = conn.execute(
+            f"SELECT COUNT(*) AS cnt FROM analysis_events ae {where_sql}",
+            params,
+        ).fetchone()["cnt"]
+        rows = conn.execute(
+            f"""
+            SELECT {select_sql},
+                   {enforcement_status_sql} AS enforcement_status,
+                   {enforcement_job_type_sql} AS enforcement_job_type,
+                   {enforcement_attempt_count_sql} AS attempt_count,
+                   {enforcement_last_error_sql} AS last_error
+            FROM analysis_events ae
+            {where_sql}
+            ORDER BY {order_by}
+            LIMIT ? OFFSET ?
+            """,
+            [*params, page_size, (page - 1) * page_size],
+        ).fetchall()
+
+    items = _apply_shared_account_flags(
+        store,
+        [_enrich_analysis_event_row(dict(row)) for row in rows],
+    )
+    for item in items:
+        item["has_review_case"] = False
+        item["review_case_id"] = None
+        item["review_case_status"] = None
+        item["review_url"] = ""
+        item["enforcement_status"] = str(item.get("enforcement_status") or "none").strip() or "none"
+        item["enforcement_job_type"] = str(item.get("enforcement_job_type") or "").strip() or None
+        item["attempt_count"] = int(item.get("attempt_count") or 0)
+        item["last_error"] = str(item.get("last_error") or "").strip() or None
     return {
         "items": items,
         "count": int(count or 0),

@@ -166,7 +166,7 @@ class AdminUserDataTests(unittest.TestCase):
 
 
 class PanelClientTests(unittest.TestCase):
-    def test_uuid_lookup_falls_back_to_short_uuid_endpoint(self):
+    def test_uuid_lookup_prefers_resolve_endpoint_and_falls_back_to_short_uuid_endpoint(self):
         client = PanelClient("https://panel.example.com", "secret")
         calls = []
         uuid = "a878b04c-31a9-4b81-9c2c-3d0b19a2e1ad"
@@ -182,14 +182,47 @@ class PanelClientTests(unittest.TestCase):
 
         self.assertEqual(payload["uuid"], uuid)
         self.assertEqual(
-            [endpoint for _, endpoint, _ in calls],
+            calls,
             [
-                f"/api/users/{uuid}",
-                f"/api/users/by-short-uuid/{uuid}",
+                ("POST", "/api/users/resolve", {"uuid": uuid}),
+                ("GET", f"/api/users/{uuid}", None),
+                ("GET", f"/api/users/by-short-uuid/{uuid}", None),
             ],
         )
 
-    def test_username_lookup_prefers_documented_username_endpoint(self):
+    def test_username_lookup_prefers_resolve_endpoint(self):
+        client = PanelClient("https://panel.example.com", "secret")
+        calls = []
+
+        def fake_request(method, endpoint, body=None):
+            calls.append((method, endpoint, body))
+            if endpoint == "/api/users/resolve":
+                return {"response": {"uuid": "uuid-1", "username": "alice"}}
+            return None
+
+        with patch.object(client, "_request", side_effect=fake_request):
+            payload = client.get_user_data("alice")
+
+        self.assertEqual(payload["username"], "alice")
+        self.assertEqual(calls, [("POST", "/api/users/resolve", {"username": "alice"})])
+
+    def test_repeat_lookup_uses_user_cache(self):
+        client = PanelClient("https://panel.example.com", "secret")
+        calls = []
+
+        def fake_request(method, endpoint, body=None):
+            calls.append((method, endpoint, body))
+            return {"response": {"uuid": "uuid-1", "username": "alice"}}
+
+        with patch.object(client, "_request", side_effect=fake_request):
+            first = client.get_user_data("alice")
+            second = client.get_user_data("alice")
+
+        self.assertEqual(first["uuid"], "uuid-1")
+        self.assertEqual(second["uuid"], "uuid-1")
+        self.assertEqual(calls, [("POST", "/api/users/resolve", {"username": "alice"})])
+
+    def test_username_lookup_falls_back_to_documented_username_endpoint_when_resolve_is_unavailable(self):
         client = PanelClient("https://panel.example.com", "secret")
         calls = []
 
@@ -203,7 +236,14 @@ class PanelClientTests(unittest.TestCase):
             payload = client.get_user_data("alice")
 
         self.assertEqual(payload["username"], "alice")
-        self.assertEqual([endpoint for _, endpoint, _ in calls], ["/api/users/by-username/alice"])
+        self.assertEqual(
+            [endpoint for _, endpoint, _ in calls],
+            [
+                "/api/users/resolve",
+                "/api/users/resolve",
+                "/api/users/by-username/alice",
+            ],
+        )
 
     def test_resolve_internal_squad_uuid_uses_exact_name(self):
         client = PanelClient("https://panel.example.com", "secret")

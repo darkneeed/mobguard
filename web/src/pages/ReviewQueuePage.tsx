@@ -9,6 +9,7 @@ import { describeReasonCode, describeSoftReason } from "../features/reviews/lib/
 import { describeScopeContext } from "../features/reviews/lib/scopeContext";
 import { useI18n } from "../localization";
 import { buildSearchParams } from "../shared/api/request";
+import { useVisiblePolling } from "../shared/useVisiblePolling";
 import { formatDisplayDateTime } from "../utils/datetime";
 
 type ReviewFilters = {
@@ -147,41 +148,32 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
     return `${label}: ${value === null || value === undefined || value === "" ? t("common.notAvailable") : value}`;
   }
 
+  function formatReviewReason(reason: string | null | undefined) {
+    const key = `reviewQueue.reviewReasons.${String(reason || "").trim()}`;
+    const translated = t(key);
+    return translated === key ? String(reason || t("common.notAvailable")) : translated;
+  }
+
   function formatInventoryDate(value: string | undefined) {
     return formatDisplayDateTime(value || "", t("common.notAvailable"), language);
   }
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const payload = await api.listReviews(effectiveFilters);
-        if (!cancelled) {
-          startTransition(() => {
-            setList(payload);
-            setError("");
-            setLastUpdatedAt(new Date().toISOString());
-          });
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : t("reviewQueue.errors.loadFailed"));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+  async function load() {
+    try {
+      const payload = await api.listReviews(effectiveFilters);
+      startTransition(() => {
+        setList(payload);
+        setError("");
+        setLastUpdatedAt(new Date().toISOString());
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("reviewQueue.errors.loadFailed"));
+    } finally {
+      setLoading(false);
     }
+  }
 
-    load();
-    const timer = window.setInterval(load, 15000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [effectiveFilters, t]);
+  useVisiblePolling(true, load, 15000, [effectiveFilters, t]);
 
   useEffect(() => {
     setSelectedIds((prev) => prev.filter((id) => list.items.some((item) => item.id === id)));
@@ -722,8 +714,8 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                   </div>
                   <div className="queue-card-flags">
                     <span className={`tag severity-${item.severity}`}>{item.severity}</span>
-                    <span className={item.provider_review_recommended ? "tag review-only" : "tag status-resolved"}>
-                      {item.provider_review_recommended ? t("reviewQueue.card.reviewFirst") : t("reviewQueue.card.autoReady")}
+                    <span className="tag review-only" title={String(item.review_reason || "")}>
+                      {formatReviewReason(item.review_reason)}
                     </span>
                     <span className="tag">{t("reviewQueue.card.repeat", { count: item.repeat_count })}</span>
                     {typeof item.usage_profile_priority === "number" ? (
@@ -731,6 +723,9 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                     ) : null}
                     {providerKey && serviceHint !== "unknown" ? (
                       <span className={`tag queue-flag queue-flag-${serviceHint}`}>{t("reviewQueue.card.serviceHint", { value: serviceHint })}</span>
+                    ) : null}
+                    {item.provider_review_recommended ? (
+                      <span className="tag review-only">{t("reviewQueue.card.reviewFirst")}</span>
                     ) : null}
                     {item.provider_conflict ? <span className="tag severity-high">{t("reviewQueue.card.providerConflict")}</span> : null}
                     {operatorReasonBadges.map((badge) => (

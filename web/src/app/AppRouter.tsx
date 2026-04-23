@@ -7,6 +7,7 @@ import { AppPermission, firstAccessibleRoute, hasPermission } from "./permission
 import {
   loadAccessPage,
   loadDataPage,
+  loadDecisionsPage,
   loadModulesPage,
   loadOverviewPage,
   loadQualityPage,
@@ -45,6 +46,7 @@ function lazyNamed<T extends Record<string, ComponentType<any>>, K extends keyof
 const OverviewPage = lazyNamed(loadOverviewPage, "OverviewPage");
 const ModulesPage = lazyNamed(loadModulesPage, "ModulesPage");
 const ReviewQueuePage = lazyNamed(loadReviewQueuePage, "ReviewQueuePage");
+const DecisionsPage = lazyNamed(loadDecisionsPage, "DecisionsPage");
 const ReviewDetailPage = lazyNamed(loadReviewDetailPage, "ReviewDetailPage");
 const RulesPage = lazyNamed(loadRulesPage, "RulesPage");
 const TelegramPage = lazyNamed(loadTelegramPage, "TelegramPage");
@@ -134,6 +136,14 @@ export function AppRouter({
           element={
             <PermissionRoute session={session} permission="reviews.read">
               <ReviewQueuePage session={session} />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/decisions"
+          element={
+            <PermissionRoute session={session} permission="data.read">
+              <DecisionsPage session={session} />
             </PermissionRoute>
           }
         />

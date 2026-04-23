@@ -125,6 +125,29 @@ const SOFT_REASON_DESCRIPTORS: Record<string, SignalDescriptor> = {
   }
 };
 
+const REVIEW_REASON_DESCRIPTORS: Record<string, SignalDescriptor> = {
+  provider_conflict: {
+    label: "Конфликт провайдера",
+    description: "Смешанный провайдер требует ручной проверки до любого действия."
+  },
+  unsure: {
+    label: "Недостаточно сигналов",
+    description: "Система не набрала достаточно уверенности для автоматического решения."
+  },
+  probable_home: {
+    label: "Вероятный HOME",
+    description: "Кейс выглядит как probable HOME и вынесен в ручную очередь."
+  },
+  home_requires_review: {
+    label: "HOME требует review",
+    description: "Получен сильный HOME-вердикт, но guardrail запрещает автоматическое действие."
+  },
+  manual_review_mixed_home: {
+    label: "Mixed HOME review",
+    description: "Смешанный HOME-кейс отправлен в ручной разбор."
+  }
+};
+
 function humanizeCode(code: string): string {
   return code
     .split("_")
@@ -147,6 +170,15 @@ export function describeSoftReason(code: string): SignalDescriptor {
     SOFT_REASON_DESCRIPTORS[code] || {
       label: humanizeCode(code),
       description: `Технический код usage-сигнала: ${code}`
+    }
+  );
+}
+
+export function describeReviewReason(code: string): SignalDescriptor {
+  return (
+    REVIEW_REASON_DESCRIPTORS[code] || {
+      label: humanizeCode(code),
+      description: `Технический код причины ревью: ${code}`
     }
   );
 }

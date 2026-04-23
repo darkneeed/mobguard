@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any, Mapping, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -75,15 +76,65 @@ def get_traffic_cap_threshold_gb(raw_settings: Mapping[str, Any] | None) -> int:
 
 
 class RemnawaveClient:
+    USER_CACHE_TTL_SECONDS = 15.0
+    NEGATIVE_USER_CACHE_TTL_SECONDS = 10.0
+    DEVICE_CACHE_TTL_SECONDS = 30.0
+    TRAFFIC_CACHE_TTL_SECONDS = 30.0
+
     def __init__(self, base_url: str, token: str):
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.last_error: Optional[str] = None
         self._internal_squad_uuid_cache: dict[str, str] = {}
+        self._internal_squads_cache: list[dict[str, Any]] | None = None
+        self._user_cache: dict[str, tuple[float, Any]] = {}
+        self._devices_cache: dict[str, tuple[float, Any]] = {}
+        self._traffic_cache: dict[str, tuple[float, Any]] = {}
 
     @property
     def enabled(self) -> bool:
         return bool(self.base_url and self.token)
+
+    def _normalized_lookup_key(self, identifier: str) -> str:
+        normalized = str(identifier or "").strip()
+        if normalized.isdigit():
+            return normalized
+        return normalized.lower()
+
+    def _clone_cached_value(self, value: Any) -> Any:
+        if isinstance(value, (dict, list)):
+            return json.loads(json.dumps(value, ensure_ascii=False))
+        return value
+
+    def _cache_get(self, cache: dict[str, tuple[float, Any]], key: str) -> tuple[bool, Any]:
+        entry = cache.get(key)
+        if entry is None:
+            return False, None
+        expires_at, value = entry
+        if expires_at <= time.monotonic():
+            cache.pop(key, None)
+            return False, None
+        return True, self._clone_cached_value(value)
+
+    def _cache_set(self, cache: dict[str, tuple[float, Any]], key: str, value: Any, ttl_seconds: float) -> None:
+        normalized_key = self._normalized_lookup_key(key)
+        if not normalized_key:
+            return
+        cache[normalized_key] = (time.monotonic() + max(float(ttl_seconds), 0.0), self._clone_cached_value(value))
+
+    def _cache_user_lookup(self, identifier: str, user: Optional[dict[str, Any]]) -> None:
+        ttl = self.USER_CACHE_TTL_SECONDS if user else self.NEGATIVE_USER_CACHE_TTL_SECONDS
+        self._cache_set(self._user_cache, identifier, user, ttl)
+
+    def _resolve_user_candidates(self, identifier: str) -> list[dict[str, Any]]:
+        normalized = str(identifier or "").strip()
+        if not normalized:
+            return []
+        if UUID_PATTERN.fullmatch(normalized):
+            return [{"uuid": normalized}]
+        if normalized.isdigit():
+            return [{"id": int(normalized)}]
+        return [{"username": normalized}, {"shortUuid": normalized}]
 
     def get_user_data(self, identifier: str) -> Optional[dict[str, Any]]:
         if not self.enabled:
@@ -92,6 +143,18 @@ class RemnawaveClient:
 
         self.last_error = None
         str_id = str(identifier).strip()
+        cache_hit, cached_user = self._cache_get(self._user_cache, str_id)
+        if cache_hit:
+            return cached_user
+
+        for payload_body in self._resolve_user_candidates(str_id):
+            payload = self._request("POST", "/api/users/resolve", body=payload_body)
+            user = self._extract_user(payload)
+            if user:
+                self._cache_user(user)
+                self._cache_user_lookup(str_id, user)
+                return user
+
         endpoints: list[str]
         if UUID_PATTERN.fullmatch(str_id):
             endpoints = [
@@ -115,7 +178,9 @@ class RemnawaveClient:
             user = self._extract_user(payload)
             if user:
                 self._cache_user(user)
+                self._cache_user_lookup(str_id, user)
                 return user
+        self._cache_user_lookup(str_id, None)
         return None
 
     def get_user_hwid_devices(self, user_uuid: str) -> list[dict[str, Any]]:
@@ -128,6 +193,9 @@ class RemnawaveClient:
             return []
 
         self.last_error = None
+        cache_hit, cached_devices = self._cache_get(self._devices_cache, normalized_uuid)
+        if cache_hit:
+            return cached_devices
         for endpoint in (
             f"/api/hwid/devices/{quote(normalized_uuid)}",
             f"/api/v2/users/{quote(normalized_uuid)}/hwid-devices",
@@ -135,7 +203,9 @@ class RemnawaveClient:
             payload = self._request("GET", endpoint)
             devices = self._extract_devices(payload)
             if devices:
+                self._cache_set(self._devices_cache, normalized_uuid, devices, self.DEVICE_CACHE_TTL_SECONDS)
                 return devices
+        self._cache_set(self._devices_cache, normalized_uuid, [], self.DEVICE_CACHE_TTL_SECONDS)
         return []
 
     def get_user_traffic_stats(
@@ -154,6 +224,11 @@ class RemnawaveClient:
             self.last_error = "User UUID is empty"
             return None
 
+        cache_key = f"{normalized_uuid}|{start or ''}|{end or ''}|{max(int(top_nodes_limit), 1)}"
+        cache_hit, cached_stats = self._cache_get(self._traffic_cache, cache_key)
+        if cache_hit:
+            return cached_stats
+
         now = datetime.utcnow()
         start_value = start or (now - timedelta(days=1)).strftime("%Y-%m-%d")
         end_value = end or (now + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -166,15 +241,20 @@ class RemnawaveClient:
         )
         payload = self._request("GET", f"/api/bandwidth-stats/users/{quote(normalized_uuid)}?{query}")
         if not payload:
+            self._cache_set(self._traffic_cache, cache_key, None, self.TRAFFIC_CACHE_TTL_SECONDS)
             return None
         response = payload.get("response", payload)
-        return response if isinstance(response, dict) else None
+        normalized_response = response if isinstance(response, dict) else None
+        self._cache_set(self._traffic_cache, cache_key, normalized_response, self.TRAFFIC_CACHE_TTL_SECONDS)
+        return normalized_response
 
     def list_internal_squads(self) -> list[dict[str, Any]]:
         if not self.enabled:
             self.last_error = "Panel client is disabled"
             return []
         self.last_error = None
+        if self._internal_squads_cache is not None:
+            return [dict(item) for item in self._internal_squads_cache]
         payload = self._request("GET", "/api/internal-squads")
         response = payload.get("response", payload) if payload else None
         if isinstance(response, dict):
@@ -184,6 +264,7 @@ class RemnawaveClient:
         else:
             squads = []
         result = [item for item in squads if isinstance(item, dict)]
+        self._internal_squads_cache = [dict(item) for item in result]
         self._internal_squad_uuid_cache.update(
             {
                 str(item.get("name", "")).strip(): str(item.get("uuid", "")).strip()
@@ -257,6 +338,16 @@ class RemnawaveClient:
         uuid = str(user.get("uuid", "")).strip()
         if uuid:
             user_copy = dict(user)
+            self._cache_user_lookup(uuid, user_copy)
+            if str(user_copy.get("username", "")).strip():
+                self._cache_user_lookup(str(user_copy["username"]), user_copy)
+            if user_copy.get("id") not in (None, ""):
+                self._cache_user_lookup(str(user_copy["id"]), user_copy)
+            if user_copy.get("telegramId") not in (None, ""):
+                self._cache_user_lookup(str(user_copy["telegramId"]), user_copy)
+            short_uuid = str(user_copy.get("shortUuid", "")).strip()
+            if short_uuid:
+                self._cache_user_lookup(short_uuid, user_copy)
             self._internal_squad_uuid_cache.update(
                 {
                     str(item.get("name", "")).strip(): str(item.get("uuid", "")).strip()
@@ -302,20 +393,12 @@ class RemnawaveClient:
         if isinstance(response, list):
             return response[0] if response else None
         if isinstance(response, dict):
+            for key in ("user", "result"):
+                nested = response.get(key)
+                if isinstance(nested, dict):
+                    return nested
             return response
         return None
-
-    def _extract_devices(self, payload: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
-        if not payload:
-            return []
-        response = payload.get("response", payload)
-        if isinstance(response, list):
-            return [item for item in response if isinstance(item, dict)]
-        if isinstance(response, dict):
-            devices = response.get("devices", [])
-            if isinstance(devices, list):
-                return [item for item in devices if isinstance(item, dict)]
-        return []
 
     def _extract_devices(self, payload: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
         if not payload:

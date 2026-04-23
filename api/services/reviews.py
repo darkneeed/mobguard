@@ -9,9 +9,11 @@ from typing import Any
 from fastapi import HTTPException
 
 from mobguard_platform import review_reason_for_bundle, validate_live_rules_patch
+from mobguard_platform.usage_profile import build_usage_profile_snapshot
 from mobguard_platform.storage.sqlite import is_sqlite_busy_error
 
 from .modules import _analyze_event, _build_batch_context
+from .runtime_state import enrich_panel_user_usage_context, panel_client
 
 
 logger = logging.getLogger(__name__)
@@ -42,9 +44,53 @@ def list_reviews(container: Any, filters: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _review_identity(detail: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "uuid": detail.get("uuid"),
+        "username": detail.get("username"),
+        "system_id": detail.get("system_id"),
+        "telegram_id": detail.get("telegram_id"),
+    }
+
+
+def _enrich_review_usage_profile(container: Any, detail: dict[str, Any]) -> dict[str, Any]:
+    if detail.get("client_device_id") or detail.get("client_device_label"):
+        return detail
+    identifier = next(
+        (
+            value
+            for value in (
+                detail.get("uuid"),
+                detail.get("system_id"),
+                detail.get("telegram_id"),
+                detail.get("username"),
+            )
+            if value not in (None, "")
+        ),
+        None,
+    )
+    if identifier in (None, ""):
+        return detail
+
+    client = panel_client(container)
+    panel_user = enrich_panel_user_usage_context(client, client.get_user_data(str(identifier)))
+    if not isinstance(panel_user, dict):
+        return detail
+
+    detail["usage_profile"] = build_usage_profile_snapshot(
+        container.store,
+        _review_identity(detail),
+        panel_user=panel_user,
+        anchor_started_at=str(detail.get("opened_at") or "").strip() or None,
+        device_scope_key=str(detail.get("device_scope_key") or "").strip() or None,
+        case_scope_key=str(detail.get("case_scope_key") or "").strip() or None,
+    )
+    return detail
+
+
 def get_review(container: Any, case_id: int) -> dict[str, Any]:
     try:
-        return container.store.get_review_case(case_id)
+        return _enrich_review_usage_profile(container, container.store.get_review_case(case_id))
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

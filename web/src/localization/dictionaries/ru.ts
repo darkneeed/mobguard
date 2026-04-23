@@ -67,6 +67,7 @@ export const ruDictionary: TranslationDictionary = {
       overview: "Обзор",
       modules: "Модули",
       queue: "Очередь",
+      decisions: "Решения",
       console: "Консоль",
       rules: "Правила детекта",
       telegram: "Telegram",
@@ -163,7 +164,8 @@ export const ruDictionary: TranslationDictionary = {
       scoreZeroRatio: "Доля score=0 (24 ч)",
       asnMissingRatio: "Доля случаев без ASN (24 ч)",
       mixedConflicts: "Конфликты смешанных провайдеров",
-      promotedPatterns: "Продвинутые паттерны"
+      promotedPatterns: "Продвинутые паттерны",
+      automationMode: "Режим автоматики"
     },
     quickLinks: {
       queue: "Открыть очередь",
@@ -199,6 +201,12 @@ export const ruDictionary: TranslationDictionary = {
       lastDrain: "Последний полный проход",
       snapshotAge: "Возраст снимка {value}",
       stale: "снимок устарел"
+    },
+    automation: {
+      modeTitle: "Режим автоматики",
+      guardrailsTitle: "Активные guardrail’ы",
+      noModeReasons: "Нет флагов, ограничивающих режим",
+      noGuardrails: "Дополнительные guardrail’ы не включены"
     }
   },
   login: {
@@ -358,6 +366,66 @@ export const ruDictionary: TranslationDictionary = {
       previous: "Назад",
       next: "Дальше",
       pageSummary: "Страница {page} · показано {shown} из {total}"
+    },
+    reviewReasons: {
+      provider_conflict: "Конфликт провайдера",
+      unsure: "Недостаточно сигналов",
+      probable_home: "Вероятный HOME",
+      home_requires_review: "HOME требует review",
+      manual_review_mixed_home: "Mixed HOME review"
+    }
+  },
+  decisions: {
+    eyebrow: "Автоматические решения",
+    title: "Авто-решённые события",
+    description: "Финальные решения, которые не попали в ручное ревью и прошли через pipeline автоматически.",
+    countSummary: "{count} решений · страница {page}",
+    lastUpdated: "Обновлено {value}",
+    loadFailed: "Не удалось загрузить автоматические решения",
+    filtersTitle: "Фильтры",
+    filtersDescription: "Фильтрация по решению, модулю, провайдеру, источнику и состоянию enforcement.",
+    listTitle: "Автоматические решения",
+    listDescription: "Недавние решения без review case и их удалённый enforcement-статус.",
+    empty: "Для текущих фильтров автоматических решений нет",
+    filters: {
+      search: "Поиск по IP / провайдеру / inbound / устройству",
+      moduleId: "ID модуля",
+      provider: "Провайдер",
+      anyVerdict: "Любой verdict",
+      anySource: "Любой источник",
+      anyEnforcement: "Любой enforcement"
+    },
+    meta: {
+      module: "Модуль {value}",
+      inbound: "Inbound {value}",
+      provider: "Провайдер {value}",
+      source: "Источник {value}",
+      scope: "Контекст {value}",
+      enforcement: "Enforcement {value}"
+    },
+    sources: {
+      rule_engine: "Rule engine",
+      cache: "Кэш",
+      manual_override: "Ручной override"
+    },
+    enforcement: {
+      none: "Без удалённого enforcement",
+      attempts: "попыток {count}",
+      status: {
+        pending: "Ожидает",
+        applied: "Применено",
+        failed: "Ошибка"
+      },
+      jobType: {
+        access_state: "Access squad",
+        traffic_cap: "Traffic cap"
+      }
+    },
+    pagination: {
+      page: "Страница {page}/{total}",
+      pageSize: "{value}",
+      previous: "Назад",
+      next: "Дальше"
     }
   },
   modules: {
@@ -493,6 +561,7 @@ export const ruDictionary: TranslationDictionary = {
       device: "Устройство",
       asn: "ASN",
       tag: "Инбаунд",
+      reviewReason: "Причина ревью",
       verdict: "Вердикт",
       confidence: "Уверенность",
       opened: "Открыт",
@@ -549,6 +618,13 @@ export const ruDictionary: TranslationDictionary = {
       ongoing: "Длительность окна",
       lastSeen: "Последний сигнал",
       updatedAt: "Обновлено"
+    },
+    reviewReasons: {
+      provider_conflict: "Конфликт провайдера",
+      unsure: "Недостаточно сигналов",
+      probable_home: "Вероятный HOME",
+      home_requires_review: "HOME требует review",
+      manual_review_mixed_home: "Mixed HOME review"
     },
     ipInventory: {
       summary: "{count} срабатываний · {isp} · AS{asn}",
@@ -636,8 +712,35 @@ export const ruDictionary: TranslationDictionary = {
     },
     listSectionDescription: "Редактируемые правила в формате списков.",
     settingSectionDescription: "Только каноничные редактируемые настройки.",
+    automationStatus: {
+      title: "Статус автоматики",
+      description: "Вычисляется из текущих runtime- и detection-настроек без отдельного on/off флага.",
+      modeLabel: "Эффективный режим",
+      modeReasonsLabel: "Почему активен именно он",
+      guardrailsLabel: "Какие guardrail’ы включены",
+      noModeReasons: "Флагов, ограничивающих режим, нет",
+      noGuardrails: "Дополнительные guardrail’ы не активны"
+    },
     invalidNumber: "{field}: некорректное число",
     invalidValue: "{field}: некорректное значение '{value}'"
+  },
+  automationStatus: {
+    modes: {
+      observe: "Только наблюдение",
+      warning_only: "Только предупреждения",
+      enforce: "Применение ограничений"
+    },
+    reasons: {
+      dry_run: "dry-run не даёт делать remote actions",
+      shadow_mode: "shadow mode блокирует жёсткие действия",
+      warning_only_mode: "эскалация ограничена предупреждениями"
+    },
+    flags: {
+      auto_enforce_requires_hard_or_multi_signal: "Нужен hard или multi-signal для auto-enforce",
+      provider_conflict_review_only: "Конфликты mixed-провайдеров остаются только в review",
+      manual_review_mixed_home_enabled: "Mixed HOME-кейсы требуют ручного review",
+      manual_ban_approval_enabled: "Ограничения требуют ручного одобрения"
+    }
   },
   telegram: {
     eyebrow: "Telegram",

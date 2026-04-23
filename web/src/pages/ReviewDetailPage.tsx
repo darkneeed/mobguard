@@ -89,6 +89,12 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
     return items.length > 0 ? items.join(", ") : t("common.notAvailable");
   }
 
+  function formatReviewReason(value: unknown): string {
+    const key = `reviewDetail.reviewReasons.${String(value || "").trim()}`;
+    const translated = t(key);
+    return translated === key ? formatValue(value as string | number | null | undefined) : translated;
+  }
+
   async function copyValue(value: string | number | null | undefined) {
     if (value === null || value === undefined || value === "") return;
     try {
@@ -334,6 +340,7 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
                 <div><dt>{t("reviewDetail.fields.isp")}</dt><dd>{providerDisplay}</dd></div>
                 <div><dt>{t("reviewDetail.fields.asn")}</dt><dd>{summaryAsn}</dd></div>
                 <div><dt>{t("reviewDetail.fields.tag")}</dt><dd>{inboundTag}</dd></div>
+                <div><dt>{t("reviewDetail.fields.reviewReason")}</dt><dd>{formatReviewReason(data.review_reason)}</dd></div>
                 <div><dt>{t("reviewDetail.fields.verdict")}</dt><dd>{formatValue(data.verdict as string | undefined)}</dd></div>
                 <div><dt>{t("reviewDetail.fields.confidence")}</dt><dd>{formatValue(data.confidence_band as string | undefined)}</dd></div>
                 <div><dt>{t("reviewDetail.fields.opened")}</dt><dd>{formatDisplayDateTime(data.opened_at as string | undefined, t("common.notAvailable"), language)}</dd></div>
@@ -387,11 +394,11 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
                         ? t("reviewDetail.providerEvidence.conflict")
                         : t("reviewDetail.providerEvidence.clear")}
                     </span>
-                    <span className="review-detail-item-meta">
-                      {Boolean(providerEvidence.review_recommended)
-                        ? t("reviewDetail.providerEvidence.reviewFirst")
-                        : t("reviewDetail.providerEvidence.autoReady")}
-                    </span>
+                    {Boolean(providerEvidence.review_recommended) ? (
+                      <span className="review-detail-item-meta">
+                        {t("reviewDetail.providerEvidence.reviewFirst")}
+                      </span>
+                    ) : null}
                   </li>
                   <li className="review-detail-item">
                     <strong className="review-detail-item-title">

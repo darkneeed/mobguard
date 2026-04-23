@@ -22,6 +22,7 @@ import {
 import { useToast } from "../components/ToastProvider";
 import { useI18n } from "../localization";
 import { downloadBlob } from "../shared/api/request";
+import { useVisiblePolling } from "../shared/useVisiblePolling";
 import { ExportsDataSection } from "./data/ExportsDataSection";
 import { AuditTrailSection } from "./data/AuditTrailSection";
 import { ConsoleDataSection } from "./data/ConsoleDataSection";
@@ -148,6 +149,16 @@ export function DataPage({ session }: { session?: Session }) {
   const [lastCalibrationFilename, setLastCalibrationFilename] = useState("");
   const [previewError, setPreviewError] = useState("");
 
+  async function loadConsoleTab() {
+    try {
+      const payload = await api.getConsoleEntries(consoleFilters);
+      setConsoleData(payload);
+      setPageError("");
+    } catch (err) {
+      setPageError(err instanceof Error ? err.message : t("data.errors.loadTabFailed"));
+    }
+  }
+
   useEffect(() => {
     if (section && DATA_TABS.includes(section as DataTab)) {
       return;
@@ -218,8 +229,7 @@ export function DataPage({ session }: { session?: Session }) {
     async function load() {
       try {
         if (tab === "console") {
-          const payload = await api.getConsoleEntries(consoleFilters);
-          if (!cancelled) setConsoleData(payload);
+          return;
         } else if (tab === "violations") {
           const payload = await api.getViolations();
           if (!cancelled) setViolations(payload);
@@ -250,17 +260,12 @@ export function DataPage({ session }: { session?: Session }) {
     }
 
     load();
-    if (tab !== "console") {
-      return () => {
-        cancelled = true;
-      };
-    }
-    const interval = window.setInterval(load, 3000);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
     };
   }, [consoleFilters, eventFilters, tab, t]);
+
+  useVisiblePolling(tab === "console", loadConsoleTab, 3000, [consoleFilters, t]);
 
   useEffect(() => {
     if (tab !== "exports") return undefined;

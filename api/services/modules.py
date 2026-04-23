@@ -153,7 +153,15 @@ def _remnawave_client(container: APIContainer) -> PanelClient:
         or env_values.get("PANEL_TOKEN")
         or ""
     )
-    return PanelClient(base_url, token)
+    signature = (base_url.rstrip("/"), str(token or ""))
+    cached = getattr(container, "_panel_client_cache", None)
+    cached_signature = getattr(container, "_panel_client_signature", None)
+    if isinstance(cached, PanelClient) and cached_signature == signature:
+        return cached
+    client = PanelClient(base_url, token)
+    setattr(container, "_panel_client_cache", client)
+    setattr(container, "_panel_client_signature", signature)
+    return client
 
 
 def _module_secret_key(container: APIContainer) -> str:

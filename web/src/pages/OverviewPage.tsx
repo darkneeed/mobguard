@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { hasPermission } from "../app/permissions";
 import { prefetchRouteModule } from "../app/routeModules";
 import { api, OverviewMetricsResponse, Session } from "../api/client";
 import { useI18n } from "../localization";
+import { automationGuardrailLabels, automationModeLabel, automationModeReasonLabels } from "../shared/automationStatus";
+import { useVisiblePolling } from "../shared/useVisiblePolling";
 import { formatDisplayDateTime } from "../utils/datetime";
 
 type QualityPayload = {
@@ -50,46 +52,29 @@ export function OverviewPage({ session }: { session?: Session }) {
   const [lastLoadedAt, setLastLoadedAt] = useState<string>("");
   const canReadData = session ? hasPermission(session, "data.read") : true;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const payload = await api.getOverview();
-        if (cancelled) return;
-        setData(payload as OverviewMetricsResponse);
-        setError("");
-        setLastLoadedAt(new Date().toISOString());
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : t("overview.errors.loadFailed"),
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
+  async function load() {
+    try {
+      const payload = await api.getOverview();
+      setData(payload as OverviewMetricsResponse);
+      setError("");
+      setLastLoadedAt(new Date().toISOString());
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : t("overview.errors.loadFailed"),
+      );
+    } finally {
+      setLoading(false);
     }
+  }
 
-    void load();
-    const timer = window.setInterval(() => {
-      void load();
-    }, OVERVIEW_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [t]);
+  useVisiblePolling(true, load, OVERVIEW_REFRESH_MS, [t]);
 
   const health = data?.health || null;
   const quality = (data?.quality as QualityPayload | undefined) || null;
   const queue = data?.latest_cases || null;
   const pipeline = data?.pipeline || null;
   const freshness = data?.freshness || null;
+  const automationStatus = data?.automation_status || null;
   const overviewStale = Boolean(
     (freshness?.overview_age_seconds ?? 0) > OVERVIEW_STALE_AFTER_SECONDS,
   );
@@ -169,6 +154,8 @@ export function OverviewPage({ session }: { session?: Session }) {
   if (!attentionItems.length) {
     attentionItems.push(t("overview.attentionItems.quiet"));
   }
+  const automationModeReasons = automationModeReasonLabels(t, automationStatus);
+  const automationGuardrails = automationGuardrailLabels(t, automationStatus);
 
   return (
     <section className="page">
@@ -248,6 +235,10 @@ export function OverviewPage({ session }: { session?: Session }) {
               <strong>
                 {quality?.learning.promoted.active_patterns ?? "—"}
               </strong>
+            </div>
+            <div className="stat-card">
+              <span>{t("overview.cards.automationMode")}</span>
+              <strong>{automationModeLabel(t, automationStatus)}</strong>
             </div>
           </div>
           <div className="record-list overview-signal-list">
@@ -390,6 +381,28 @@ export function OverviewPage({ session }: { session?: Session }) {
                 {health
                   ? `${Math.round(health.analysis_24h.asn_missing_ratio * 100)}%`
                   : "—"}
+              </div>
+            </div>
+            <div className="metric-row">
+              <div className="record-main">
+                <span className="record-title">{t("overview.automation.modeTitle")}</span>
+                <span>{automationModeLabel(t, automationStatus)}</span>
+              </div>
+              <div className="record-meta">
+                {automationModeReasons.length > 0
+                  ? automationModeReasons.join(", ")
+                  : t("overview.automation.noModeReasons")}
+              </div>
+            </div>
+            <div className="metric-row">
+              <div className="record-main">
+                <span className="record-title">{t("overview.automation.guardrailsTitle")}</span>
+                <span>{automationGuardrails.length}</span>
+              </div>
+              <div className="record-meta">
+                {automationGuardrails.length > 0
+                  ? automationGuardrails.join(", ")
+                  : t("overview.automation.noGuardrails")}
               </div>
             </div>
           </div>

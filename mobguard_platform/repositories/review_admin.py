@@ -358,7 +358,7 @@ class ReviewAdminRepository(SQLiteRepository):
         cursor = conn.execute(
             """
             INSERT INTO analysis_events (
-                created_at, module_id, module_name, source_event_uid, subject_key, uuid, username, system_id, telegram_id, ip, tag,
+                created_at, module_id, module_name, source_event_uid, decision_source, subject_key, uuid, username, system_id, telegram_id, ip, tag,
                 verdict, confidence_band, score, isp, asn,
                 country, region, city, loc, latitude, longitude,
                 client_device_id, client_device_label, client_os_family, client_os_version,
@@ -366,13 +366,14 @@ class ReviewAdminRepository(SQLiteRepository):
                 case_scope_key, device_scope_key, scope_type,
                 punitive_eligible,
                 reasons_json, signal_flags_json, bundle_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 now,
                 module_id,
                 module_name,
                 clean_text(source_event_uid) or None,
+                str(bundle.source or "rule_engine"),
                 subject_key,
                 (user or {}).get("uuid"),
                 (user or {}).get("username"),

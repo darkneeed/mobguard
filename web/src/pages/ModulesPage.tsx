@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { hasPermission } from "../app/permissions";
 import {
@@ -12,6 +12,7 @@ import {
 import { ModalShell } from "../components/ModalShell";
 import { useToast } from "../components/ToastProvider";
 import { useI18n } from "../localization";
+import { useVisiblePolling } from "../shared/useVisiblePolling";
 import { formatDisplayDateTime } from "../utils/datetime";
 
 type ModuleDraft = {
@@ -122,33 +123,19 @@ export function ModulesPage({ session }: { session?: Session }) {
   ).length;
   const staleCount = installedItems.filter((item) => !item.healthy).length;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadInitialState() {
-      try {
-        const listPayload = (await api.getModules()) as ModuleListResponse;
-        if (cancelled) return;
-        setData(listPayload);
-        setError("");
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : t("modules.loadFailed"),
-          );
-        }
-      }
+  async function loadInitialState() {
+    try {
+      const listPayload = (await api.getModules()) as ModuleListResponse;
+      setData(listPayload);
+      setError("");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : t("modules.loadFailed"),
+      );
     }
+  }
 
-    void loadInitialState();
-    const timer = window.setInterval(() => {
-      void loadInitialState();
-    }, MODULES_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [t]);
+  useVisiblePolling(true, loadInitialState, MODULES_REFRESH_MS, [t]);
 
   async function openModule(moduleId: string) {
     setModalMode("detail");

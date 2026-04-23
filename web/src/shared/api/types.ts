@@ -208,8 +208,15 @@ export type ReviewListParams = Record<string, string | number | boolean | undefi
 
 export type SettingsScalar = string | number | boolean | string[];
 
+export type AutomationStatus = {
+  mode: "observe" | "warning_only" | "enforce";
+  mode_reasons: string[];
+  flags: Record<string, boolean>;
+};
+
 export type EnforcementSettingsResponse = {
   settings: Record<string, SettingsScalar>;
+  automation_status?: AutomationStatus;
 };
 
 export type SettingsSectionUpdatePayload = {
@@ -328,6 +335,7 @@ export type AnalysisEventItem = {
   created_at: string;
   ip: string;
   tag?: string | null;
+  decision_source?: string | null;
   inbound_tag?: string | null;
   target_ip?: string | null;
   target_scope_type?: "ip_device" | "subject_ip" | "ip_only";
@@ -357,10 +365,23 @@ export type AnalysisEventItem = {
   review_case_id?: number | null;
   review_case_status?: string | null;
   review_url?: string;
+  enforcement_status?: string | null;
+  enforcement_job_type?: string | null;
+  attempt_count?: number;
+  last_error?: string | null;
 };
 
 export type AnalysisEventListResponse = {
   items: AnalysisEventItem[];
+  count: number;
+  page: number;
+  page_size: number;
+};
+
+export type AutoDecisionItem = AnalysisEventItem;
+
+export type AutoDecisionListResponse = {
+  items: AutoDecisionItem[];
   count: number;
   page: number;
   page_size: number;
@@ -421,6 +442,7 @@ export type OverviewMetricsResponse = {
   latest_cases: ReviewListResponse;
   pipeline: PipelineStatus;
   freshness: SnapshotFreshness;
+  automation_status?: AutomationStatus;
 };
 
 export type ViolationsResponse = {

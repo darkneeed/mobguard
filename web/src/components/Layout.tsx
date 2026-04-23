@@ -36,7 +36,7 @@ export function Layout({
     .filter((group) => group.items.length > 0);
 
   useEffect(() => {
-    const targets = ["/queue", "/rules/general", "/data/console", "/data/users", "/quality"];
+    const targets = ["/queue", "/decisions", "/rules/general", "/data/console", "/data/users", "/quality"];
     const browserWindow = window as Window & {
       requestIdleCallback?: (cb: () => void) => number;
       cancelIdleCallback?: (id: number) => void;

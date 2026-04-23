@@ -67,6 +67,7 @@ export const enDictionary: TranslationDictionary = {
       overview: "Overview",
       modules: "Modules",
       queue: "Queue",
+      decisions: "Decisions",
       console: "Console",
       rules: "Detection Rules",
       telegram: "Telegram",
@@ -163,7 +164,8 @@ export const enDictionary: TranslationDictionary = {
       scoreZeroRatio: "Score zero ratio (24h)",
       asnMissingRatio: "ASN missing ratio (24h)",
       mixedConflicts: "Mixed-provider conflicts",
-      promotedPatterns: "Promoted patterns"
+      promotedPatterns: "Promoted patterns",
+      automationMode: "Automation mode"
     },
     quickLinks: {
       queue: "Open queue",
@@ -199,6 +201,12 @@ export const enDictionary: TranslationDictionary = {
       lastDrain: "Last successful drain",
       snapshotAge: "Snapshot age {value}",
       stale: "stale snapshot"
+    },
+    automation: {
+      modeTitle: "Automation mode",
+      guardrailsTitle: "Active guardrails",
+      noModeReasons: "No limiting flags are active",
+      noGuardrails: "No extra guardrails are active"
     }
   },
   login: {
@@ -358,6 +366,66 @@ export const enDictionary: TranslationDictionary = {
       previous: "Prev",
       next: "Next",
       pageSummary: "Page {page} · showing {shown} of {total}"
+    },
+    reviewReasons: {
+      provider_conflict: "Provider conflict",
+      unsure: "Not enough signals",
+      probable_home: "Probable HOME",
+      home_requires_review: "HOME requires review",
+      manual_review_mixed_home: "Mixed HOME review"
+    }
+  },
+  decisions: {
+    eyebrow: "Automatic decisions",
+    title: "Auto-decided events",
+    description: "Final decisions that bypassed review and moved through the pipeline automatically.",
+    countSummary: "{count} decisions · page {page}",
+    lastUpdated: "Updated {value}",
+    loadFailed: "Failed to load automatic decisions",
+    filtersTitle: "Filters",
+    filtersDescription: "Filter by decision, module, provider, source, and enforcement state.",
+    listTitle: "Automatic decisions",
+    listDescription: "Recent non-review decisions with their remote enforcement status.",
+    empty: "No automatic decisions for the current filters",
+    filters: {
+      search: "Search by IP / provider / inbound / device",
+      moduleId: "Module ID",
+      provider: "Provider",
+      anyVerdict: "Any verdict",
+      anySource: "Any source",
+      anyEnforcement: "Any enforcement"
+    },
+    meta: {
+      module: "Module {value}",
+      inbound: "Inbound {value}",
+      provider: "Provider {value}",
+      source: "Source {value}",
+      scope: "Scope {value}",
+      enforcement: "Enforcement {value}"
+    },
+    sources: {
+      rule_engine: "Rule engine",
+      cache: "Cache",
+      manual_override: "Manual override"
+    },
+    enforcement: {
+      none: "No remote enforcement",
+      attempts: "{count} attempts",
+      status: {
+        pending: "Pending",
+        applied: "Applied",
+        failed: "Failed"
+      },
+      jobType: {
+        access_state: "Access squad",
+        traffic_cap: "Traffic cap"
+      }
+    },
+    pagination: {
+      page: "Page {page}/{total}",
+      pageSize: "{value}",
+      previous: "Previous",
+      next: "Next"
     }
   },
   modules: {
@@ -493,6 +561,7 @@ export const enDictionary: TranslationDictionary = {
       device: "Device",
       asn: "ASN",
       tag: "Inbound",
+      reviewReason: "Review reason",
       verdict: "Verdict",
       confidence: "Confidence",
       opened: "Opened",
@@ -549,6 +618,13 @@ export const enDictionary: TranslationDictionary = {
       ongoing: "Ongoing duration",
       lastSeen: "Last seen",
       updatedAt: "Updated"
+    },
+    reviewReasons: {
+      provider_conflict: "Provider conflict",
+      unsure: "Not enough signals",
+      probable_home: "Probable HOME",
+      home_requires_review: "HOME requires review",
+      manual_review_mixed_home: "Mixed HOME review"
     },
     ipInventory: {
       summary: "{count} hits · {isp} · AS{asn}",
@@ -636,8 +712,35 @@ export const enDictionary: TranslationDictionary = {
     },
     listSectionDescription: "Editable list-based rules.",
     settingSectionDescription: "Canonical editable settings only.",
+    automationStatus: {
+      title: "Automation status",
+      description: "Derived from current runtime and detection settings without a separate on/off switch.",
+      modeLabel: "Effective mode",
+      modeReasonsLabel: "Why this mode is active",
+      guardrailsLabel: "Guardrails in force",
+      noModeReasons: "No mode-limiting flags are active",
+      noGuardrails: "No extra guardrails are active"
+    },
     invalidNumber: "{field}: invalid number",
     invalidValue: "{field}: invalid value '{value}'"
+  },
+  automationStatus: {
+    modes: {
+      observe: "Observe only",
+      warning_only: "Warning only",
+      enforce: "Enforce"
+    },
+    reasons: {
+      dry_run: "dry-run remote actions",
+      shadow_mode: "shadow mode blocks hard actions",
+      warning_only_mode: "warning-only escalation"
+    },
+    flags: {
+      auto_enforce_requires_hard_or_multi_signal: "Require hard or multi-signal for auto-enforce",
+      provider_conflict_review_only: "Mixed-provider conflicts stay review-only",
+      manual_review_mixed_home_enabled: "Mixed HOME cases require manual review",
+      manual_ban_approval_enabled: "Restrictions require manual approval"
+    }
   },
   telegram: {
     eyebrow: "Telegram",

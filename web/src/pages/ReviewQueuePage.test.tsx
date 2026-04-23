@@ -200,7 +200,7 @@ describe("ReviewQueuePage", () => {
     expect(screen.getByText(/Account context, shared access possible/)).toBeInTheDocument();
     expect(screen.getByText("1 IPs on this account")).toBeInTheDocument();
     expect(screen.getByText("ISP A")).toBeInTheDocument();
-    expect(screen.getByText("Provider conflict")).toBeInTheDocument();
+    expect(screen.getAllByText("Provider conflict").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute("href", "/data/console");
 
     const [pageSizeSelect] = screen.getAllByLabelText("Cards per page");

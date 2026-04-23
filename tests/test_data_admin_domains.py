@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from api.services import data_admin as data_admin_service
+from api.services import decisions as decisions_service
 from mobguard_platform import AnalysisStore, DecisionBundle, PlatformStore
 
 
@@ -180,6 +181,91 @@ class DataAdminDomainTests(unittest.TestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["items"][0]["target_scope_type"], "subject_ip")
         self.assertTrue(payload["items"][0]["shared_account_suspected"])
+
+    def test_auto_decisions_facade_excludes_review_cases_and_manual_overrides(self):
+        user = {
+            "uuid": "uuid-1",
+            "username": "alice",
+            "telegramId": "1001",
+            "id": 42,
+            "module_id": "node-a",
+            "module_name": "Node A",
+        }
+        auto_bundle = DecisionBundle(
+            ip="7.7.7.7",
+            verdict="MOBILE",
+            confidence_band="HIGH_MOBILE",
+            score=74,
+            asn=12345,
+            isp="ISP A",
+        )
+        auto_event_id = self.store.record_analysis_event(
+            user,
+            "7.7.7.7",
+            "TAG-A",
+            auto_bundle,
+            observation={"client_device_id": "dev-1", "client_device_label": "Pixel 8"},
+        )
+        manual_bundle = DecisionBundle(
+            ip="7.7.7.8",
+            verdict="HOME",
+            confidence_band="HIGH_HOME",
+            score=-90,
+            asn=12345,
+            isp="ISP B",
+            source="manual_override",
+        )
+        self.store.record_analysis_event(user, "7.7.7.8", "TAG-A", manual_bundle)
+        review_bundle = DecisionBundle(
+            ip="7.7.7.9",
+            verdict="HOME",
+            confidence_band="PROBABLE_HOME",
+            score=-18,
+            asn=12345,
+            isp="ISP C",
+        )
+        review_event_id = self.store.record_analysis_event(user, "7.7.7.9", "TAG-A", review_bundle)
+        self.store.ensure_review_case(user, "7.7.7.9", "TAG-A", review_bundle, review_event_id, "probable_home")
+        with self.store._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO enforcement_jobs (
+                    job_key, event_uid, analysis_event_id, review_case_id, module_id, subject_uuid,
+                    job_type, status, processing_owner, processing_started_at, attempt_count,
+                    next_attempt_at, last_error, last_error_at, applied_at, payload_json, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "job:auto-1",
+                    "evt-auto-1",
+                    auto_event_id,
+                    None,
+                    "node-a",
+                    "uuid-1",
+                    "access_state",
+                    "applied",
+                    1,
+                    "2026-04-12T12:00:00",
+                    "",
+                    "",
+                    "2026-04-12T12:00:30",
+                    json.dumps({"uuid": "uuid-1"}, ensure_ascii=False),
+                    "2026-04-12T12:00:00",
+                    "2026-04-12T12:00:30",
+                ),
+            )
+            conn.commit()
+
+        payload = decisions_service.list_decisions_auto(
+            self.container,
+            {"page": 1, "page_size": 50, "sort": "created_desc"},
+        )
+
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["items"][0]["ip"], "7.7.7.7")
+        self.assertEqual(payload["items"][0]["decision_source"], "rule_engine")
+        self.assertEqual(payload["items"][0]["enforcement_status"], "applied")
+        self.assertEqual(payload["items"][0]["enforcement_job_type"], "access_state")
 
     def test_console_facade_merges_system_logs_and_module_inputs(self):
         with self.store._connect() as conn:

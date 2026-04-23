@@ -11,6 +11,7 @@ import {
   parseListText
 } from "../features/rules/lib/serializers";
 import { useI18n } from "../localization";
+import { automationGuardrailLabels, automationModeLabel, automationModeReasonLabels, deriveAutomationStatus } from "../shared/automationStatus";
 import {
   ProviderProfileDraft,
   RULE_LIST_FIELDS,
@@ -91,6 +92,20 @@ export function RulesPage() {
   const [savedGeneralDraft, setSavedGeneralDraft] = useState<Record<string, string> | null>(null);
   const [generalError, setGeneralError] = useState("");
   const [generalSaved, setGeneralSaved] = useState("");
+  const automationStatus = useMemo(
+    () =>
+      deriveAutomationStatus({
+        dry_run: generalDraft?.dry_run === "true",
+        warning_only_mode: generalDraft?.warning_only_mode === "true",
+        manual_review_mixed_home_enabled: generalDraft?.manual_review_mixed_home_enabled === "true",
+        manual_ban_approval_enabled: generalDraft?.manual_ban_approval_enabled === "true",
+        shadow_mode: draft?.settings?.shadow_mode === true,
+        auto_enforce_requires_hard_or_multi_signal:
+          draft?.settings?.auto_enforce_requires_hard_or_multi_signal === true,
+        provider_conflict_review_only: draft?.settings?.provider_conflict_review_only === true,
+      }),
+    [draft, generalDraft]
+  );
 
   useEffect(() => {
     if (section && RULES_SECTIONS.includes(section as RulesSection)) {
@@ -509,6 +524,33 @@ export function RulesPage() {
     );
   }
 
+  function renderAutomationStatusPanel() {
+    const modeReasons = automationModeReasonLabels(t, automationStatus);
+    const guardrails = automationGuardrailLabels(t, automationStatus);
+    return (
+      <div className="panel">
+        <div className="panel-heading">
+          <h2>{t("rules.automationStatus.title")}</h2>
+          <p className="muted">{t("rules.automationStatus.description")}</p>
+        </div>
+        <div className="detail-list">
+          <div>
+            <dt>{t("rules.automationStatus.modeLabel")}</dt>
+            <dd>{automationModeLabel(t, automationStatus)}</dd>
+          </div>
+          <div>
+            <dt>{t("rules.automationStatus.modeReasonsLabel")}</dt>
+            <dd>{modeReasons.length > 0 ? modeReasons.join(", ") : t("rules.automationStatus.noModeReasons")}</dd>
+          </div>
+          <div>
+            <dt>{t("rules.automationStatus.guardrailsLabel")}</dt>
+            <dd>{guardrails.length > 0 ? guardrails.join(", ") : t("rules.automationStatus.noGuardrails")}</dd>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderListsPanels() {
     if (!draft) return null;
     return LIST_SECTIONS.map((section) => (
@@ -645,6 +687,7 @@ export function RulesPage() {
       return (
         <>
           {renderGeneralSaveBar()}
+          {renderAutomationStatusPanel()}
           {renderGeneralPanel()}
         </>
       );

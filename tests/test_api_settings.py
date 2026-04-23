@@ -92,6 +92,7 @@ class APISettingsTests(unittest.TestCase):
         self.assertEqual(initial["settings"]["restricted_access_squad_name"], "MOBILE_BLOCKED")
         self.assertEqual(initial["settings"]["traffic_cap_increment_gb"], 10)
         self.assertEqual(initial["settings"]["traffic_cap_threshold_gb"], 100)
+        self.assertEqual(initial["automation_status"]["mode"], "observe")
 
         updated = settings_service.update_enforcement_settings(
             container,

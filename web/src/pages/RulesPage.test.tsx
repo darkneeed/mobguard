@@ -86,4 +86,37 @@ describe("RulesPage retention settings", () => {
     expect(requestPayload.updated_at).toBe("2026-04-21T10:00:00Z");
     expect(await screen.findByText("Rules updated")).toBeInTheDocument();
   });
+
+  it("shows the derived automation status on the general section", async () => {
+    const detectionPayload = buildRulesPayload();
+    vi.mocked(api.getDetectionSettings).mockResolvedValue({
+      ...detectionPayload,
+      rules: {
+        ...detectionPayload.rules,
+        settings: {
+          ...(detectionPayload.rules.settings as Record<string, unknown>),
+          shadow_mode: false,
+          provider_conflict_review_only: true,
+          auto_enforce_requires_hard_or_multi_signal: true,
+        },
+      },
+    });
+    vi.mocked(api.getEnforcementSettings).mockResolvedValue({
+      settings: {
+        dry_run: true,
+        warning_only_mode: false,
+        manual_review_mixed_home_enabled: false,
+        manual_ban_approval_enabled: false,
+      },
+    });
+
+    renderWithProviders(<RulesPage />, {
+      route: "/rules/general",
+      path: "/rules/:section",
+    });
+
+    expect(await screen.findByText("Automation status")).toBeInTheDocument();
+    expect(screen.getByText("Observe only")).toBeInTheDocument();
+    expect(screen.getByText(/dry-run remote actions/)).toBeInTheDocument();
+  });
 });

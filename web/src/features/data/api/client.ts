@@ -1,6 +1,7 @@
 import { buildSearchParams, request, requestBlob } from "../../../shared/api/request";
 import {
   AnalysisEventListResponse,
+  AutoDecisionListResponse,
   AuditTrailResponse,
   CacheAdminResponse,
   CalibrationExportPreview,
@@ -111,6 +112,8 @@ export const dataApi = {
     request<ConsoleListResponse>(`/admin/data/console?${buildSearchParams(params)}`),
   getAnalysisEvents: (params: Record<string, string | number | boolean | undefined>) =>
     request<AnalysisEventListResponse>(`/admin/data/events?${buildSearchParams(params)}`),
+  getAutoDecisions: (params: Record<string, string | number | boolean | undefined>) =>
+    request<AutoDecisionListResponse>(`/admin/decisions/auto?${buildSearchParams(params)}`),
   getQuality: (params: Record<string, string | number | boolean | undefined> = {}) =>
     request<Record<string, unknown>>(`/admin/metrics/quality?${buildSearchParams(params)}`),
   getOverview: () => request<OverviewMetricsResponse>("/admin/metrics/overview"),

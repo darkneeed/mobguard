@@ -4,9 +4,12 @@ import { reviewsApi } from "../features/reviews/api/client";
 import { settingsApi } from "../features/settings/api/client";
 
 export type {
+  AutomationStatus,
   AuditEvent,
   AnalysisEventItem,
   AnalysisEventListResponse,
+  AutoDecisionItem,
+  AutoDecisionListResponse,
   AuditTrailResponse,
   AuthResult,
   AuthCapabilities,
