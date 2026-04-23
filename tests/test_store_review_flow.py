@@ -727,6 +727,17 @@ class StoreReviewFlowTests(unittest.TestCase):
             with self.assertRaises(ReadSnapshotUnavailableError):
                 self.store.get_overview_metrics()
 
+    def test_overview_fast_read_raises_query_timeout_when_sqlite_interrupts_long_query(self):
+        self.store._read_cache.clear()
+        with patch.object(
+            self.store,
+            "_build_overview_metrics",
+            side_effect=sqlite3.OperationalError("interrupted"),
+        ):
+            with self.assertRaises(ReadSnapshotUnavailableError) as ctx:
+                self.store.get_overview_metrics()
+        self.assertEqual(ctx.exception.reason, "query_timeout")
+
     def test_review_payload_normalizes_numeric_uuid_to_system_id_for_legacy_rows(self):
         with self.store._connect() as conn:
             conn.execute(

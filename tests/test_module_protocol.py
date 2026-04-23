@@ -213,6 +213,25 @@ class ModuleProtocolTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertEqual(ctx.exception.detail, module_service.MODULE_INGEST_BUSY_DETAIL)
 
+    def test_register_returns_503_when_storage_is_temporarily_busy(self):
+        payload = modules_router.ModuleRegisterRequest(
+            module_id="node-busy",
+            module_name="Busy Node",
+            version="1.0.0",
+            protocol_version="v1",
+        )
+
+        with patch.object(self.store, "register_module", side_effect=sqlite3.OperationalError("database is locked")):
+            with self.assertRaises(HTTPException) as ctx:
+                modules_router.register_module(
+                    payload,
+                    authorization="Bearer token-busy",
+                    container=self.container,
+                )
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertEqual(ctx.exception.detail, module_service.MODULE_INGEST_BUSY_DETAIL)
+
     def test_event_batch_builds_runtime_context_once(self):
         self.store.create_managed_module(
             "node-a",

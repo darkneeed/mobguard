@@ -19,7 +19,7 @@ from .repositories.modules_admin import ModuleAdminRepository
 from .repositories.review_admin import ReviewAdminRepository
 from .repositories.sessions import AdminSessionRepository
 from .runtime import canonicalize_runtime_bound_settings
-from .storage.sqlite import SQLiteStorage, is_sqlite_busy_error
+from .storage.sqlite import SQLiteStorage, is_sqlite_busy_error, is_sqlite_interrupted_error
 
 
 EDITABLE_TOP_LEVEL_KEYS = {
@@ -134,6 +134,7 @@ LOW_PRIORITY_SQLITE_TIMEOUT_SECONDS = 1
 LOW_PRIORITY_SQLITE_BUSY_TIMEOUT_MS = 1000
 FAST_READ_SQLITE_TIMEOUT_SECONDS = 0.5
 FAST_READ_SQLITE_BUSY_TIMEOUT_MS = 500
+FAST_READ_SQLITE_QUERY_LIMIT_MS = 250
 
 
 class ReadSnapshotUnavailableError(RuntimeError):
@@ -496,6 +497,7 @@ class PlatformStore:
         return self.storage.connect(
             timeout=FAST_READ_SQLITE_TIMEOUT_SECONDS,
             busy_timeout_ms=FAST_READ_SQLITE_BUSY_TIMEOUT_MS,
+            query_time_limit_ms=FAST_READ_SQLITE_QUERY_LIMIT_MS,
         )
 
     def _table_exists(self, conn: sqlite3.Connection, table_name: str) -> bool:
@@ -520,11 +522,12 @@ class PlatformStore:
         try:
             payload = loader()
         except sqlite3.OperationalError as exc:
-            if allow_stale_on_busy and is_sqlite_busy_error(exc):
+            if allow_stale_on_busy and (is_sqlite_busy_error(exc) or is_sqlite_interrupted_error(exc)):
+                reason = "query_timeout" if is_sqlite_interrupted_error(exc) else "database_locked"
                 if cached:
-                    logger.warning("Serving stale cache for %s because SQLite is locked", cache_key)
+                    logger.warning("Serving stale cache for %s because SQLite fast-read hit %s", cache_key, reason)
                     return copy.deepcopy(cached[1])
-                raise ReadSnapshotUnavailableError(cache_key) from exc
+                raise ReadSnapshotUnavailableError(cache_key, reason=reason) from exc
             raise
         self._read_cache[cache_key] = (now + ttl_seconds, copy.deepcopy(payload))
         return payload

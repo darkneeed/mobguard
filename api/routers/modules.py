@@ -40,6 +40,8 @@ def register_module(
 ) -> dict[str, Any]:
     try:
         return module_service.register_module(container, payload.model_dump(), _bearer_token(authorization))
+    except module_service.ModuleStorageBusyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -52,6 +54,8 @@ def module_heartbeat(
 ) -> dict[str, Any]:
     try:
         return module_service.record_module_heartbeat(container, payload.model_dump(), _bearer_token(authorization))
+    except module_service.ModuleStorageBusyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 

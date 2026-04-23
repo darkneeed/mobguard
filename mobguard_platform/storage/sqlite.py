@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -19,6 +20,12 @@ def is_sqlite_busy_error(exc: BaseException) -> bool:
     )
 
 
+def is_sqlite_interrupted_error(exc: BaseException) -> bool:
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    return "interrupted" in str(exc).lower()
+
+
 @dataclass
 class SQLiteStorage:
     db_path: str
@@ -30,6 +37,7 @@ class SQLiteStorage:
         *,
         timeout: Optional[float] = None,
         busy_timeout_ms: Optional[int] = None,
+        query_time_limit_ms: Optional[int] = None,
     ) -> sqlite3.Connection:
         conn = sqlite3.connect(
             self.db_path,
@@ -40,6 +48,13 @@ class SQLiteStorage:
         conn.execute(
             f"PRAGMA busy_timeout = {self.busy_timeout_ms if busy_timeout_ms is None else busy_timeout_ms}"
         )
+        if query_time_limit_ms is not None and int(query_time_limit_ms) > 0:
+            deadline = time.monotonic() + (int(query_time_limit_ms) / 1000.0)
+
+            def _progress_handler() -> int:
+                return 1 if time.monotonic() >= deadline else 0
+
+            conn.set_progress_handler(_progress_handler, 1000)
         return conn
 
     def table_exists(self, conn: sqlite3.Connection, table_name: str) -> bool:

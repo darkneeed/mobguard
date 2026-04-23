@@ -48,6 +48,10 @@ class ModuleIngestionBusyError(RuntimeError):
     pass
 
 
+class ModuleStorageBusyError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ModuleBatchContext:
     container: APIContainer
@@ -584,16 +588,21 @@ def _build_batch_context(container: APIContainer, module: dict[str, Any]) -> Mod
 def register_module(container: APIContainer, payload: dict[str, Any], token: str) -> dict[str, Any]:
     protocol_version = _require_protocol_version(str(payload.get("protocol_version", PROTOCOL_VERSION)))
     metadata_payload = payload.get("metadata")
-    module = container.store.register_module(
-        str(payload.get("module_id") or ""),
-        token,
-        module_name=str(payload.get("module_name") or ""),
-        version=str(payload.get("version") or ""),
-        protocol_version=protocol_version,
-        metadata=dict(metadata_payload) if isinstance(metadata_payload, dict) else None,
-        config_revision_applied=int(payload.get("config_revision_applied") or 0),
-        auto_create=False,
-    )
+    try:
+        module = container.store.register_module(
+            str(payload.get("module_id") or ""),
+            token,
+            module_name=str(payload.get("module_name") or ""),
+            version=str(payload.get("version") or ""),
+            protocol_version=protocol_version,
+            metadata=dict(metadata_payload) if isinstance(metadata_payload, dict) else None,
+            config_revision_applied=int(payload.get("config_revision_applied") or 0),
+            auto_create=False,
+        )
+    except sqlite3.OperationalError as exc:
+        if not is_sqlite_busy_error(exc):
+            raise
+        raise ModuleStorageBusyError(MODULE_INGEST_BUSY_DETAIL) from exc
     return {
         "protocol_version": protocol_version,
         "module": module,
@@ -603,15 +612,20 @@ def register_module(container: APIContainer, payload: dict[str, Any], token: str
 
 def record_module_heartbeat(container: APIContainer, payload: dict[str, Any], token: str) -> dict[str, Any]:
     protocol_version = _require_protocol_version(str(payload.get("protocol_version", PROTOCOL_VERSION)))
-    module = container.store.authenticate_module(str(payload.get("module_id") or ""), token)
-    updated = container.store.record_module_heartbeat(
-        module["module_id"],
-        status=str(payload.get("status") or "online"),
-        version=str(payload.get("version") or module.get("version") or ""),
-        protocol_version=protocol_version,
-        config_revision_applied=int(payload.get("config_revision_applied") or 0),
-        details=dict(payload.get("details") or {}),
-    )
+    try:
+        module = container.store.authenticate_module(str(payload.get("module_id") or ""), token)
+        updated = container.store.record_module_heartbeat(
+            module["module_id"],
+            status=str(payload.get("status") or "online"),
+            version=str(payload.get("version") or module.get("version") or ""),
+            protocol_version=protocol_version,
+            config_revision_applied=int(payload.get("config_revision_applied") or 0),
+            details=dict(payload.get("details") or {}),
+        )
+    except sqlite3.OperationalError as exc:
+        if not is_sqlite_busy_error(exc):
+            raise
+        raise ModuleStorageBusyError(MODULE_INGEST_BUSY_DETAIL) from exc
     return {
         "protocol_version": protocol_version,
         "module": updated,
