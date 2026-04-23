@@ -32,6 +32,7 @@ def subject_key_from_identity(
     identity: Mapping[str, Any] | None,
     *,
     ip: str | None = None,
+    allow_ip_fallback: bool = True,
 ) -> str:
     normalized = normalize_review_identity_payload(identity)
     telegram_id = clean_text(normalized.get("telegram_id") or normalized.get("telegramId"))
@@ -46,9 +47,10 @@ def subject_key_from_identity(
     username = clean_text(normalized.get("username")).lower()
     if username:
         return f"user:{username}"
-    raw_ip = clean_text(ip or normalized.get("ip"))
-    if raw_ip:
-        return f"ip:{raw_ip}"
+    if allow_ip_fallback:
+        raw_ip = clean_text(ip or normalized.get("ip"))
+        if raw_ip:
+            return f"ip:{raw_ip}"
     return "anonymous:unknown"
 
 
@@ -91,13 +93,17 @@ def device_display_from_identity(identity: Mapping[str, Any] | None) -> str:
 
 def build_review_scope(
     identity: Mapping[str, Any] | None,
+    observation: Mapping[str, Any] | None = None,
     *,
     ip: str | None = None,
 ) -> dict[str, Any]:
-    normalized = normalize_review_identity_payload(identity)
-    primary_ip = clean_text(ip or normalized.get("ip"))
-    device_key = device_key_from_identity(normalized)
-    device_display = device_display_from_identity(normalized)
+    normalized_identity = normalize_review_identity_payload(identity)
+    normalized_observation = normalize_review_identity_payload(observation)
+    scope_payload = {**normalized_identity, **normalized_observation}
+    primary_ip = clean_text(ip or scope_payload.get("ip"))
+    device_key = device_key_from_identity(scope_payload)
+    device_display = device_display_from_identity(scope_payload)
+    stable_subject_key = subject_key_from_identity(normalized_identity, allow_ip_fallback=False)
     if device_key and primary_ip:
         normalized_device_key = device_key.lower()
         return {
@@ -106,6 +112,15 @@ def build_review_scope(
             "device_scope_key": f"device:{normalized_device_key}",
             "target_ip": primary_ip,
             "client_device_id": device_key,
+            "client_device_label": device_display or None,
+        }
+    if stable_subject_key != "anonymous:unknown" and primary_ip:
+        return {
+            "scope_type": "subject_ip",
+            "case_scope_key": f"subject:{stable_subject_key}|ip:{primary_ip}",
+            "device_scope_key": f"subject:{stable_subject_key}",
+            "target_ip": primary_ip,
+            "client_device_id": None,
             "client_device_label": device_display or None,
         }
     if primary_ip:

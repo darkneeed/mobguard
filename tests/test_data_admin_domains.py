@@ -132,6 +132,55 @@ class DataAdminDomainTests(unittest.TestCase):
         self.assertTrue(payload["items"][0]["has_review_case"])
         self.assertEqual(payload["items"][0]["review_case_status"], "OPEN")
 
+    def test_analysis_events_facade_marks_subject_ip_shared_account_context(self):
+        bundle = DecisionBundle(
+            ip="5.6.7.8",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP A",
+        )
+        user = {
+            "uuid": "uuid-1",
+            "username": "alice",
+            "telegramId": "1001",
+            "id": 42,
+            "module_id": "node-a",
+            "module_name": "Node A",
+        }
+        event_id = self.store.record_analysis_event(
+            user,
+            "5.6.7.8",
+            "TAG-A",
+            bundle,
+            observation={"client_device_label": "Account context"},
+        )
+        self.store.ensure_review_case(user, "5.6.7.8", "TAG-A", bundle, event_id, "unsure")
+        self.store.record_analysis_event(
+            user,
+            "5.6.7.9",
+            "TAG-A",
+            bundle,
+            observation={"client_device_id": "dev-1", "client_device_label": "Phone 1"},
+        )
+        self.store.record_analysis_event(
+            user,
+            "5.6.7.10",
+            "TAG-A",
+            bundle,
+            observation={"client_device_id": "dev-2", "client_device_label": "Phone 2"},
+        )
+
+        payload = data_admin_service.list_analysis_events(
+            self.container,
+            {"ip": "5.6.7.8", "page": 1, "page_size": 50, "sort": "created_desc"},
+        )
+
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["items"][0]["target_scope_type"], "subject_ip")
+        self.assertTrue(payload["items"][0]["shared_account_suspected"])
+
     def test_console_facade_merges_system_logs_and_module_inputs(self):
         with self.store._connect() as conn:
             conn.execute(

@@ -35,6 +35,23 @@ export const enDictionary: TranslationDictionary = {
     deviceSources: {
       panelUser: "Remnawave HWID",
       event: "access log"
+    },
+    scopeLabels: {
+      deviceField: "Device",
+      accountField: "Account context",
+      contextField: "Context",
+      ipDeviceScope: "Decision for this IP in device context",
+      subjectIpScope: "Decision for this IP in account context",
+      ipOnlyScope: "Decision for this IP only",
+      ipDeviceHistoryTitle: "IPs on this device",
+      subjectIpHistoryTitle: "IPs on this account",
+      ipOnlyHistoryTitle: "This IP only",
+      ipDeviceHistory: "{count} IPs on this device",
+      subjectIpHistory: "{count} IPs on this account",
+      ipOnlyHistory: "{count} IPs in this IP-only context",
+      subjectContext: "Account context",
+      sharedAccountContext: "Account context, shared access possible",
+      ipOnlyContext: "Exact device not recorded"
     }
   },
   layout: {

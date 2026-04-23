@@ -35,6 +35,8 @@ describe("ReviewDetailPage", () => {
       id: 34,
       username: "synthetic_user",
       ip: "128.71.75.0",
+      target_scope_type: "subject_ip",
+      shared_account_suspected: true,
       latest_event: {
         bundle: {
           reasons: [
@@ -174,7 +176,8 @@ describe("ReviewDetailPage", () => {
     expect(screen.getByText("vimpelcom, vimpel")).toBeInTheDocument();
     expect(screen.getByText("Usage profile")).toBeInTheDocument();
     expect(screen.getByText("IPs 2; providers 2; devices 2")).toBeInTheDocument();
-    expect(screen.getByText("IP and device history")).toBeInTheDocument();
+    expect(screen.getByText("Account context, shared access possible")).toBeInTheDocument();
+    expect(screen.getByText("IPs on this account")).toBeInTheDocument();
     expect(screen.getByText("128.70.186.177")).toBeInTheDocument();
     expect(screen.getAllByText(/Node B/).length).toBeGreaterThan(0);
   });

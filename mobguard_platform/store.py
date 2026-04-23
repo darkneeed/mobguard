@@ -142,6 +142,8 @@ PIPELINE_SNAPSHOT_STALE_AFTER_SECONDS = 5
 READ_MODEL_OVERVIEW = "overview"
 READ_MODEL_INGEST_PIPELINE = "ingest_pipeline"
 READ_MODEL_REVIEW_USAGE_PROFILE = "review_usage_profile"
+READ_MODEL_MIGRATION_MARKER = "migration_marker"
+REVIEW_SCOPE_BACKFILL_MARKER = "account_scoped_fallback_v1"
 LAST_GOOD_OVERVIEW_SNAPSHOT_CACHE_KEY = "__last_good_overview_snapshot__"
 LAST_GOOD_INGEST_PIPELINE_CACHE_KEY = "__last_good_ingest_pipeline__"
 SYSTEM_CONSOLE_RETENTION_DAYS = 14
@@ -673,6 +675,51 @@ class PlatformStore:
             payload.setdefault("_snapshot_updated_at", str(row["updated_at"] or ""))
             return payload
         return None
+
+    def _run_review_scope_backfill_conn(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        existing_marker = self._read_read_model_snapshot_conn(
+            conn,
+            READ_MODEL_MIGRATION_MARKER,
+            REVIEW_SCOPE_BACKFILL_MARKER,
+        )
+        if existing_marker is not None and not force:
+            return {
+                "ran": False,
+                "forced": False,
+                "merged_open_duplicates": int(existing_marker.get("merged_open_duplicates") or 0),
+                "recomputed_cases": int(existing_marker.get("recomputed_cases") or 0),
+                "deleted_usage_snapshots": int(existing_marker.get("deleted_usage_snapshots") or 0),
+            }
+
+        self.review_admin.backfill_review_subjects_and_contexts(conn)
+        merged_open_duplicates = self.review_admin.collapse_open_subject_duplicates(conn)
+        recomputed_cases = self.review_admin.rebuild_review_case_usage_profiles(conn)
+        deleted_usage_snapshots = _execute_with_changes(
+            conn,
+            "DELETE FROM read_model_snapshots WHERE snapshot_type = ?",
+            (READ_MODEL_REVIEW_USAGE_PROFILE,),
+        )
+        payload = {
+            "ran": True,
+            "forced": bool(force),
+            "merged_open_duplicates": int(merged_open_duplicates),
+            "recomputed_cases": int(recomputed_cases),
+            "deleted_usage_snapshots": int(deleted_usage_snapshots),
+            "updated_at": _utcnow(),
+        }
+        self._write_read_model_snapshot_conn(
+            conn,
+            READ_MODEL_MIGRATION_MARKER,
+            REVIEW_SCOPE_BACKFILL_MARKER,
+            payload,
+            payload["updated_at"],
+        )
+        return payload
 
     def _ttl_cache_get(
         self,
@@ -1641,6 +1688,7 @@ class PlatformStore:
                     str(seed_meta["updated_at"]),
                     str(seed_meta["updated_by"]),
                 )
+            self._run_review_scope_backfill_conn(conn, force=False)
             conn.commit()
 
     def get_module(self, module_id: str) -> Optional[dict[str, Any]]:
@@ -2418,6 +2466,14 @@ class PlatformStore:
 
     def get_review_case(self, case_id: int) -> dict[str, Any]:
         return self.review_admin.get_review_case(case_id)
+
+    def run_review_scope_backfill(self, *, force: bool = False) -> dict[str, Any]:
+        with self._connect() as conn:
+            summary = self._run_review_scope_backfill_conn(conn, force=force)
+            conn.commit()
+        self._read_cache.clear()
+        self._ingest_pipeline_snapshot_dirty = True
+        return summary
 
     def _record_labels_for_resolution(
         self,

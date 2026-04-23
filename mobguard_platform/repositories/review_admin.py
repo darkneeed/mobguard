@@ -19,6 +19,7 @@ from ..usage_profile import (
     build_usage_profile_priority,
     build_usage_profile_snapshot,
     normalize_usage_observation,
+    shared_account_suspected_from_usage_profile,
 )
 from .base import SQLiteRepository
 
@@ -53,11 +54,18 @@ def _resolve_review_module_name(conn: sqlite3.Connection, payload: dict[str, Any
 
 
 def _review_identity(user: Optional[dict[str, Any]]) -> dict[str, Any]:
+    normalized = normalize_review_identity_payload(user or {})
     return {
-        "uuid": (user or {}).get("uuid"),
-        "username": (user or {}).get("username"),
-        "system_id": coerce_optional_int((user or {}).get("id")),
-        "telegram_id": str((user or {}).get("telegramId")) if (user or {}).get("telegramId") not in (None, "") else None,
+        "uuid": normalized.get("uuid"),
+        "username": normalized.get("username"),
+        "system_id": coerce_optional_int(
+            normalized.get("system_id") if normalized.get("system_id") not in (None, "") else normalized.get("id")
+        ),
+        "telegram_id": (
+            str(normalized.get("telegram_id") or normalized.get("telegramId"))
+            if normalized.get("telegram_id") not in (None, "") or normalized.get("telegramId") not in (None, "")
+            else None
+        ),
     }
 
 
@@ -132,8 +140,8 @@ class ReviewAdminRepository(SQLiteRepository):
     ) -> dict[str, Any]:
         row = conn.execute(
             """
-            SELECT created_at, ip, tag, module_id, module_name, client_device_id, client_device_label,
-                   client_os_family, client_app_name
+            SELECT created_at, ip, tag, module_id, module_name, uuid, username, system_id, telegram_id,
+                   client_device_id, client_device_label, client_os_family, client_app_name
             FROM analysis_events
             WHERE id = ?
             """,
@@ -144,7 +152,7 @@ class ReviewAdminRepository(SQLiteRepository):
         payload["tag"] = clean_text(payload.get("tag")) or clean_text(fallback_tag)
         payload["module_id"] = clean_text(payload.get("module_id")) or clean_text(fallback_module_id)
         payload["module_name"] = clean_text(payload.get("module_name")) or clean_text(fallback_module_name)
-        scope = build_review_scope(payload, ip=payload["ip"])
+        scope = build_review_scope(payload, payload, ip=payload["ip"])
         return {
             "created_at": clean_text(payload.get("created_at")) or _utcnow(),
             "ip": payload["ip"],
@@ -154,6 +162,12 @@ class ReviewAdminRepository(SQLiteRepository):
             **scope,
             **_device_fields_from_row(payload),
         }
+
+    def _history_scope_filter(self, scope_key: str) -> tuple[str, tuple[Any, ...]]:
+        normalized_scope = clean_text(scope_key)
+        if normalized_scope.startswith("subject:"):
+            return "subject_key = ?", (normalized_scope[len("subject:") :],)
+        return "device_scope_key = ?", (normalized_scope,)
 
     def _same_device_ip_history(
         self,
@@ -165,31 +179,32 @@ class ReviewAdminRepository(SQLiteRepository):
         normalized_scope = clean_text(device_scope_key)
         if not normalized_scope:
             return []
+        scope_clause, scope_params = self._history_scope_filter(normalized_scope)
         rows = conn.execute(
-            """
+            f"""
             SELECT ip,
                    COUNT(*) AS hit_count,
                    MIN(created_at) AS first_seen_at,
                    MAX(created_at) AS last_seen_at
             FROM analysis_events
-            WHERE device_scope_key = ?
+            WHERE {scope_clause}
             GROUP BY ip
             ORDER BY MAX(created_at) DESC, ip ASC
             LIMIT ?
             """,
-            (normalized_scope, max(int(limit), 1)),
+            (*scope_params, max(int(limit), 1)),
         ).fetchall()
         history: list[dict[str, Any]] = []
         for row in rows:
             latest = conn.execute(
-                """
+                f"""
                 SELECT isp, asn, country, region, city, module_id, module_name, tag
                 FROM analysis_events
-                WHERE device_scope_key = ? AND ip = ?
+                WHERE {scope_clause} AND ip = ?
                 ORDER BY created_at DESC, id DESC
                 LIMIT 1
                 """,
-                (normalized_scope, str(row["ip"])),
+                (*scope_params, str(row["ip"])),
             ).fetchone()
             payload = dict(row)
             latest_payload = dict(latest) if latest else {}
@@ -222,93 +237,101 @@ class ReviewAdminRepository(SQLiteRepository):
         if not normalized_scope_keys:
             return {}
 
-        placeholders = ", ".join("?" for _ in normalized_scope_keys)
-        rows = conn.execute(
-            f"""
-            WITH per_ip AS (
+        history: dict[str, list[dict[str, Any]]] = {scope_key: [] for scope_key in normalized_scope_keys}
+        direct_scope_keys = [scope_key for scope_key in normalized_scope_keys if not scope_key.startswith("subject:")]
+        subject_scope_keys = [scope_key for scope_key in normalized_scope_keys if scope_key.startswith("subject:")]
+
+        if direct_scope_keys:
+            placeholders = ", ".join("?" for _ in direct_scope_keys)
+            rows = conn.execute(
+                f"""
+                WITH per_ip AS (
+                    SELECT device_scope_key,
+                           ip,
+                           COUNT(*) AS hit_count,
+                           MIN(created_at) AS first_seen_at,
+                           MAX(created_at) AS last_seen_at
+                    FROM analysis_events
+                    WHERE device_scope_key IN ({placeholders})
+                    GROUP BY device_scope_key, ip
+                ),
+                latest AS (
+                    SELECT ae.device_scope_key,
+                           ae.ip,
+                           ae.isp,
+                           ae.asn,
+                           ae.country,
+                           ae.region,
+                           ae.city,
+                           ae.module_id,
+                           ae.module_name,
+                           ae.tag,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY ae.device_scope_key, ae.ip
+                               ORDER BY ae.created_at DESC, ae.id DESC
+                           ) AS row_rank
+                    FROM analysis_events ae
+                    WHERE ae.device_scope_key IN ({placeholders})
+                ),
+                ranked AS (
+                    SELECT per_ip.device_scope_key,
+                           per_ip.ip,
+                           per_ip.hit_count,
+                           per_ip.first_seen_at,
+                           per_ip.last_seen_at,
+                           latest.isp,
+                           latest.asn,
+                           latest.country,
+                           latest.region,
+                           latest.city,
+                           latest.module_id,
+                           latest.module_name,
+                           latest.tag,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY per_ip.device_scope_key
+                               ORDER BY per_ip.last_seen_at DESC, per_ip.ip ASC
+                           ) AS scope_rank
+                    FROM per_ip
+                    LEFT JOIN latest
+                        ON latest.device_scope_key = per_ip.device_scope_key
+                       AND latest.ip = per_ip.ip
+                       AND latest.row_rank = 1
+                )
                 SELECT device_scope_key,
                        ip,
-                       COUNT(*) AS hit_count,
-                       MIN(created_at) AS first_seen_at,
-                       MAX(created_at) AS last_seen_at
-                FROM analysis_events
-                WHERE device_scope_key IN ({placeholders})
-                GROUP BY device_scope_key, ip
-            ),
-            latest AS (
-                SELECT ae.device_scope_key,
-                       ae.ip,
-                       ae.isp,
-                       ae.asn,
-                       ae.country,
-                       ae.region,
-                       ae.city,
-                       ae.module_id,
-                       ae.module_name,
-                       ae.tag,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY ae.device_scope_key, ae.ip
-                           ORDER BY ae.created_at DESC, ae.id DESC
-                       ) AS row_rank
-                FROM analysis_events ae
-                WHERE ae.device_scope_key IN ({placeholders})
-            ),
-            ranked AS (
-                SELECT per_ip.device_scope_key,
-                       per_ip.ip,
-                       per_ip.hit_count,
-                       per_ip.first_seen_at,
-                       per_ip.last_seen_at,
-                       latest.isp,
-                       latest.asn,
-                       latest.country,
-                       latest.region,
-                       latest.city,
-                       latest.module_id,
-                       latest.module_name,
-                       latest.tag,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY per_ip.device_scope_key
-                           ORDER BY per_ip.last_seen_at DESC, per_ip.ip ASC
-                       ) AS scope_rank
-                FROM per_ip
-                LEFT JOIN latest
-                    ON latest.device_scope_key = per_ip.device_scope_key
-                   AND latest.ip = per_ip.ip
-                   AND latest.row_rank = 1
-            )
-            SELECT device_scope_key,
-                   ip,
-                   hit_count,
-                   first_seen_at,
-                   last_seen_at,
-                   isp,
-                   asn,
-                   country,
-                   region,
-                   city,
-                   module_id,
-                   module_name,
-                   tag
-            FROM ranked
-            WHERE scope_rank <= ?
-            ORDER BY device_scope_key ASC, last_seen_at DESC, ip ASC
-            """,
-            (*normalized_scope_keys, *normalized_scope_keys, max(int(limit), 1)),
-        ).fetchall()
+                       hit_count,
+                       first_seen_at,
+                       last_seen_at,
+                       isp,
+                       asn,
+                       country,
+                       region,
+                       city,
+                       module_id,
+                       module_name,
+                       tag
+                FROM ranked
+                WHERE scope_rank <= ?
+                ORDER BY device_scope_key ASC, last_seen_at DESC, ip ASC
+                """,
+                (*direct_scope_keys, *direct_scope_keys, max(int(limit), 1)),
+            ).fetchall()
 
-        history: dict[str, list[dict[str, Any]]] = {scope_key: [] for scope_key in normalized_scope_keys}
-        for row in rows:
-            payload = dict(row)
-            scope_key = clean_text(payload.pop("device_scope_key"))
-            payload["isp"] = clean_text(payload.get("isp")) or None
-            payload["country"] = clean_text(payload.get("country")) or None
-            payload["region"] = clean_text(payload.get("region")) or None
-            payload["city"] = clean_text(payload.get("city")) or None
-            payload["module_id"] = clean_text(payload.get("module_id")) or None
-            payload["module_name"] = clean_text(payload.get("module_name")) or None
-            payload["inbound_tag"] = clean_text(payload.pop("tag")) or None
-            history.setdefault(scope_key, []).append(payload)
+            for row in rows:
+                payload = dict(row)
+                scope_key = clean_text(payload.pop("device_scope_key"))
+                payload["isp"] = clean_text(payload.get("isp")) or None
+                payload["country"] = clean_text(payload.get("country")) or None
+                payload["region"] = clean_text(payload.get("region")) or None
+                payload["city"] = clean_text(payload.get("city")) or None
+                payload["module_id"] = clean_text(payload.get("module_id")) or None
+                payload["module_name"] = clean_text(payload.get("module_name")) or None
+                payload["inbound_tag"] = clean_text(payload.pop("tag")) or None
+                history.setdefault(scope_key, []).append(payload)
+
+        for scope_key in subject_scope_keys:
+            history[scope_key] = self._same_device_ip_history(conn, device_scope_key=scope_key, limit=limit)
+
         return history
 
     def _record_analysis_event(
@@ -331,7 +354,7 @@ class ReviewAdminRepository(SQLiteRepository):
             observation,
             signal_flags=bundle.signal_flags,
         )
-        scope = build_review_scope({**usage_observation, "ip": ip}, ip=ip)
+        scope = build_review_scope(user, {**usage_observation, "ip": ip}, ip=ip)
         cursor = conn.execute(
             """
             INSERT INTO analysis_events (
@@ -687,6 +710,72 @@ class ReviewAdminRepository(SQLiteRepository):
             payload,
             updated_at,
         )
+
+    def _shared_account_flags_for_items(
+        self,
+        conn: sqlite3.Connection,
+        items: list[dict[str, Any]],
+    ) -> None:
+        if not items:
+            return
+        snapshot_store: Any = _ConnectionBackedStore(self, conn)
+        shared_flags_by_scope: dict[str, bool] = {}
+        for item in items:
+            item["shared_account_suspected"] = False
+            scope_type = clean_text(item.get("scope_type") or item.get("target_scope_type")) or "ip_only"
+            if scope_type != "subject_ip":
+                continue
+            device_scope_key = clean_text(item.get("device_scope_key"))
+            if not device_scope_key:
+                continue
+            if device_scope_key not in shared_flags_by_scope:
+                snapshot = build_usage_profile_snapshot(
+                    snapshot_store,
+                    _review_identity(item),
+                    device_scope_key=device_scope_key,
+                    case_scope_key=clean_text(item.get("case_scope_key")),
+                )
+                shared_flags_by_scope[device_scope_key] = shared_account_suspected_from_usage_profile(snapshot)
+            item["shared_account_suspected"] = bool(shared_flags_by_scope[device_scope_key])
+
+    def _usage_profile_snapshot_is_stale(
+        self,
+        conn: sqlite3.Connection,
+        case_payload: Mapping[str, Any],
+        snapshot: Mapping[str, Any] | None,
+    ) -> bool:
+        profile = snapshot if isinstance(snapshot, Mapping) else {}
+        snapshot_updated_at = clean_text(profile.get("_snapshot_updated_at") or profile.get("updated_at"))
+        if not snapshot_updated_at:
+            return True
+        case_updated_at = clean_text(case_payload.get("updated_at"))
+        if case_updated_at and case_updated_at > snapshot_updated_at:
+            return True
+
+        scope_type = clean_text(case_payload.get("target_scope_type") or case_payload.get("scope_type")) or "ip_only"
+        device_scope_key = clean_text(case_payload.get("device_scope_key"))
+        case_scope_key = clean_text(case_payload.get("case_scope_key"))
+        if scope_type == "subject_ip" and device_scope_key.startswith("subject:"):
+            row = conn.execute(
+                "SELECT MAX(id) AS last_event_id, MAX(created_at) AS last_created_at FROM analysis_events WHERE subject_key = ?",
+                (device_scope_key[len("subject:") :],),
+            ).fetchone()
+        elif device_scope_key:
+            row = conn.execute(
+                "SELECT MAX(id) AS last_event_id, MAX(created_at) AS last_created_at FROM analysis_events WHERE device_scope_key = ?",
+                (device_scope_key,),
+            ).fetchone()
+        elif case_scope_key:
+            row = conn.execute(
+                "SELECT MAX(id) AS last_event_id, MAX(created_at) AS last_created_at FROM analysis_events WHERE case_scope_key = ?",
+                (case_scope_key,),
+            ).fetchone()
+        else:
+            return False
+        latest_event_id = int(case_payload.get("latest_event_id") or 0)
+        if row and int(row["last_event_id"] or 0) > latest_event_id:
+            return True
+        return clean_text(row["last_created_at"] if row else "") > snapshot_updated_at
 
     def _ensure_review_case(
         self,
@@ -1171,6 +1260,7 @@ class ReviewAdminRepository(SQLiteRepository):
         item["target_ip"] = clean_text(item.get("ip")) or None
         item["target_scope_type"] = clean_text(item.get("scope_type")) or "ip_only"
         item["device_display"] = device_display_from_identity(item) or None
+        item["shared_account_suspected"] = bool(item.get("shared_account_suspected"))
         item["review_url"] = self.build_review_url(int(item["id"]))
         return item
 
@@ -1184,6 +1274,7 @@ class ReviewAdminRepository(SQLiteRepository):
             event_payload["target_ip"] = clean_text(event_payload.get("ip")) or None
             event_payload["target_scope_type"] = clean_text(event_payload.get("scope_type")) or "ip_only"
             event_payload["device_display"] = device_display_from_identity(event_payload) or None
+            event_payload["shared_account_suspected"] = bool(event_payload.get("shared_account_suspected"))
         return event_payload
 
     def list_review_cases(
@@ -1326,6 +1417,7 @@ class ReviewAdminRepository(SQLiteRepository):
                     clean_text(item.get("device_scope_key")),
                     [],
                 )
+            self._shared_account_flags_for_items(conn, items)
         return {
             "items": items,
             "count": total,
@@ -1434,7 +1526,7 @@ class ReviewAdminRepository(SQLiteRepository):
                 if self.read_model_loader
                 else None
             )
-            if usage_profile is None:
+            if usage_profile is None or self._usage_profile_snapshot_is_stale(conn, case, usage_profile):
                 usage_profile = build_usage_profile_snapshot(
                     _ConnectionBackedStore(self, conn),
                     _review_identity(case),
@@ -1448,7 +1540,18 @@ class ReviewAdminRepository(SQLiteRepository):
                     snapshot=usage_profile,
                     updated_at=clean_text(case.get("updated_at")) or _utcnow(),
                 )
+            case["shared_account_suspected"] = (
+                shared_account_suspected_from_usage_profile(usage_profile)
+                if clean_text(case.get("target_scope_type")) == "subject_ip"
+                else False
+            )
             case["latest_event"] = self._decode_analysis_event_payload(event_row)
+            if case["latest_event"]:
+                case["latest_event"]["shared_account_suspected"] = (
+                    bool(case["shared_account_suspected"])
+                    if clean_text(case["latest_event"].get("target_scope_type")) == "subject_ip"
+                    else False
+                )
             case["resolutions"] = [dict(row) for row in resolutions]
             case["usage_profile"] = usage_profile
             case["enforcement"] = [
@@ -1466,6 +1569,7 @@ class ReviewAdminRepository(SQLiteRepository):
             related_case_ids = [int(item["id"]) for item in related_items]
             related_ip_inventory = self._case_ip_inventory(conn, related_case_ids)
             related_module_inventory = self._case_module_inventory(conn, related_case_ids)
+            self._shared_account_flags_for_items(conn, related_items)
             case["related_cases"] = [
                 self._apply_inventory_payloads(
                     item,
@@ -1476,6 +1580,59 @@ class ReviewAdminRepository(SQLiteRepository):
             ]
             conn.commit()
             return case
+
+    def rebuild_review_case_usage_profiles(self, conn: sqlite3.Connection) -> int:
+        rows = conn.execute(
+            """
+            SELECT id, uuid, username, system_id, telegram_id, case_scope_key, device_scope_key,
+                   scope_type, opened_at, repeat_count, confidence_band, punitive_eligible
+            FROM review_cases
+            WHERE latest_event_id IS NOT NULL
+            """
+        ).fetchall()
+        if not rows:
+            return 0
+
+        snapshot_store: Any = _ConnectionBackedStore(self, conn)
+        updated = 0
+        for row in rows:
+            payload = dict(row)
+            snapshot = build_usage_profile_snapshot(
+                snapshot_store,
+                _review_identity(payload),
+                anchor_started_at=clean_text(payload.get("opened_at")),
+                device_scope_key=clean_text(payload.get("device_scope_key")),
+                case_scope_key=clean_text(payload.get("case_scope_key")),
+            )
+            priority = build_usage_profile_priority(
+                snapshot,
+                punitive_eligible=bool(payload.get("punitive_eligible")),
+                confidence_band=clean_text(payload.get("confidence_band")),
+                repeat_count=max(int(payload.get("repeat_count") or 1), 1),
+            )
+            conn.execute(
+                """
+                UPDATE review_cases
+                SET usage_profile_summary = ?,
+                    usage_profile_signal_count = ?,
+                    usage_profile_priority = ?,
+                    usage_profile_soft_reasons_json = ?,
+                    usage_profile_ongoing_duration_seconds = ?,
+                    usage_profile_ongoing_duration_text = ?
+                WHERE id = ?
+                """,
+                (
+                    str(snapshot.get("usage_profile_summary") or ""),
+                    int(priority["signal_count"]),
+                    int(priority["priority"]),
+                    json.dumps(snapshot.get("soft_reasons", []), ensure_ascii=False),
+                    snapshot.get("ongoing_duration_seconds"),
+                    str(snapshot.get("ongoing_duration_text") or ""),
+                    int(payload["id"]),
+                ),
+            )
+            updated += 1
+        return updated
 
     def backfill_review_subjects_and_contexts(self, conn: sqlite3.Connection) -> None:
         case_rows = conn.execute(
@@ -1498,7 +1655,7 @@ class ReviewAdminRepository(SQLiteRepository):
                 fallback_tag="",
                 fallback_module_id=clean_text(payload.get("module_id")),
                 fallback_module_name=clean_text(payload.get("module_name")),
-            ) if latest_event_id else build_review_scope(payload, ip=payload.get("ip"))
+            ) if latest_event_id else build_review_scope(payload, payload, ip=payload.get("ip"))
             if clean_text(payload.get("subject_key")) != subject_key:
                 conn.execute(
                     "UPDATE review_cases SET subject_key = ? WHERE id = ?",
@@ -1561,14 +1718,15 @@ class ReviewAdminRepository(SQLiteRepository):
         event_rows = conn.execute(
             """
             SELECT id, subject_key, case_scope_key, device_scope_key, scope_type,
-                   ip, client_device_id, client_device_label
+                   uuid, username, system_id, telegram_id, ip,
+                   client_device_id, client_device_label, client_os_family, client_app_name
             FROM analysis_events
             """
         ).fetchall()
         for row in event_rows:
             payload = dict(row)
             subject_key = subject_key_from_identity(payload, ip=payload.get("ip"))
-            scope = build_review_scope(payload, ip=payload.get("ip"))
+            scope = build_review_scope(payload, payload, ip=payload.get("ip"))
             if clean_text(payload.get("subject_key")) != subject_key:
                 conn.execute(
                     "UPDATE analysis_events SET subject_key = ? WHERE id = ?",

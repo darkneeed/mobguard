@@ -197,4 +197,37 @@ describe("DataPage events", () => {
     expect(await screen.findByText("1.2.3.4 · Pixel 8")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Case: #77" })).toHaveAttribute("href", "/reviews/77");
   });
+
+  it("renders subject-level account context without calling it a device", async () => {
+    vi.mocked(api.getAnalysisEvents).mockResolvedValue({
+      items: [
+        {
+          id: 12,
+          created_at: "2026-04-12T08:05:00Z",
+          ip: "5.6.7.8",
+          target_ip: "5.6.7.8",
+          target_scope_type: "subject_ip",
+          shared_account_suspected: true,
+          verdict: "UNSURE",
+          confidence_band: "UNSURE",
+          score: 0,
+          inbound_tag: "TAG-B",
+          module_name: "Node B",
+          isp: "ISP B",
+          asn: 67890
+        }
+      ],
+      count: 1,
+      page: 1,
+      page_size: 50
+    });
+
+    renderWithProviders(<DataPage />, {
+      route: "/data/events",
+      path: "/data/:section"
+    });
+
+    expect(await screen.findByText("5.6.7.8 · Account context, shared access possible")).toBeInTheDocument();
+    expect(screen.getByText("Scope: Account context, shared access possible")).toBeInTheDocument();
+  });
 });

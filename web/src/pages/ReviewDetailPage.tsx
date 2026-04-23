@@ -12,6 +12,7 @@ import {
 } from "../api/client";
 import { useToast } from "../components/ToastProvider";
 import { describeReasonCode, describeSoftReason } from "../features/reviews/lib/signalBadges";
+import { describeScopeContext } from "../features/reviews/lib/scopeContext";
 import { useI18n } from "../localization";
 import { formatUsageDeviceInventory, hasPanelUsageDevices, usageDevicePrimaryLabel } from "../shared/usageDevices";
 import { formatDisplayDateTime } from "../utils/datetime";
@@ -215,7 +216,17 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
   const sameDeviceHistory = Array.isArray(data?.same_device_ip_history) && data.same_device_ip_history.length > 0
     ? data.same_device_ip_history
     : ipInventory;
-  const deviceDisplay = formatValue((data?.device_display as string | undefined) || usageDeviceSummary);
+  const scopeContext = describeScopeContext(
+    t,
+    (data?.target_scope_type || data?.scope_type) as string | undefined,
+    Boolean(data?.shared_account_suspected),
+    sameDeviceHistory.length
+  );
+  const deviceDisplay = formatValue(
+    scopeContext.scopeType === "ip_device"
+      ? ((data?.device_display as string | undefined) || usageDeviceSummary)
+      : scopeContext.contextValue
+  );
   const inboundTag = formatValue(((data?.inbound_tag || data?.tag || (sameDeviceHistory[0] as Record<string, unknown> | undefined)?.inbound_tag)) as string | undefined);
   const providerDisplay = formatValue(((data?.isp || data?.provider_key || sameDeviceHistory[0]?.isp)) as string | undefined);
   const primaryIp = formatValue((data?.target_ip || data?.ip) as string | undefined);
@@ -319,7 +330,7 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
               </div>
               <dl className="detail-list">
                 <div><dt>{t("reviewDetail.fields.ip")}</dt><dd>{primaryIp}</dd></div>
-                <div><dt>{t("reviewDetail.fields.device")}</dt><dd>{deviceDisplay}</dd></div>
+                <div><dt>{scopeContext.contextLabel}</dt><dd>{deviceDisplay}</dd></div>
                 <div><dt>{t("reviewDetail.fields.isp")}</dt><dd>{providerDisplay}</dd></div>
                 <div><dt>{t("reviewDetail.fields.asn")}</dt><dd>{summaryAsn}</dd></div>
                 <div><dt>{t("reviewDetail.fields.tag")}</dt><dd>{inboundTag}</dd></div>
@@ -426,7 +437,7 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
               </div>
 
               <div className="panel">
-                <h2>{t("reviewDetail.sections.ipInventory")}</h2>
+                <h2>{scopeContext.historyTitle}</h2>
                 <ul className="reason-list review-detail-list">
                   {sameDeviceHistory.length === 0 ? (
                     <li className="review-detail-item review-detail-item-empty">

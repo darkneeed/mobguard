@@ -35,6 +35,23 @@ export const ruDictionary: TranslationDictionary = {
     deviceSources: {
       panelUser: "Remnawave HWID",
       event: "access log"
+    },
+    scopeLabels: {
+      deviceField: "Устройство",
+      accountField: "Контекст аккаунта",
+      contextField: "Контекст",
+      ipDeviceScope: "Решение для IP в контексте устройства",
+      subjectIpScope: "Решение для IP в контексте аккаунта",
+      ipOnlyScope: "Решение только для этого IP",
+      ipDeviceHistoryTitle: "IP этого устройства",
+      subjectIpHistoryTitle: "IP этого аккаунта",
+      ipOnlyHistoryTitle: "Только этот IP",
+      ipDeviceHistory: "IP этого устройства: {count}",
+      subjectIpHistory: "IP этого аккаунта: {count}",
+      ipOnlyHistory: "Только этот IP: {count}",
+      subjectContext: "Контекст аккаунта",
+      sharedAccountContext: "Контекст аккаунта, возможен общий доступ",
+      ipOnlyContext: "Точное устройство не зафиксировано"
     }
   },
   layout: {

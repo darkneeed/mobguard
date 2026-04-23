@@ -11,6 +11,7 @@ from mobguard_platform.usage_profile import (
     build_usage_profile_priority,
     build_usage_profile_snapshot,
     build_usage_profile_template_context,
+    shared_account_suspected_from_usage_profile,
 )
 
 
@@ -312,6 +313,130 @@ class UsageProfileTests(unittest.TestCase):
         self.assertFalse(device_snapshot["travel_flags"]["geo_country_jump"])
         self.assertEqual(device_snapshot["ip_count"], 1)
         self.assertEqual(device_snapshot["device_count"], 1)
+
+    def test_shared_account_suspected_when_multiple_exact_devices_are_present(self):
+        self._record_event(
+            "2026-04-11T10:00:00",
+            "1.1.1.1",
+            "Provider RU",
+            "node-a",
+            "Node A",
+            device_id="ios-1",
+            device_label="iPhone 15",
+            os_family="iOS",
+        )
+        self._record_event(
+            "2026-04-11T10:10:00",
+            "1.1.1.2",
+            "Provider RU",
+            "node-a",
+            "Node A",
+            device_id="and-1",
+            device_label="Pixel 8",
+            os_family="Android",
+        )
+
+        snapshot = build_usage_profile_snapshot(
+            self.store,
+            {"uuid": "uuid-1", "username": "alice", "system_id": 42, "telegram_id": "1001"},
+        )
+
+        self.assertEqual(snapshot["exact_device_count"], 2)
+        self.assertTrue(shared_account_suspected_from_usage_profile(snapshot))
+
+    def test_shared_account_suspected_when_device_os_mismatch_is_detected(self):
+        self._record_event(
+            "2026-04-11T10:00:00",
+            "1.1.1.1",
+            "Provider RU",
+            "node-a",
+            "Node A",
+            device_id="stable-1",
+            device_label="Shared handset",
+            os_family="iOS",
+        )
+        self._record_event(
+            "2026-04-11T10:10:00",
+            "1.1.1.2",
+            "Provider RU",
+            "node-a",
+            "Node A",
+            device_id="stable-1",
+            device_label="Shared handset",
+            os_family="Android",
+        )
+
+        snapshot = build_usage_profile_snapshot(
+            self.store,
+            {"uuid": "uuid-1", "username": "alice", "system_id": 42, "telegram_id": "1001"},
+        )
+
+        self.assertIn("device_os_mismatch", snapshot["soft_reasons"])
+        self.assertTrue(shared_account_suspected_from_usage_profile(snapshot))
+
+    def test_shared_account_suspected_when_geo_impossible_travel_is_detected(self):
+        self._record_event(
+            "2026-04-11T10:00:00",
+            "1.1.1.1",
+            "Provider RU",
+            "node-a",
+            "Node A",
+            country="RU",
+            region="Moscow",
+            city="Moscow",
+            loc="55.7558,37.6176",
+        )
+        self._record_event(
+            "2026-04-11T12:00:00",
+            "2.2.2.2",
+            "Provider DE",
+            "node-b",
+            "Node B",
+            country="DE",
+            region="Berlin",
+            city="Berlin",
+            loc="52.5200,13.4050",
+        )
+
+        snapshot = build_usage_profile_snapshot(
+            self.store,
+            {"uuid": "uuid-1", "username": "alice", "system_id": 42, "telegram_id": "1001"},
+        )
+
+        self.assertIn("geo_impossible_travel", snapshot["soft_reasons"])
+        self.assertTrue(shared_account_suspected_from_usage_profile(snapshot))
+
+    def test_shared_account_suspected_when_cross_node_and_provider_fanout_overlap(self):
+        self._record_event(
+            "2026-04-11T10:00:00",
+            "1.1.1.1",
+            "Provider A",
+            "node-a",
+            "Node A",
+        )
+        self._record_event(
+            "2026-04-11T10:10:00",
+            "1.1.1.2",
+            "Provider B",
+            "node-b",
+            "Node B",
+        )
+        self._record_event(
+            "2026-04-11T10:20:00",
+            "1.1.1.3",
+            "Provider C",
+            "node-b",
+            "Node B",
+        )
+
+        snapshot = build_usage_profile_snapshot(
+            self.store,
+            {"uuid": "uuid-1", "username": "alice", "system_id": 42, "telegram_id": "1001"},
+        )
+
+        self.assertIn("cross_node_fanout", snapshot["soft_reasons"])
+        self.assertIn("provider_fanout", snapshot["soft_reasons"])
+        self.assertTrue(shared_account_suspected_from_usage_profile(snapshot))
 
 
 if __name__ == "__main__":

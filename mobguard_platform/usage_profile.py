@@ -160,7 +160,10 @@ def _identity_lookup(
     case_scope_key: str | None = None,
 ) -> tuple[str, list[Any]]:
     if device_scope_key:
-        return "device_scope_key = ?", [str(device_scope_key)]
+        normalized_scope_key = str(device_scope_key)
+        if normalized_scope_key.startswith("subject:"):
+            return "subject_key = ?", [normalized_scope_key[len("subject:") :]]
+        return "device_scope_key = ?", [normalized_scope_key]
     if case_scope_key:
         return "case_scope_key = ?", [str(case_scope_key)]
     source = identity or {}
@@ -712,6 +715,13 @@ def build_usage_profile_snapshot(
         for device in device_map.values()
         if device.get("label") or device.get("os_family") or device.get("device_id")
     ]
+    exact_device_count = len(
+        {
+            _clean_text(device.get("device_id")).lower()
+            for device in device_map.values()
+            if _clean_text(device.get("device_id"))
+        }
+    )
     os_families = sorted(
         {
             _clean_text(device.get("os_family"))
@@ -951,6 +961,7 @@ def build_usage_profile_snapshot(
         "ip_count": len(ip_counter),
         "provider_count": len(provider_counter),
         "device_count": len(device_map),
+        "exact_device_count": exact_device_count,
         "device_labels": device_labels[:10],
         "devices": list(device_map.values())[:10],
         "os_families": os_families,
@@ -976,6 +987,22 @@ def build_usage_profile_snapshot(
         "summary_score": len(soft_reasons),
         "summary_reason_set": list(soft_reasons),
     }
+
+
+def shared_account_suspected_from_usage_profile(snapshot: Mapping[str, Any] | None) -> bool:
+    profile = snapshot if isinstance(snapshot, Mapping) else {}
+    soft_reasons = {
+        _clean_text(value)
+        for value in (profile.get("soft_reasons") if isinstance(profile.get("soft_reasons"), list) else [])
+        if _clean_text(value)
+    }
+    exact_device_count = int(profile.get("exact_device_count") or 0)
+    return (
+        exact_device_count >= DEVICE_ROTATION_THRESHOLD
+        or "device_os_mismatch" in soft_reasons
+        or "geo_impossible_travel" in soft_reasons
+        or {"cross_node_fanout", "provider_fanout"}.issubset(soft_reasons)
+    )
 
 
 def build_usage_profile_template_context(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:

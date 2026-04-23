@@ -41,6 +41,8 @@ describe("ReviewQueuePage", () => {
         telegram_id: "11",
         ip: "1.1.1.1",
         tag: null,
+        target_scope_type: "ip_device",
+        device_display: "Pixel 8",
         verdict: "UNSURE",
         confidence_band: "UNSURE",
         score: 42,
@@ -110,6 +112,8 @@ describe("ReviewQueuePage", () => {
         telegram_id: "22",
         ip: "2.2.2.2",
         tag: null,
+        target_scope_type: "subject_ip",
+        shared_account_suspected: true,
         verdict: "UNSURE",
         confidence_band: "UNSURE",
         score: 12,
@@ -191,7 +195,10 @@ describe("ReviewQueuePage", () => {
     expect(document.querySelector(".review-queue-grid")).not.toBeNull();
     expect(screen.getByText("priority 980")).toBeInTheDocument();
     expect(screen.getByText("2 IPs on this device")).toBeInTheDocument();
-    expect(screen.getAllByText("Decision for this IP only").length).toBeGreaterThan(0);
+    expect(screen.getByText("Decision for this IP in device context")).toBeInTheDocument();
+    expect(screen.getByText("Decision for this IP in account context")).toBeInTheDocument();
+    expect(screen.getByText(/Account context, shared access possible/)).toBeInTheDocument();
+    expect(screen.getByText("1 IPs on this account")).toBeInTheDocument();
     expect(screen.getByText("ISP A")).toBeInTheDocument();
     expect(screen.getByText("Provider conflict")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute("href", "/data/console");

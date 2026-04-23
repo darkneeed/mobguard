@@ -6,6 +6,7 @@ import { prefetchRouteModule } from "../app/routeModules";
 import { api, ReviewItem, ReviewListResponse, Session } from "../api/client";
 import { useToast } from "../components/ToastProvider";
 import { describeReasonCode, describeSoftReason } from "../features/reviews/lib/signalBadges";
+import { describeScopeContext } from "../features/reviews/lib/scopeContext";
 import { useI18n } from "../localization";
 import { buildSearchParams } from "../shared/api/request";
 import { formatDisplayDateTime } from "../utils/datetime";
@@ -658,12 +659,16 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
               const providerKey = item.provider_key || "";
               const serviceHint = item.provider_service_hint || "unknown";
               const primaryIp = item.target_ip || item.ip;
-              const deviceDisplay = item.device_display || (item.target_scope_type === "ip_only"
-                ? t("reviewQueue.card.ipOnlyDevice")
-                : t("common.notAvailable"));
-              const decisionTarget = item.target_scope_type === "ip_device"
-                ? t("reviewQueue.card.ipDeviceScope")
-                : t("reviewQueue.card.ipOnlyScope");
+              const scopeContext = describeScopeContext(
+                t,
+                item.target_scope_type || item.scope_type,
+                Boolean(item.shared_account_suspected),
+                sameDeviceHistory.length
+              );
+              const deviceDisplay = scopeContext.scopeType === "ip_device"
+                ? item.device_display || t("common.notAvailable")
+                : scopeContext.contextValue;
+              const decisionTarget = scopeContext.decisionTarget;
               const providerDisplay = item.isp || providerKey || t("common.notAvailable");
               const operatorReasonBadges = item.reason_codes.slice(0, 3).map((code) => ({
                 code,
@@ -697,7 +702,7 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                     <strong>{item.username || formatIdentifier(t("reviewQueue.identifiers.user"), item.system_id)}</strong>
                     <span>{formatIdentifier(t("reviewQueue.identifiers.module"), item.module_name || item.module_id)}</span>
                     <span>{formatIdentifier(t("reviewQueue.identifiers.inbound"), item.inbound_tag || item.tag)}</span>
-                    <span>{formatIdentifier(t("reviewQueue.identifiers.device"), deviceDisplay)}</span>
+                    <span>{formatIdentifier(scopeContext.contextLabel, deviceDisplay)}</span>
                     <span>{formatIdentifier(t("reviewQueue.identifiers.system"), item.system_id)}</span>
                     <span>{formatIdentifier(t("reviewQueue.identifiers.telegram"), item.telegram_id)}</span>
                   </div>
@@ -741,7 +746,7 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                   </div>
                   <div className="queue-card-inventory">
                     <span className="queue-card-section-label">
-                      {t("reviewQueue.card.sameDeviceHistory", { count: sameDeviceHistory.length })}
+                      {scopeContext.historyLabel}
                     </span>
                     <div className="queue-card-chip-list">
                       {sameDeviceHistory.map((entry) => (

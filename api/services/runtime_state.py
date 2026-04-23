@@ -15,7 +15,10 @@ from mobguard_platform.runtime import (
 )
 from mobguard_platform.panel_client import PanelClient
 from mobguard_platform.review_context import subject_key_from_identity
-from mobguard_platform.usage_profile import build_usage_profile_snapshot
+from mobguard_platform.usage_profile import (
+    build_usage_profile_snapshot,
+    shared_account_suspected_from_usage_profile,
+)
 from mobguard_platform.runtime_admin_defaults import (
     ENFORCEMENT_SETTINGS_DEFAULTS,
     ENFORCEMENT_TEMPLATE_DEFAULTS,
@@ -492,7 +495,32 @@ def _enrich_analysis_event_row(row: dict[str, Any]) -> dict[str, Any]:
         or payload.get("client_device_id")
         or None
     )
+    payload["shared_account_suspected"] = bool(payload.get("shared_account_suspected"))
     return payload
+
+
+def _apply_shared_account_flags(store: Any, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not items:
+        return items
+    shared_flags_by_scope: dict[str, bool] = {}
+    for item in items:
+        item["shared_account_suspected"] = False
+        scope_type = str(item.get("scope_type") or item.get("target_scope_type") or "").strip() or "ip_only"
+        if scope_type != "subject_ip":
+            continue
+        device_scope_key = str(item.get("device_scope_key") or "").strip()
+        if not device_scope_key:
+            continue
+        if device_scope_key not in shared_flags_by_scope:
+            snapshot = build_usage_profile_snapshot(
+                store,
+                {},
+                device_scope_key=device_scope_key,
+                case_scope_key=str(item.get("case_scope_key") or "").strip() or None,
+            )
+            shared_flags_by_scope[device_scope_key] = shared_account_suspected_from_usage_profile(snapshot)
+        item["shared_account_suspected"] = bool(shared_flags_by_scope[device_scope_key])
+    return items
 
 
 def build_user_card(store: Any, identity: dict[str, Any]) -> dict[str, Any]:
@@ -586,7 +614,10 @@ def build_user_card(store: Any, identity: dict[str, Any]) -> dict[str, Any]:
         "active_trackers": [dict(row) for row in trackers],
         "ip_history": [dict(row) for row in ip_history],
         "review_cases": [dict(row) for row in review_cases],
-        "analysis_events": [_enrich_analysis_event_row(dict(row)) for row in recent_events],
+        "analysis_events": _apply_shared_account_flags(
+            store,
+            [_enrich_analysis_event_row(dict(row)) for row in recent_events],
+        ),
         "usage_profile": usage_profile,
         "flags": {
             "exempt_system_id": coerce_optional_int(system_id) in exempt_system_ids if system_id not in (None, "") else False,
@@ -688,7 +719,10 @@ def list_analysis_events(store: Any, filters: dict[str, Any]) -> dict[str, Any]:
             [*params, page_size, (page - 1) * page_size],
         ).fetchall()
 
-    items = [_enrich_analysis_event_row(dict(row)) for row in rows]
+    items = _apply_shared_account_flags(
+        store,
+        [_enrich_analysis_event_row(dict(row)) for row in rows],
+    )
     for item in items:
         review_case_id = item.get("review_case_id")
         item["review_url"] = store.build_review_url(int(review_case_id)) if review_case_id not in (None, "") else ""

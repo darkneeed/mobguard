@@ -188,6 +188,50 @@ class ReviewBackfillTests(unittest.TestCase):
         self.assertIsNone(detail["uuid"])
         self.assertIsNone(detail["telegram_id"])
 
+    def test_scope_backfill_rebuilds_subject_ip_context_and_drops_stale_usage_snapshots(self):
+        with self.store._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO read_model_snapshots (snapshot_type, scope_key, payload_json, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    "review_usage_profile",
+                    "1",
+                    json.dumps({"usage_profile_summary": "stale snapshot"}, ensure_ascii=False),
+                    "2026-04-12T10:00:00",
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE review_cases
+                SET usage_profile_summary = ?, usage_profile_soft_reasons_json = ?
+                WHERE id = ?
+                """,
+                ("stale summary", '["stale_reason"]', 1),
+            )
+            conn.commit()
+
+        summary = self.store.run_review_scope_backfill(force=True)
+        with self.store._connect() as conn:
+            snapshot_count = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM read_model_snapshots WHERE snapshot_type = ?",
+                ("review_usage_profile",),
+            ).fetchone()["cnt"]
+        listing = review_service.list_reviews(self.container, {"page": 1, "page_size": 25, "status": "OPEN"})
+        detail = review_service.get_review(self.container, 1)
+
+        self.assertTrue(summary["ran"])
+        self.assertGreaterEqual(summary["recomputed_cases"], 1)
+        self.assertGreaterEqual(summary["deleted_usage_snapshots"], 1)
+        self.assertEqual(listing["items"][0]["target_scope_type"], "subject_ip")
+        self.assertEqual(
+            {entry["ip"] for entry in detail["same_device_ip_history"]},
+            {"1.2.3.4", "1.2.3.5"},
+        )
+        self.assertNotEqual(detail["usage_profile_summary"], "stale summary")
+        self.assertEqual(snapshot_count, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

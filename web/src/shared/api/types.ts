@@ -57,7 +57,7 @@ export type ReviewItem = {
   subject_key?: string;
   case_scope_key?: string;
   device_scope_key?: string;
-  scope_type?: "ip_device" | "ip_only";
+  scope_type?: "ip_device" | "subject_ip" | "ip_only";
   module_id: string | null;
   module_name: string | null;
   client_device_id?: string | null;
@@ -72,8 +72,9 @@ export type ReviewItem = {
   tag: string | null;
   inbound_tag?: string | null;
   target_ip?: string | null;
-  target_scope_type?: "ip_device" | "ip_only";
+  target_scope_type?: "ip_device" | "subject_ip" | "ip_only";
   device_display?: string | null;
+  shared_account_suspected?: boolean;
   verdict: string;
   confidence_band: string;
   score: number;
@@ -329,7 +330,7 @@ export type AnalysisEventItem = {
   tag?: string | null;
   inbound_tag?: string | null;
   target_ip?: string | null;
-  target_scope_type?: "ip_device" | "ip_only";
+  target_scope_type?: "ip_device" | "subject_ip" | "ip_only";
   case_scope_key?: string | null;
   device_scope_key?: string | null;
   verdict: string;
@@ -344,6 +345,7 @@ export type AnalysisEventItem = {
   client_os_family?: string | null;
   client_app_name?: string | null;
   device_display?: string | null;
+  shared_account_suspected?: boolean;
   country?: string | null;
   region?: string | null;
   city?: string | null;

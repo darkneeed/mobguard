@@ -601,14 +601,50 @@ class StoreReviewFlowTests(unittest.TestCase):
         self.assertNotEqual(first_case.id, second_case.id)
         self.assertEqual(first_detail["subject_key"], "tg:1001")
         self.assertEqual(second_detail["subject_key"], "tg:1001")
+        self.assertEqual(first_detail["target_scope_type"], "subject_ip")
+        self.assertEqual(second_detail["target_scope_type"], "subject_ip")
         self.assertEqual(first_detail["ip"], "10.10.10.10")
         self.assertEqual(second_detail["ip"], "10.10.10.11")
         self.assertEqual(first_detail["distinct_ip_count"], 1)
         self.assertEqual(second_detail["distinct_ip_count"], 1)
+        self.assertEqual(
+            {entry["ip"] for entry in first_detail["same_device_ip_history"]},
+            {"10.10.10.10", "10.10.10.11"},
+        )
+        self.assertEqual(
+            {entry["ip"] for entry in second_detail["same_device_ip_history"]},
+            {"10.10.10.10", "10.10.10.11"},
+        )
         self.assertEqual(first_detail["module_count"], 1)
         self.assertEqual(second_detail["module_count"], 1)
         self.assertEqual(modules["node-a"], 1)
         self.assertEqual(modules["node-b"], 1)
+
+    def test_review_cases_stay_separate_for_different_accounts_on_same_ip_without_device_id(self):
+        first_user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
+        second_user = {"uuid": "uuid-2", "username": "bob", "telegramId": "2002", "id": 77}
+        bundle = DecisionBundle(
+            ip="10.10.10.42",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-A",
+        )
+
+        first_event = self.store.record_analysis_event(first_user, bundle.ip, "TAG", bundle)
+        first_case = self.store.ensure_review_case(first_user, bundle.ip, "TAG", bundle, first_event, "unsure")
+        second_event = self.store.record_analysis_event(second_user, bundle.ip, "TAG", bundle)
+        second_case = self.store.ensure_review_case(second_user, bundle.ip, "TAG", bundle, second_event, "unsure")
+
+        first_detail = self.store.get_review_case(first_case.id)
+        second_detail = self.store.get_review_case(second_case.id)
+
+        self.assertNotEqual(first_case.id, second_case.id)
+        self.assertEqual(first_detail["target_scope_type"], "subject_ip")
+        self.assertEqual(second_detail["target_scope_type"], "subject_ip")
+        self.assertNotEqual(first_detail["case_scope_key"], second_detail["case_scope_key"])
+        self.assertNotEqual(first_detail["device_scope_key"], second_detail["device_scope_key"])
 
     def test_review_cases_merge_by_same_device_and_same_ip_scope(self):
         first_user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
@@ -728,6 +764,49 @@ class StoreReviewFlowTests(unittest.TestCase):
             {entry["ip"] for entry in items[second_case.id]["same_device_ip_history"]},
             {"10.10.10.70"},
         )
+
+    def test_subject_ip_cases_expose_shared_account_flag_when_multiple_exact_devices_exist(self):
+        user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
+        bundle = DecisionBundle(
+            ip="10.10.10.80",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-A",
+        )
+
+        first_event = self.store.record_analysis_event(
+            user,
+            bundle.ip,
+            "TAG",
+            bundle,
+            observation={"client_device_label": "iPhone 15"},
+        )
+        case = self.store.ensure_review_case(user, bundle.ip, "TAG", bundle, first_event, "unsure")
+        self.store.record_analysis_event(
+            user,
+            "10.10.10.81",
+            "TAG",
+            bundle,
+            observation={"client_device_id": "dev-1", "client_device_label": "iPhone 15"},
+        )
+        self.store.record_analysis_event(
+            user,
+            "10.10.10.82",
+            "TAG",
+            bundle,
+            observation={"client_device_id": "dev-2", "client_device_label": "Pixel 8"},
+        )
+
+        detail = self.store.get_review_case(case.id)
+        listing = self.store.list_review_cases({})
+        listed = next(item for item in listing["items"] if item["id"] == case.id)
+
+        self.assertEqual(detail["target_scope_type"], "subject_ip")
+        self.assertTrue(detail["shared_account_suspected"])
+        self.assertTrue(detail["latest_event"]["shared_account_suspected"])
+        self.assertTrue(listed["shared_account_suspected"])
 
     def test_quality_metrics_use_persisted_provider_summary_without_bundle_decode(self):
         user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}

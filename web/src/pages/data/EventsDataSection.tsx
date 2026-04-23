@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { AnalysisEventListResponse } from "../../api/client";
+import { describeScopeContext } from "../../features/reviews/lib/scopeContext";
 import type { Language } from "../../localization/types";
 import { formatDisplayDateTime } from "../../utils/datetime";
 
@@ -158,40 +159,52 @@ export function EventsDataSection({ t, language, events, filters, setFilters }: 
             </div>
           ) : null}
           {items.map((item) => (
-            <div className="record-item" key={String(item.id)}>
-              <div className="record-main">
-                <span className="record-title">
-                  {item.target_ip || item.ip} · {item.device_display || t("data.events.ipOnly")}
-                </span>
-                <span className="tag">{item.verdict} / {item.confidence_band}</span>
-              </div>
-              <div className="record-meta">
-                <span>{t("data.events.meta.module", { value: String(item.module_name || item.module_id || "—") })}</span>
-                <span>{t("data.events.meta.inbound", { value: String(item.inbound_tag || item.tag || "—") })}</span>
-                <span>{t("data.events.meta.provider", { value: String(item.isp || "—") })}</span>
-                <span>{t("data.events.meta.asn", { value: String(item.asn ?? "—") })}</span>
-                <span>{formatDisplayDateTime(item.created_at, t("common.notAvailable"), language)}</span>
-              </div>
-              <div className="record-meta">
-                <span>{t("data.events.meta.scope", { value: String(item.target_scope_type || "ip_only") })}</span>
-                <span>
-                  {item.review_case_id ? (
-                    <Link to={`/reviews/${item.review_case_id}`}>
-                      {t("data.events.meta.case", { value: `#${item.review_case_id}` })}
-                    </Link>
-                  ) : (
-                    t("data.events.meta.case", { value: t("data.events.noCase") })
-                  )}
-                </span>
-                <span>{String(item.city || item.country || t("common.notAvailable"))}</span>
-              </div>
-              <div className="record-json-stack">
-                {renderJsonBlock(t("data.events.details.providerEvidence"), item.provider_evidence)}
-                {renderJsonBlock(t("data.events.details.reasons"), item.reasons)}
-                {renderJsonBlock(t("data.events.details.signalFlags"), item.signal_flags)}
-                {renderJsonBlock(t("data.events.details.rawBundle"), item.bundle)}
-              </div>
-            </div>
+            (() => {
+              const scopeContext = describeScopeContext(
+                t,
+                item.target_scope_type,
+                Boolean(item.shared_account_suspected)
+              );
+              const contextDisplay = scopeContext.scopeType === "ip_device"
+                ? item.device_display || t("common.notAvailable")
+                : scopeContext.contextValue;
+              return (
+                <div className="record-item" key={String(item.id)}>
+                  <div className="record-main">
+                    <span className="record-title">
+                      {item.target_ip || item.ip} · {contextDisplay}
+                    </span>
+                    <span className="tag">{item.verdict} / {item.confidence_band}</span>
+                  </div>
+                  <div className="record-meta">
+                    <span>{t("data.events.meta.module", { value: String(item.module_name || item.module_id || "—") })}</span>
+                    <span>{t("data.events.meta.inbound", { value: String(item.inbound_tag || item.tag || "—") })}</span>
+                    <span>{t("data.events.meta.provider", { value: String(item.isp || "—") })}</span>
+                    <span>{t("data.events.meta.asn", { value: String(item.asn ?? "—") })}</span>
+                    <span>{formatDisplayDateTime(item.created_at, t("common.notAvailable"), language)}</span>
+                  </div>
+                  <div className="record-meta">
+                    <span>{t("data.events.meta.scope", { value: scopeContext.scopeMeta })}</span>
+                    <span>
+                      {item.review_case_id ? (
+                        <Link to={`/reviews/${item.review_case_id}`}>
+                          {t("data.events.meta.case", { value: `#${item.review_case_id}` })}
+                        </Link>
+                      ) : (
+                        t("data.events.meta.case", { value: t("data.events.noCase") })
+                      )}
+                    </span>
+                    <span>{String(item.city || item.country || t("common.notAvailable"))}</span>
+                  </div>
+                  <div className="record-json-stack">
+                    {renderJsonBlock(t("data.events.details.providerEvidence"), item.provider_evidence)}
+                    {renderJsonBlock(t("data.events.details.reasons"), item.reasons)}
+                    {renderJsonBlock(t("data.events.details.signalFlags"), item.signal_flags)}
+                    {renderJsonBlock(t("data.events.details.rawBundle"), item.bundle)}
+                  </div>
+                </div>
+              );
+            })()
           ))}
         </div>
         <div className="record-actions">
