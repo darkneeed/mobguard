@@ -1,17 +1,41 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import sqlite3
 from collections import Counter
 from typing import Any
 
 from fastapi import HTTPException
 
 from mobguard_platform import review_reason_for_bundle, validate_live_rules_patch
+from mobguard_platform.storage.sqlite import is_sqlite_busy_error
 from mobguard_platform.usage_profile import build_usage_profile_snapshot
 
 from .modules import _analyze_event, _build_batch_context
 from .review_backfill import backfill_review_case_identities
 from .runtime_state import enrich_panel_user_usage_context, panel_client
+
+
+logger = logging.getLogger(__name__)
+
+
+def _recheck_busy_payload(
+    *,
+    revision: int,
+    counts: Counter[str] | None = None,
+    items: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    summary = dict(counts or {})
+    summary["skipped_busy"] = int(summary.get("skipped_busy") or 0) + 1
+    return {
+        "items": list(items or []),
+        "summary": summary,
+        "revision": revision,
+        "count": len(items or []),
+        "skipped": True,
+        "skip_reason": "database_locked",
+    }
 
 
 def list_reviews(container: Any, filters: dict[str, Any]) -> dict[str, Any]:
@@ -96,6 +120,8 @@ async def _recheck_case_ids(
     case_ids: list[int],
     actor: str,
     actor_tg_id: int,
+    *,
+    skip_on_busy: bool = False,
 ) -> dict[str, Any]:
     rules_state = container.store.get_live_rules_state()
     revision = int(rules_state.get("revision") or 0)
@@ -107,46 +133,52 @@ async def _recheck_case_ids(
     changed_counts: Counter[str] = Counter()
     items: list[dict[str, Any]] = []
     for case_id in case_ids:
-        detail = await asyncio.to_thread(container.store.get_review_case, case_id)
-        user_data = {
-            "uuid": detail.get("uuid"),
-            "username": detail.get("username"),
-            "id": detail.get("system_id"),
-            "telegramId": detail.get("telegram_id"),
-            "module_id": detail.get("module_id"),
-            "module_name": detail.get("module_name"),
-        }
-        payload = {
-            "uuid": detail.get("uuid"),
-            "username": detail.get("username"),
-            "system_id": detail.get("system_id"),
-            "telegram_id": detail.get("telegram_id"),
-            "ip": detail.get("ip"),
-            "tag": detail.get("tag"),
-        }
-        bundle = await _analyze_event(
-            scoring_runtime,
-            user_data,
-            payload,
-            persist_behavior_state=False,
-            persist_decision=False,
-        )
-        next_review_reason = review_reason_for_bundle(bundle)
-        auto_note = (
-            f"auto recheck via live rules revision {revision}: "
-            f"{bundle.verdict}/{bundle.confidence_band} score={bundle.score}"
-        )
-        updated = await container.store.async_recheck_review_case(
-            case_id,
-            user_data,
-            str(detail.get("ip") or ""),
-            str(detail.get("tag") or ""),
-            bundle,
-            next_review_reason,
-            actor,
-            actor_tg_id,
-            auto_note,
-        )
+        try:
+            detail = await asyncio.to_thread(container.store.get_review_case, case_id)
+            user_data = {
+                "uuid": detail.get("uuid"),
+                "username": detail.get("username"),
+                "id": detail.get("system_id"),
+                "telegramId": detail.get("telegram_id"),
+                "module_id": detail.get("module_id"),
+                "module_name": detail.get("module_name"),
+            }
+            payload = {
+                "uuid": detail.get("uuid"),
+                "username": detail.get("username"),
+                "system_id": detail.get("system_id"),
+                "telegram_id": detail.get("telegram_id"),
+                "ip": detail.get("ip"),
+                "tag": detail.get("tag"),
+            }
+            bundle = await _analyze_event(
+                scoring_runtime,
+                user_data,
+                payload,
+                persist_behavior_state=False,
+                persist_decision=False,
+            )
+            next_review_reason = review_reason_for_bundle(bundle)
+            auto_note = (
+                f"auto recheck via live rules revision {revision}: "
+                f"{bundle.verdict}/{bundle.confidence_band} score={bundle.score}"
+            )
+            updated = await container.store.async_recheck_review_case(
+                case_id,
+                user_data,
+                str(detail.get("ip") or ""),
+                str(detail.get("tag") or ""),
+                bundle,
+                next_review_reason,
+                actor,
+                actor_tg_id,
+                auto_note,
+            )
+        except sqlite3.OperationalError as exc:
+            if skip_on_busy and is_sqlite_busy_error(exc):
+                logger.info("Skipping review recheck because SQLite is busy at case_id=%s", case_id)
+                return _recheck_busy_payload(revision=revision, counts=changed_counts, items=items)
+            raise
         if updated["status"] == "SKIPPED":
             changed_counts["closed"] += 1
         else:
@@ -203,28 +235,43 @@ async def recheck_provider_sensitive_reviews(
     container: Any,
     actor: str,
     actor_tg_id: int,
+    *,
+    skip_on_busy: bool = False,
 ) -> dict[str, Any]:
+    revision = int(container.store.get_live_rules_state().get("revision") or 0)
     case_ids: list[int] = []
-    for review_reason in ("unsure", "provider_conflict"):
-        page = 1
-        while True:
-            listing = await asyncio.to_thread(
-                container.store.list_review_cases,
-                {
-                    "status": "OPEN",
-                    "review_reason": review_reason,
-                    "page": page,
-                    "page_size": 100,
-                    "sort": "updated_desc",
-                },
-            )
-            batch_ids = [int(item["id"]) for item in listing.get("items", [])]
-            case_ids.extend(batch_ids)
-            if not batch_ids or page * int(listing.get("page_size") or 100) >= int(listing.get("count") or 0):
-                break
-            page += 1
+    try:
+        for review_reason in ("unsure", "provider_conflict"):
+            page = 1
+            while True:
+                listing = await asyncio.to_thread(
+                    container.store.list_review_cases,
+                    {
+                        "status": "OPEN",
+                        "review_reason": review_reason,
+                        "page": page,
+                        "page_size": 100,
+                        "sort": "updated_desc",
+                    },
+                )
+                batch_ids = [int(item["id"]) for item in listing.get("items", [])]
+                case_ids.extend(batch_ids)
+                if not batch_ids or page * int(listing.get("page_size") or 100) >= int(listing.get("count") or 0):
+                    break
+                page += 1
+    except sqlite3.OperationalError as exc:
+        if skip_on_busy and is_sqlite_busy_error(exc):
+            logger.info("Skipping provider-sensitive review recheck because SQLite is busy during listing")
+            return _recheck_busy_payload(revision=revision)
+        raise
     deduped_case_ids = sorted(set(case_ids))
-    return await _recheck_case_ids(container, deduped_case_ids, actor, actor_tg_id)
+    return await _recheck_case_ids(
+        container,
+        deduped_case_ids,
+        actor,
+        actor_tg_id,
+        skip_on_busy=skip_on_busy,
+    )
 
 
 def get_rules(store: Any) -> dict[str, Any]:

@@ -24,11 +24,17 @@ logger = logging.getLogger(__name__)
 
 async def _provider_retune_recheck_task(app: FastAPI) -> None:
     try:
-        await review_service.recheck_provider_sensitive_reviews(
+        payload = await review_service.recheck_provider_sensitive_reviews(
             app.state.container,
             "system:provider-retune",
             0,
+            skip_on_busy=True,
         )
+        if payload.get("skipped"):
+            logger.info(
+                "Provider-sensitive startup recheck skipped: reason=%s",
+                payload.get("skip_reason") or "unknown",
+            )
     except Exception:  # pragma: no cover - best-effort startup maintenance
         logger.exception("Provider-sensitive startup recheck failed")
 

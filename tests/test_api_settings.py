@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from api.services import auth as auth_service
 from api.services import settings as settings_service
@@ -203,6 +204,27 @@ class APISettingsTests(unittest.TestCase):
         self.assertEqual(payload["panel_name"], "Acme Shield")
         self.assertEqual(payload["panel_logo_url"], "https://cdn.example.com/logo.png")
         self.assertEqual(payload["review_ui_base_url"], "https://panel.example.com")
+
+    def test_update_detection_settings_runs_provider_recheck_in_busy_safe_mode(self):
+        container = SimpleNamespace(store=object())
+
+        with patch.object(settings_service, "update_rules", return_value={"revision": 2}) as mocked_update_rules, patch.object(
+            settings_service,
+            "recheck_provider_sensitive_reviews",
+            return_value={"skipped": True, "skip_reason": "database_locked"},
+        ) as mocked_recheck:
+            payload = settings_service.update_detection_settings(
+                container,
+                {"settings": {"provider_conflict_review_only": True}},
+                "admin",
+                1001,
+                1,
+                "2026-04-12T00:00:00Z",
+            )
+
+        self.assertEqual(payload["revision"], 2)
+        mocked_update_rules.assert_called_once()
+        mocked_recheck.assert_called_once_with(container, "admin", 1001, skip_on_busy=True)
 
 
 if __name__ == "__main__":

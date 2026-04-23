@@ -164,6 +164,7 @@ def put_rules(
                 container,
                 session.get("username") or session.get("first_name") or f"tg:{session['telegram_id']}",
                 session["telegram_id"],
+                skip_on_busy=True,
             )
         )
     record_admin_action(

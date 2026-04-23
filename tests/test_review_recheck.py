@@ -1,11 +1,12 @@
 import asyncio
 import json
+import sqlite3
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from api.services import reviews as review_service
 from mobguard_platform import AnalysisStore, DecisionBundle, PlatformStore
@@ -133,6 +134,35 @@ class ReviewRecheckTests(unittest.TestCase):
         self.assertEqual(detail["status"], "SKIPPED")
         self.assertEqual(detail["verdict"], "MOBILE")
         self.assertEqual(detail["latest_event"]["verdict"], "MOBILE")
+
+    def test_provider_sensitive_recheck_skips_when_storage_is_busy(self):
+        refreshed = DecisionBundle(
+            ip="10.10.10.20",
+            verdict="HOME",
+            confidence_band="PROBABLE_HOME",
+            score=20,
+            asn=12345,
+            isp="MTS",
+        )
+
+        with patch.object(review_service, "_analyze_event", new=AsyncMock(return_value=refreshed)), patch.object(
+            self.store,
+            "async_recheck_review_case",
+            new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
+        ):
+            payload = asyncio.run(
+                review_service.recheck_provider_sensitive_reviews(
+                    self.container,
+                    "system",
+                    1001,
+                    skip_on_busy=True,
+                )
+            )
+
+        self.assertTrue(payload["skipped"])
+        self.assertEqual(payload["skip_reason"], "database_locked")
+        self.assertEqual(payload["summary"]["skipped_busy"], 1)
+        self.assertEqual(payload["count"], 0)
 
 
 if __name__ == "__main__":

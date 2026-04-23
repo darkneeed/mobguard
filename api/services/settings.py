@@ -61,7 +61,7 @@ def update_detection_settings(
         expected_updated_at=updated_at,
     )
     if provider_tuning_changed(payload):
-        asyncio.run(recheck_provider_sensitive_reviews(container, actor, actor_tg_id))
+        asyncio.run(recheck_provider_sensitive_reviews(container, actor, actor_tg_id, skip_on_busy=True))
     return result
 
 
