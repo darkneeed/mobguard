@@ -1202,6 +1202,9 @@ class PlatformStore:
                 "CREATE INDEX IF NOT EXISTS idx_review_cases_device_scope_status ON review_cases(device_scope_key, status, updated_at DESC)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_review_cases_overview_provider ON review_cases(status, provider_classification, provider_key, updated_at DESC)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_review_cases_priority ON review_cases(status, usage_profile_priority DESC, updated_at DESC)"
             )
             conn.execute(
@@ -1941,49 +1944,45 @@ class PlatformStore:
                     "SELECT COUNT(*) AS cnt FROM learning_patterns_active"
                 ).fetchone()["cnt"]
             )
-            mixed_rows = conn.execute(
+            mixed_provider_totals = conn.execute(
                 """
-                SELECT provider_key, provider_conflict, review_reason, verdict
+                SELECT COUNT(*) AS open_cases,
+                       COALESCE(
+                           SUM(CASE WHEN provider_conflict = 1 OR review_reason = 'provider_conflict' THEN 1 ELSE 0 END),
+                           0
+                       ) AS conflict_cases
                 FROM review_cases
-                WHERE status = 'OPEN' AND provider_classification = 'mixed' AND provider_key IS NOT NULL AND provider_key != ''
+                WHERE status = 'OPEN'
+                  AND provider_classification = 'mixed'
+                  AND provider_key IS NOT NULL
+                  AND provider_key != ''
                 """
-            ).fetchall()
-        mixed_provider_open_cases = 0
-        mixed_provider_conflict_cases = 0
-        mixed_provider_stats: dict[str, dict[str, Any]] = {}
-        for row in mixed_rows:
-            provider_key = str(row["provider_key"] or "").strip().lower()
-            if not provider_key:
-                continue
-            mixed_provider_open_cases += 1
-            conflict_case = bool(row["provider_conflict"]) or str(row["review_reason"] or "") == "provider_conflict"
-            if conflict_case:
-                mixed_provider_conflict_cases += 1
-            bucket = mixed_provider_stats.setdefault(
-                provider_key,
-                {
-                    "provider_key": provider_key,
-                    "open_cases": 0,
-                    "conflict_cases": 0,
-                    "home_cases": 0,
-                    "mobile_cases": 0,
-                    "unsure_cases": 0,
-                },
-            )
-            bucket["open_cases"] += 1
-            if conflict_case:
-                bucket["conflict_cases"] += 1
-            verdict = str(row["verdict"] or "").upper()
-            if verdict == "HOME":
-                bucket["home_cases"] += 1
-            elif verdict == "MOBILE":
-                bucket["mobile_cases"] += 1
-            else:
-                bucket["unsure_cases"] += 1
-        top_mixed_providers = sorted(
-            mixed_provider_stats.values(),
-            key=lambda item: (-int(item["open_cases"]), -int(item["conflict_cases"]), item["provider_key"]),
-        )[:5]
+            ).fetchone()
+            top_mixed_providers = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT provider_key,
+                           COUNT(*) AS open_cases,
+                           COALESCE(
+                               SUM(CASE WHEN provider_conflict = 1 OR review_reason = 'provider_conflict' THEN 1 ELSE 0 END),
+                               0
+                           ) AS conflict_cases,
+                           COALESCE(SUM(CASE WHEN UPPER(verdict) = 'HOME' THEN 1 ELSE 0 END), 0) AS home_cases,
+                           COALESCE(SUM(CASE WHEN UPPER(verdict) = 'MOBILE' THEN 1 ELSE 0 END), 0) AS mobile_cases,
+                           COALESCE(SUM(CASE WHEN UPPER(verdict) NOT IN ('HOME', 'MOBILE') THEN 1 ELSE 0 END), 0) AS unsure_cases
+                    FROM review_cases
+                    WHERE status = 'OPEN'
+                      AND provider_classification = 'mixed'
+                      AND provider_key IS NOT NULL
+                      AND provider_key != ''
+                    GROUP BY provider_key
+                    ORDER BY open_cases DESC, conflict_cases DESC, provider_key ASC
+                    LIMIT 5
+                    """
+                ).fetchall()
+            ]
+            latest_cases = self.list_review_case_teasers(status="OPEN", limit=6, fast_read=fast_read)
         return {
             "health": health,
             "queue": {
@@ -1995,14 +1994,14 @@ class PlatformStore:
                 "updated_by": live_rules_state["updated_by"],
             },
             "mixed_providers": {
-                "conflict_cases": mixed_provider_conflict_cases,
+                "conflict_cases": int(mixed_provider_totals["conflict_cases"] or 0) if mixed_provider_totals else 0,
                 "top_open_cases": top_mixed_providers,
             },
             "noisy_asns": noisy_asns,
             "learning": {
                 "promoted_patterns": promoted_patterns,
             },
-            "latest_cases": self.list_review_case_teasers(status="OPEN", limit=6, fast_read=fast_read),
+            "latest_cases": latest_cases,
         }
 
     def get_overview_metrics(self) -> dict[str, Any]:
@@ -2397,6 +2396,7 @@ class PlatformStore:
                 live_rules_state_loader=lambda: self.get_live_rules_state(skip_db_mirror=True),
                 timeout=FAST_READ_SQLITE_TIMEOUT_SECONDS if fast_read else None,
                 busy_timeout_ms=FAST_READ_SQLITE_BUSY_TIMEOUT_MS if fast_read else None,
+                query_time_limit_ms=FAST_READ_SQLITE_QUERY_LIMIT_MS if fast_read else None,
             ),
             allow_stale_on_busy=fast_read,
         )

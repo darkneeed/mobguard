@@ -654,7 +654,12 @@ def get_module_config(container: APIContainer, module: dict[str, Any] | None) ->
 
 async def ingest_module_events(container: APIContainer, payload: dict[str, Any], token: str) -> dict[str, Any]:
     protocol_version = _require_protocol_version(str(payload.get("protocol_version", PROTOCOL_VERSION)))
-    module = container.store.authenticate_module(str(payload.get("module_id") or ""), token)
+    try:
+        module = container.store.authenticate_module(str(payload.get("module_id") or ""), token)
+    except sqlite3.OperationalError as exc:
+        if not is_sqlite_busy_error(exc):
+            raise
+        raise ModuleStorageBusyError(MODULE_INGEST_BUSY_DETAIL) from exc
     try:
         async with MODULE_INGEST_LOCK:
             runtime = _build_batch_context(container, module)

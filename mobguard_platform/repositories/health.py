@@ -64,9 +64,14 @@ class ServiceHealthRepository(SQLiteRepository):
         core_service_name: str = "mobguard-core",
         timeout: float | None = None,
         busy_timeout_ms: int | None = None,
+        query_time_limit_ms: int | None = None,
     ) -> dict[str, Any]:
         live_rules_state = live_rules_state_loader()
-        with self.storage.connect(timeout=timeout, busy_timeout_ms=busy_timeout_ms) as conn:
+        with self.storage.connect(
+            timeout=timeout,
+            busy_timeout_ms=busy_timeout_ms,
+            query_time_limit_ms=query_time_limit_ms,
+        ) as conn:
             row = conn.execute(
                 "SELECT service_name, status, details_json, updated_at FROM service_heartbeats WHERE service_name = ?",
                 (core_service_name,),

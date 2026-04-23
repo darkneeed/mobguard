@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import sqlite3
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from mobguard_platform.storage.sqlite import is_sqlite_busy_error
 
 from ..dependencies import get_container, require_permission
 from ..permissions import (
@@ -74,6 +76,10 @@ def module_config(
         return module_service.get_module_config(container, module)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except sqlite3.OperationalError as exc:
+        if not is_sqlite_busy_error(exc):
+            raise
+        raise HTTPException(status_code=503, detail=module_service.MODULE_INGEST_BUSY_DETAIL) from exc
 
 
 @router.post("/module/events/batch")
@@ -88,6 +94,8 @@ async def module_events_batch(
             payload.model_dump(),
             _bearer_token(authorization),
         )
+    except module_service.ModuleStorageBusyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except module_service.ModuleIngestionBusyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:

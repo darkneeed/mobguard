@@ -7,6 +7,9 @@ from typing import Any, Optional
 
 from .base import SQLiteRepository
 
+MODULE_PROTOCOL_SQLITE_TIMEOUT_SECONDS = 1
+MODULE_PROTOCOL_SQLITE_BUSY_TIMEOUT_MS = 1000
+
 
 def _utcnow() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat()
@@ -279,7 +282,10 @@ class ModuleAdminRepository(SQLiteRepository):
             raise ValueError("module token is required")
         now = _utcnow()
         token_hash = _sha256_hex(token)
-        with self.connect() as conn:
+        with self.storage.connect(
+            timeout=MODULE_PROTOCOL_SQLITE_TIMEOUT_SECONDS,
+            busy_timeout_ms=MODULE_PROTOCOL_SQLITE_BUSY_TIMEOUT_MS,
+        ) as conn:
             existing = conn.execute(
                 "SELECT token_hash, module_name, metadata_json FROM modules WHERE module_id = ?",
                 (normalized_id,),
@@ -343,7 +349,10 @@ class ModuleAdminRepository(SQLiteRepository):
 
     def authenticate_module(self, module_id: str, token: str) -> dict[str, Any]:
         normalized_id = str(module_id or "").strip()
-        with self.connect() as conn:
+        with self.storage.connect(
+            timeout=MODULE_PROTOCOL_SQLITE_TIMEOUT_SECONDS,
+            busy_timeout_ms=MODULE_PROTOCOL_SQLITE_BUSY_TIMEOUT_MS,
+        ) as conn:
             row = conn.execute(
                 """
                 SELECT module_id, module_name, token_hash, token_ciphertext, status, version, protocol_version,
@@ -375,7 +384,10 @@ class ModuleAdminRepository(SQLiteRepository):
         now = _utcnow()
         details_payload = dict(details or {})
         details_json = json.dumps(details_payload, ensure_ascii=False)
-        with self.connect() as conn:
+        with self.storage.connect(
+            timeout=MODULE_PROTOCOL_SQLITE_TIMEOUT_SECONDS,
+            busy_timeout_ms=MODULE_PROTOCOL_SQLITE_BUSY_TIMEOUT_MS,
+        ) as conn:
             row = conn.execute(
                 """
                 SELECT module_name, health_status, error_text, last_validation_at, spool_depth, access_log_exists
