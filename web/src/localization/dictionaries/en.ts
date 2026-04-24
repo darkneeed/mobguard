@@ -43,6 +43,9 @@ export const enDictionary: TranslationDictionary = {
       ipDeviceScope: "Decision for this IP in device context",
       subjectIpScope: "Decision for this IP in account context",
       ipOnlyScope: "Decision for this IP only",
+      queueScopeDevice: "By device",
+      queueScopeAccount: "By account",
+      queueScopeIpOnly: "IP only",
       ipDeviceHistoryTitle: "IPs on this device",
       subjectIpHistoryTitle: "IPs on this account",
       ipOnlyHistoryTitle: "This IP only",
@@ -50,7 +53,9 @@ export const enDictionary: TranslationDictionary = {
       subjectIpHistory: "{count} IPs on this account",
       ipOnlyHistory: "{count} IPs in this IP-only context",
       subjectContext: "Account context",
+      subjectContextValue: "This account",
       sharedAccountContext: "Account context, shared access possible",
+      sharedAccountWarning: "Shared account access is suspected",
       ipOnlyContext: "Exact device not recorded"
     }
   },
@@ -330,12 +335,12 @@ export const enDictionary: TranslationDictionary = {
       reviewFirst: "Manual review",
       autoReady: "Automation ready",
       priority: "priority {value}",
-      repeat: "repeat x{count}",
+      repeat: "Repeats: {count}",
       ipDeviceScope: "Decision for this IP in device context",
       ipOnlyScope: "Decision for this IP only",
       ipOnlyDevice: "Device unavailable",
-      activityObserved: "Observed activity: {value}",
-      activityObservedHint: "How long this case has been continuously active.",
+      activityObserved: "Case activity: {value}",
+      activityObservedHint: "How long the case has stayed active in its current window.",
       opened: "opened {value}"
     },
     pageSize: {
@@ -600,9 +605,14 @@ export const enDictionary: TranslationDictionary = {
       mobileMarkers: "Matched mobile markers",
       homeMarkers: "Matched home markers"
     },
+    sharedAccess: {
+      signals: "Signals: {value}"
+    },
     usageProfile: {
       empty: "No usage-profile evidence yet",
       summary: "Snapshot",
+      counts: "Counts",
+      countsValue: "IP {ips} · Providers {providers} · Devices {devices} · Modules {modules}",
       devices: "Devices",
       deviceInventoryNote: "Includes Remnawave HWID inventory when it is available.",
       osFamilies: "OS families",
@@ -628,6 +638,7 @@ export const enDictionary: TranslationDictionary = {
     },
     ipInventory: {
       summary: "{count} hits · {isp} · AS{asn}",
+      observedInterval: "Observed interval {value}",
       firstSeen: "First seen {value}",
       lastSeen: "Last seen {value}"
     },

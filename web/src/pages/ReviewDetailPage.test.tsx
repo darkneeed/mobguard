@@ -37,6 +37,7 @@ describe("ReviewDetailPage", () => {
       ip: "128.71.75.0",
       target_scope_type: "subject_ip",
       shared_account_suspected: true,
+      inbound_tag: "TAG-A",
       latest_event: {
         bundle: {
           reasons: [
@@ -136,6 +137,10 @@ describe("ReviewDetailPage", () => {
       usage_profile: {
         available: true,
         usage_profile_summary: "IPs 2; providers 2; devices 2",
+        ip_count: 2,
+        provider_count: 2,
+        device_count: 2,
+        node_count: 2,
         device_labels: ["iPhone 15", "Pixel 8"],
         os_families: ["iOS", "Android"],
         nodes: ["Node A", "Node B"],
@@ -163,7 +168,7 @@ describe("ReviewDetailPage", () => {
       path: "/reviews/:caseId"
     });
 
-    const reasonTitle = await screen.findByText("Провайдер без маркера");
+    const reasonTitle = await screen.findByText("Нет маркера типа сети");
     const reasonItem = reasonTitle.closest("li");
 
     expect(document.querySelector(".review-detail-grid")).not.toBeNull();
@@ -176,9 +181,15 @@ describe("ReviewDetailPage", () => {
     expect(screen.getByText("vimpelcom, vimpel")).toBeInTheDocument();
     expect(screen.getByText("Usage profile")).toBeInTheDocument();
     expect(screen.getByText("IPs 2; providers 2; devices 2")).toBeInTheDocument();
-    expect(screen.getByText("Account context, shared access possible")).toBeInTheDocument();
+    expect(screen.getByText("Shared account access is suspected")).toBeInTheDocument();
+    expect(screen.getByText("Signals: Резкое путешествие, Несколько устройств")).toBeInTheDocument();
+    expect(screen.getByText("IP 2 · Providers 2 · Devices 2 · Modules 2")).toBeInTheDocument();
     expect(screen.getByText("IPs on this account")).toBeInTheDocument();
+    expect(screen.getByText("Observed interval 2h")).toBeInTheDocument();
     expect(screen.getByText("128.70.186.177")).toBeInTheDocument();
+    expect(screen.getByText("Inbound")).toBeInTheDocument();
+    expect(screen.getAllByText("TAG-A").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Account context, shared access possible")).not.toBeInTheDocument();
     expect(screen.getAllByText(/Node B/).length).toBeGreaterThan(0);
   });
 

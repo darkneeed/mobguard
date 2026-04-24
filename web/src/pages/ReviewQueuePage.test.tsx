@@ -51,7 +51,7 @@ describe("ReviewQueuePage", () => {
         punitive_eligible: 1,
         severity: "critical",
         repeat_count: 2,
-        reason_codes: ["provider_conflict"],
+        reason_codes: ["provider_conflict", "provider_marker_missing", "behavior_churn"],
         ip_inventory: [
           {
             ip: "1.1.1.1",
@@ -156,9 +156,65 @@ describe("ReviewQueuePage", () => {
         opened_at: "2026-04-11T00:00:00Z",
         updated_at: "2026-04-11T00:00:00Z",
         review_url: "https://example.test/reviews/2"
+      },
+      {
+        id: 3,
+        status: "OPEN",
+        review_reason: "unsure",
+        module_id: "node-c",
+        module_name: "Node C",
+        uuid: "u-3",
+        username: null,
+        system_id: 30,
+        telegram_id: null,
+        ip: "3.3.3.3",
+        tag: null,
+        target_scope_type: "ip_only",
+        verdict: "UNSURE",
+        confidence_band: "UNSURE",
+        score: 9,
+        isp: "ISP C",
+        asn: null,
+        punitive_eligible: 0,
+        severity: "low",
+        repeat_count: 1,
+        reason_codes: ["mixed_asn", "mixed_asn_guarded"],
+        ip_inventory: [
+          {
+            ip: "3.3.3.3",
+            hit_count: 1,
+            first_seen_at: "2026-04-11T00:00:00Z",
+            last_seen_at: "2026-04-11T00:00:00Z",
+            isp: "ISP C",
+            asn: null
+          }
+        ],
+        distinct_ip_count: 1,
+        module_inventory: [
+          {
+            module_id: "node-c",
+            module_name: "Node C",
+            first_seen_at: "2026-04-11T00:00:00Z",
+            last_seen_at: "2026-04-11T00:00:00Z"
+          }
+        ],
+        module_count: 1,
+        provider_key: "mixed-c",
+        provider_classification: "mixed",
+        provider_service_hint: "unknown",
+        provider_conflict: false,
+        provider_review_recommended: true,
+        usage_profile_summary: "",
+        usage_profile_signal_count: 0,
+        usage_profile_priority: 240,
+        usage_profile_soft_reasons: [],
+        usage_profile_ongoing_duration_text: "",
+        opened_at: "2026-04-11T00:00:00Z",
+        updated_at: "2026-04-11T00:00:00Z",
+        review_url: "https://example.test/reviews/3"
       }
     ],
-    count: 2,
+    count: 3,
     page: 1,
     page_size: 24
   };
@@ -174,8 +230,9 @@ describe("ReviewQueuePage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Set selected to MOBILE" }));
 
     await waitFor(() => {
-      expect(api.resolveReview).toHaveBeenNthCalledWith(1, "1", "MOBILE", "bulk action from queue (2)");
-      expect(api.resolveReview).toHaveBeenNthCalledWith(2, "2", "MOBILE", "bulk action from queue (2)");
+      expect(api.resolveReview).toHaveBeenNthCalledWith(1, "1", "MOBILE", "bulk action from queue (3)");
+      expect(api.resolveReview).toHaveBeenNthCalledWith(2, "2", "MOBILE", "bulk action from queue (3)");
+      expect(api.resolveReview).toHaveBeenNthCalledWith(3, "3", "MOBILE", "bulk action from queue (3)");
     });
   });
 
@@ -193,14 +250,24 @@ describe("ReviewQueuePage", () => {
       })
     );
     expect(document.querySelector(".review-queue-grid")).not.toBeNull();
-    expect(screen.getByText("priority 980")).toBeInTheDocument();
+    expect(screen.getByText("By device")).toBeInTheDocument();
+    expect(screen.getByText("By account")).toBeInTheDocument();
+    expect(screen.getByText("IP only")).toBeInTheDocument();
     expect(screen.getByText("2 IPs on this device")).toBeInTheDocument();
-    expect(screen.getByText("Decision for this IP in device context")).toBeInTheDocument();
-    expect(screen.getByText("Decision for this IP in account context")).toBeInTheDocument();
-    expect(screen.getByText(/Account context, shared access possible/)).toBeInTheDocument();
     expect(screen.getByText("1 IPs on this account")).toBeInTheDocument();
+    expect(screen.getByText("This IP only")).toBeInTheDocument();
+    expect(screen.getByText("1.1.1.1 ×2 · 1h")).toBeInTheDocument();
+    expect(screen.getByText("3.3.3.3 ×1 · 0m")).toBeInTheDocument();
     expect(screen.getByText("ISP A")).toBeInTheDocument();
     expect(screen.getAllByText("Provider conflict").length).toBeGreaterThan(0);
+    expect(screen.getByText("Нет маркера типа сети")).toBeInTheDocument();
+    expect(screen.getByText("Резкое путешествие")).toBeInTheDocument();
+    expect(screen.getByText("Ротация IP")).toBeInTheDocument();
+    expect(screen.getAllByText("ASN смешанного типа")).toHaveLength(1);
+    expect(screen.queryByText("Manual review")).not.toBeInTheDocument();
+    expect(screen.queryByText("priority 980")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^OPEN$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Inbound:/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute("href", "/data/console");
 
     const [pageSizeSelect] = screen.getAllByLabelText("Cards per page");

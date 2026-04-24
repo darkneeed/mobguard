@@ -43,6 +43,9 @@ export const ruDictionary: TranslationDictionary = {
       ipDeviceScope: "Решение для IP в контексте устройства",
       subjectIpScope: "Решение для IP в контексте аккаунта",
       ipOnlyScope: "Решение только для этого IP",
+      queueScopeDevice: "По устройству",
+      queueScopeAccount: "По аккаунту",
+      queueScopeIpOnly: "Только IP",
       ipDeviceHistoryTitle: "IP этого устройства",
       subjectIpHistoryTitle: "IP этого аккаунта",
       ipOnlyHistoryTitle: "Только этот IP",
@@ -50,7 +53,9 @@ export const ruDictionary: TranslationDictionary = {
       subjectIpHistory: "IP этого аккаунта: {count}",
       ipOnlyHistory: "Только этот IP: {count}",
       subjectContext: "Контекст аккаунта",
+      subjectContextValue: "Этот аккаунт",
       sharedAccountContext: "Контекст аккаунта, возможен общий доступ",
+      sharedAccountWarning: "Есть признаки общего доступа к аккаунту",
       ipOnlyContext: "Точное устройство не зафиксировано"
     }
   },
@@ -330,12 +335,12 @@ export const ruDictionary: TranslationDictionary = {
       reviewFirst: "Только вручную",
       autoReady: "Можно автоматически",
       priority: "Приоритет {value}",
-      repeat: "повтор x{count}",
+      repeat: "Повторов: {count}",
       ipDeviceScope: "Решение для IP в контексте устройства",
       ipOnlyScope: "Решение только для этого IP",
       ipOnlyDevice: "Устройство не определено",
-      activityObserved: "Наблюдаемая активность: {value}",
-      activityObservedHint: "Сколько длится текущая непрерывная активность по этому кейсу.",
+      activityObserved: "Активность кейса: {value}",
+      activityObservedHint: "Сколько кейс остаётся активным в текущем наблюдаемом окне.",
       opened: "открыт {value}"
     },
     pageSize: {
@@ -600,9 +605,14 @@ export const ruDictionary: TranslationDictionary = {
       mobileMarkers: "Совпавшие mobile markers",
       homeMarkers: "Совпавшие home markers"
     },
+    sharedAccess: {
+      signals: "Сигналы: {value}"
+    },
     usageProfile: {
       empty: "Данных usage-profile пока нет",
       summary: "Снапшот",
+      counts: "Счётчики",
+      countsValue: "IP {ips} · Провайдеры {providers} · Устройства {devices} · Модули {modules}",
       devices: "Устройства",
       deviceInventoryNote: "Если доступен HWID-инвентарь Remnawave, он уже подмешан в этот список.",
       osFamilies: "Семейства ОС",
@@ -628,6 +638,7 @@ export const ruDictionary: TranslationDictionary = {
     },
     ipInventory: {
       summary: "{count} срабатываний · {isp} · AS{asn}",
+      observedInterval: "Наблюдаемый интервал {value}",
       firstSeen: "Первое появление {value}",
       lastSeen: "Последнее появление {value}"
     },

@@ -360,6 +360,25 @@
   line-height: 1.5;
 }
 
+.detail-warning-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--line) 68%);
+  border-left: 4px solid var(--warning);
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--warning) 12%);
+}
+
+.detail-warning-box strong {
+  color: var(--warning);
+}
+
+.detail-warning-box span {
+  line-height: 1.55;
+}
+
 .provider-evidence,
 .export-sections {
   display: flex;

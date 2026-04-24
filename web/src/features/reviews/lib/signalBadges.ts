@@ -9,19 +9,19 @@ const REASON_DESCRIPTORS: Record<string, SignalDescriptor> = {
     description: "Провайдерские признаки противоречат друг другу, автоматическое решение отключено."
   },
   provider_marker_missing: {
-    label: "Провайдер без маркера",
-    description: "Провайдер распознан, но сервисный маркер не подтвердил тип подключения."
+    label: "Нет маркера типа сети",
+    description: "Провайдер распознан, но нет явного маркера домашнего или мобильного типа."
   },
   provider_review_guardrail: {
     label: "Только вручную",
     description: "Для этого провайдера включён guardrail: решение требует ручной проверки."
   },
   mixed_asn_guarded: {
-    label: "Смешанный ASN",
+    label: "ASN смешанного типа",
     description: "ASN известен как смешанный, поэтому одного ASN недостаточно для автоматического решения."
   },
   mixed_asn: {
-    label: "Смешанный ASN",
+    label: "ASN смешанного типа",
     description: "ASN имеет смешанный профиль и требует дополнительных подтверждающих признаков."
   },
   pure_home_asn: {

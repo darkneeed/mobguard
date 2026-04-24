@@ -8,9 +8,10 @@ import { useToast } from "../components/ToastProvider";
 import { describeReasonCode, describeSoftReason } from "../features/reviews/lib/signalBadges";
 import { describeScopeContext } from "../features/reviews/lib/scopeContext";
 import { useI18n } from "../localization";
+import type { Language } from "../localization";
 import { buildSearchParams } from "../shared/api/request";
 import { useVisiblePolling } from "../shared/useVisiblePolling";
-import { formatDisplayDateTime } from "../utils/datetime";
+import { formatDisplayDateTime, formatObservedDuration } from "../utils/datetime";
 
 type ReviewFilters = {
   status: string;
@@ -34,6 +35,13 @@ type ReviewFilters = {
 
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
 const SAVED_FILTERS_KEY = "mobguard.reviewQueue.savedFilters";
+const BEHAVIOR_BADGE_PRIORITY = [
+  "geo_impossible_travel",
+  "behavior_churn",
+  "provider_fanout",
+  "cross_node_fanout",
+  "device_rotation"
+] as const;
 
 const DEFAULT_FILTERS: ReviewFilters = {
   status: "OPEN",
@@ -91,6 +99,61 @@ function compactLocation(item: Record<string, unknown>) {
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .join(", ");
+}
+
+type QueueBadge = {
+  code: string;
+  label: string;
+  description: string;
+};
+
+function buildQueueProviderBadge(reasonCodes: string[]): QueueBadge | null {
+  const normalized = new Set(reasonCodes.map((code) => String(code || "").trim()));
+  if (normalized.has("provider_marker_missing")) {
+    return {
+      code: "provider_marker_missing",
+      ...describeReasonCode("provider_marker_missing")
+    };
+  }
+  if (normalized.has("mixed_asn") || normalized.has("mixed_asn_guarded")) {
+    return {
+      code: "mixed_asn",
+      ...describeReasonCode("mixed_asn")
+    };
+  }
+  return null;
+}
+
+function buildQueueBehaviorBadges(reasonCodes: string[], usageReasonCodes: string[]): QueueBadge[] {
+  const normalizedReasonCodes = new Set(reasonCodes.map((code) => String(code || "").trim()));
+  const normalizedUsageCodes = new Set(usageReasonCodes.map((code) => String(code || "").trim()));
+  const badges: QueueBadge[] = [];
+
+  for (const code of BEHAVIOR_BADGE_PRIORITY) {
+    if (code === "behavior_churn") {
+      if (normalizedReasonCodes.has(code)) {
+        badges.push({ code, ...describeReasonCode(code) });
+      }
+      continue;
+    }
+
+    if (normalizedUsageCodes.has(code)) {
+      badges.push({ code, ...describeSoftReason(code) });
+    }
+  }
+
+  return badges.slice(0, 2);
+}
+
+function formatInventoryChipLabel(
+  ip: string,
+  hitCount: number,
+  firstSeenAt: string,
+  lastSeenAt: string,
+  language: Language
+): string {
+  const duration = formatObservedDuration(firstSeenAt, lastSeenAt, "", language);
+  return duration ? `${ip} ×${hitCount} · ${duration}` : `${ip} ×${hitCount}`;
 }
 
 export function ReviewQueuePage({ session }: { session?: Session }) {
@@ -648,8 +711,6 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
               const sameDeviceHistory = Array.isArray(item.same_device_ip_history) && item.same_device_ip_history.length > 0
                 ? item.same_device_ip_history
                 : ipInventory;
-              const providerKey = item.provider_key || "";
-              const serviceHint = item.provider_service_hint || "unknown";
               const primaryIp = item.target_ip || item.ip;
               const scopeContext = describeScopeContext(
                 t,
@@ -657,19 +718,13 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                 Boolean(item.shared_account_suspected),
                 sameDeviceHistory.length
               );
-              const deviceDisplay = scopeContext.scopeType === "ip_device"
-                ? item.device_display || t("common.notAvailable")
-                : scopeContext.contextValue;
-              const decisionTarget = scopeContext.decisionTarget;
-              const providerDisplay = item.isp || providerKey || t("common.notAvailable");
-              const operatorReasonBadges = item.reason_codes.slice(0, 3).map((code) => ({
-                code,
-                ...describeReasonCode(code)
-              }));
-              const operatorUsageBadges = (item.usage_profile_soft_reasons || []).slice(0, 2).map((code) => ({
-                code,
-                ...describeSoftReason(code)
-              }));
+              const deviceDisplay = item.device_display || t("common.notAvailable");
+              const providerDisplay = item.isp || item.provider_key || t("common.notAvailable");
+              const providerBadge = buildQueueProviderBadge(item.reason_codes);
+              const behaviorBadges = buildQueueBehaviorBadges(
+                item.reason_codes,
+                item.usage_profile_soft_reasons || []
+              );
               return (
                 <>
                   <div className="queue-card-top">
@@ -686,17 +741,24 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                     </label>
                     <div>
                       <strong>{primaryIp}</strong>
-                      <div className="muted">{decisionTarget}</div>
+                      <div className="muted">{scopeContext.queueScopeLabel}</div>
                     </div>
-                    <span className={`status-badge status-${item.status.toLowerCase()}`}>{item.status}</span>
+                    {item.status !== "OPEN" ? (
+                      <span className={`status-badge status-${item.status.toLowerCase()}`}>{item.status}</span>
+                    ) : null}
                   </div>
                   <div className="queue-card-identifiers">
                     <strong>{item.username || formatIdentifier(t("reviewQueue.identifiers.user"), item.system_id)}</strong>
                     <span>{formatIdentifier(t("reviewQueue.identifiers.module"), item.module_name || item.module_id)}</span>
-                    <span>{formatIdentifier(t("reviewQueue.identifiers.inbound"), item.inbound_tag || item.tag)}</span>
-                    <span>{formatIdentifier(scopeContext.contextLabel, deviceDisplay)}</span>
-                    <span>{formatIdentifier(t("reviewQueue.identifiers.system"), item.system_id)}</span>
-                    <span>{formatIdentifier(t("reviewQueue.identifiers.telegram"), item.telegram_id)}</span>
+                    {scopeContext.scopeType === "ip_device" ? (
+                      <span>{formatIdentifier(t("reviewQueue.identifiers.device"), deviceDisplay)}</span>
+                    ) : null}
+                    {item.system_id !== null && item.system_id !== undefined ? (
+                      <span>{formatIdentifier(t("reviewQueue.identifiers.system"), item.system_id)}</span>
+                    ) : null}
+                    {item.telegram_id ? (
+                      <span>{formatIdentifier(t("reviewQueue.identifiers.telegram"), item.telegram_id)}</span>
+                    ) : null}
                   </div>
                   <div className="queue-card-stack">
                     <div className="queue-card-meta">
@@ -713,28 +775,15 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                     </div>
                   </div>
                   <div className="queue-card-flags">
-                    <span className={`tag severity-${item.severity}`}>{item.severity}</span>
-                    <span className="tag review-only" title={String(item.review_reason || "")}>
-                      {formatReviewReason(item.review_reason)}
-                    </span>
                     <span className="tag">{t("reviewQueue.card.repeat", { count: item.repeat_count })}</span>
-                    {typeof item.usage_profile_priority === "number" ? (
-                      <span className="tag">{t("reviewQueue.card.priority", { value: item.usage_profile_priority })}</span>
-                    ) : null}
-                    {providerKey && serviceHint !== "unknown" ? (
-                      <span className={`tag queue-flag queue-flag-${serviceHint}`}>{t("reviewQueue.card.serviceHint", { value: serviceHint })}</span>
-                    ) : null}
-                    {item.provider_review_recommended ? (
-                      <span className="tag review-only">{t("reviewQueue.card.reviewFirst")}</span>
-                    ) : null}
                     {item.provider_conflict ? <span className="tag severity-high">{t("reviewQueue.card.providerConflict")}</span> : null}
-                    {operatorReasonBadges.map((badge) => (
-                      <span key={badge.code} className="tag" title={badge.description}>
-                        {badge.label}
+                    {providerBadge ? (
+                      <span className="tag" title={providerBadge.description}>
+                        {providerBadge.label}
                       </span>
-                    ))}
-                    {operatorUsageBadges.map((badge) => (
-                      <span key={`usage-${badge.code}`} className="tag" title={badge.description}>
+                    ) : null}
+                    {behaviorBadges.map((badge) => (
+                      <span key={badge.code} className="tag" title={badge.description}>
                         {badge.label}
                       </span>
                     ))}
@@ -753,11 +802,18 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                               first: formatInventoryDate(entry.first_seen_at),
                               last: formatInventoryDate(entry.last_seen_at)
                             }),
+                            formatObservedDuration(entry.first_seen_at, entry.last_seen_at, "", language),
                             entry.isp || "",
                             compactLocation(entry as Record<string, unknown>)
                           ].filter(Boolean).join(" · ")}
                         >
-                          {entry.ip} ×{entry.hit_count}
+                          {formatInventoryChipLabel(
+                            entry.ip,
+                            entry.hit_count,
+                            entry.first_seen_at,
+                            entry.last_seen_at,
+                            language
+                          )}
                         </span>
                       ))}
                     </div>

@@ -15,7 +15,7 @@ import { describeReasonCode, describeSoftReason } from "../features/reviews/lib/
 import { describeScopeContext } from "../features/reviews/lib/scopeContext";
 import { useI18n } from "../localization";
 import { formatUsageDeviceInventory, hasPanelUsageDevices, usageDevicePrimaryLabel } from "../shared/usageDevices";
-import { formatDisplayDateTime } from "../utils/datetime";
+import { formatDisplayDateTime, formatObservedDuration } from "../utils/datetime";
 
 type ReviewReason = {
   code?: string;
@@ -49,6 +49,14 @@ type ReviewQueueLocationState = {
   reviewQueueItemIds?: number[];
   reviewQueueCurrentIndex?: number;
 };
+
+const SHARED_ACCESS_REASON_CODES = [
+  "device_rotation",
+  "device_os_mismatch",
+  "geo_impossible_travel",
+  "cross_node_fanout",
+  "provider_fanout"
+] as const;
 
 export function ReviewDetailPage({ session }: { session?: Session }) {
   const { t, language } = useI18n();
@@ -231,12 +239,24 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
   const deviceDisplay = formatValue(
     scopeContext.scopeType === "ip_device"
       ? ((data?.device_display as string | undefined) || usageDeviceSummary)
-      : scopeContext.contextValue
+      : scopeContext.detailContextValue
   );
   const inboundTag = formatValue(((data?.inbound_tag || data?.tag || (sameDeviceHistory[0] as Record<string, unknown> | undefined)?.inbound_tag)) as string | undefined);
   const providerDisplay = formatValue(((data?.isp || data?.provider_key || sameDeviceHistory[0]?.isp)) as string | undefined);
   const primaryIp = formatValue((data?.target_ip || data?.ip) as string | undefined);
   const summaryAsn = formatValue(((data?.asn ?? sameDeviceHistory[0]?.asn) as number | string | undefined));
+  const sharedAccessReasons = Array.from(
+    new Set(
+      (usageProfile?.soft_reasons || [])
+        .map((code) => String(code || "").trim())
+        .filter((code) =>
+          SHARED_ACCESS_REASON_CODES.includes(
+            code as (typeof SHARED_ACCESS_REASON_CODES)[number]
+          )
+        )
+        .map((code) => describeSoftReason(code).label)
+    )
+  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -351,6 +371,16 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
                 <div><dt>{t("reviewDetail.fields.uuid")}</dt><dd>{formatValue(data.uuid as string | null | undefined)}</dd></div>
                 <div><dt>{t("reviewDetail.fields.reviewUrl")}</dt><dd>{formatValue(data.review_url as string | undefined)}</dd></div>
               </dl>
+              {scopeContext.sharedAccessWarning ? (
+                <div className="detail-warning-box">
+                  <strong>{scopeContext.sharedAccessWarning}</strong>
+                  <span>
+                    {t("reviewDetail.sharedAccess.signals", {
+                      value: sharedAccessReasons.join(", ") || t("common.notAvailable")
+                    })}
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             <div className="detail-grid review-detail-grid">
@@ -468,6 +498,16 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
                         {formatValue((item as Record<string, unknown>).city as string | number | null | undefined)} · {formatValue((item as Record<string, unknown>).country as string | number | null | undefined)}
                       </span>
                       <span className="review-detail-item-meta">
+                        {t("reviewDetail.ipInventory.observedInterval", {
+                          value: formatObservedDuration(
+                            item.first_seen_at,
+                            item.last_seen_at,
+                            t("common.notAvailable"),
+                            language
+                          )
+                        })}
+                      </span>
+                      <span className="review-detail-item-meta">
                         {t("reviewDetail.ipInventory.firstSeen", {
                           value: formatDisplayDateTime(item.first_seen_at, t("common.notAvailable"), language)
                         })}
@@ -496,6 +536,19 @@ export function ReviewDetailPage({ session }: { session?: Session }) {
                       <span className="review-detail-item-copy">{usageProfile.usage_profile_summary}</span>
                       <span className="review-detail-item-meta">
                         {t("reviewDetail.usageProfile.ongoing")} · {formatValue(usageProfile.ongoing_duration_text)}
+                      </span>
+                    </li>
+                  ) : null}
+                  {usageProfile?.available ? (
+                    <li className="review-detail-item">
+                      <strong className="review-detail-item-title">{t("reviewDetail.usageProfile.counts")}</strong>
+                      <span className="review-detail-item-copy">
+                        {t("reviewDetail.usageProfile.countsValue", {
+                          ips: Number(usageProfile.ip_count || 0),
+                          providers: Number(usageProfile.provider_count || 0),
+                          devices: Number(usageProfile.device_count || 0),
+                          modules: Number(usageProfile.node_count || 0)
+                        })}
                       </span>
                     </li>
                   ) : null}
