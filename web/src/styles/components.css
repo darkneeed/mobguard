@@ -204,6 +204,7 @@
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  margin-top: 1rem;
 }
 
 .queue-card-flags,
@@ -405,6 +406,10 @@
   cursor: pointer;
   font-weight: 600;
   margin-bottom: 0.75rem;
+}
+
+.note-box {
+  margin-top: 1rem;
 }
 
 .log-box,
