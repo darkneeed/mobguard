@@ -314,7 +314,7 @@ class UsageProfileTests(unittest.TestCase):
         self.assertEqual(device_snapshot["ip_count"], 1)
         self.assertEqual(device_snapshot["device_count"], 1)
 
-    def test_shared_account_suspected_when_multiple_exact_devices_are_present(self):
+    def test_multiple_exact_devices_are_context_only_without_hwid_limit_exceeded(self):
         self._record_event(
             "2026-04-11T10:00:00",
             "1.1.1.1",
@@ -342,6 +342,23 @@ class UsageProfileTests(unittest.TestCase):
         )
 
         self.assertEqual(snapshot["exact_device_count"], 2)
+        self.assertFalse(shared_account_suspected_from_usage_profile(snapshot))
+
+    def test_shared_account_suspected_only_when_hwid_limit_is_exceeded(self):
+        snapshot = build_usage_profile_snapshot(
+            self.store,
+            {"uuid": "uuid-1", "username": "alice", "system_id": 42, "telegram_id": "1001"},
+            panel_user={
+                "hwidDeviceLimit": 1,
+                "hwidDevices": [
+                    {"hwid": "hwid-1", "deviceModel": "Pixel 8"},
+                    {"hwid": "hwid-2", "deviceModel": "iPhone 15"},
+                ],
+            },
+        )
+
+        self.assertEqual(snapshot["hwid_device_limit"], 1)
+        self.assertEqual(snapshot["hwid_device_count_exact"], 2)
         self.assertTrue(shared_account_suspected_from_usage_profile(snapshot))
 
     def test_shared_account_suspected_when_device_os_mismatch_is_detected(self):
@@ -372,7 +389,7 @@ class UsageProfileTests(unittest.TestCase):
         )
 
         self.assertIn("device_os_mismatch", snapshot["soft_reasons"])
-        self.assertTrue(shared_account_suspected_from_usage_profile(snapshot))
+        self.assertFalse(shared_account_suspected_from_usage_profile(snapshot))
 
     def test_shared_account_suspected_when_geo_impossible_travel_is_detected(self):
         self._record_event(
@@ -404,7 +421,7 @@ class UsageProfileTests(unittest.TestCase):
         )
 
         self.assertIn("geo_impossible_travel", snapshot["soft_reasons"])
-        self.assertTrue(shared_account_suspected_from_usage_profile(snapshot))
+        self.assertFalse(shared_account_suspected_from_usage_profile(snapshot))
 
     def test_shared_account_suspected_when_cross_node_and_provider_fanout_overlap(self):
         self._record_event(
@@ -436,7 +453,7 @@ class UsageProfileTests(unittest.TestCase):
 
         self.assertIn("cross_node_fanout", snapshot["soft_reasons"])
         self.assertIn("provider_fanout", snapshot["soft_reasons"])
-        self.assertTrue(shared_account_suspected_from_usage_profile(snapshot))
+        self.assertFalse(shared_account_suspected_from_usage_profile(snapshot))
 
 
 if __name__ == "__main__":

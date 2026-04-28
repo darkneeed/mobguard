@@ -765,7 +765,7 @@ class StoreReviewFlowTests(unittest.TestCase):
             {"10.10.10.70"},
         )
 
-    def test_subject_ip_cases_expose_shared_account_flag_when_multiple_exact_devices_exist(self):
+    def test_subject_ip_cases_do_not_infer_shared_account_from_multiple_exact_devices(self):
         user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
         bundle = DecisionBundle(
             ip="10.10.10.80",
@@ -804,9 +804,97 @@ class StoreReviewFlowTests(unittest.TestCase):
         listed = next(item for item in listing["items"] if item["id"] == case.id)
 
         self.assertEqual(detail["target_scope_type"], "subject_ip")
+        self.assertFalse(detail["shared_account_suspected"])
+        self.assertFalse(detail["latest_event"]["shared_account_suspected"])
+        self.assertFalse(listed["shared_account_suspected"])
+
+    def test_hwid_limit_exceeded_sets_hard_flag_and_shared_account_flag(self):
+        user = {
+            "uuid": "uuid-1",
+            "username": "alice",
+            "telegramId": "1001",
+            "id": 42,
+            "hwidDeviceLimit": 1,
+            "hwidDevices": [
+                {"hwid": "hwid-1", "deviceModel": "Pixel 8"},
+                {"hwid": "hwid-2", "deviceModel": "iPhone 15"},
+            ],
+        }
+        bundle = DecisionBundle(
+            ip="10.10.10.83",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-A",
+        )
+
+        event_id = self.store.record_analysis_event(user, bundle.ip, "TAG", bundle)
+        case = self.store.ensure_review_case(user, bundle.ip, "TAG", bundle, event_id, "unsure")
+
+        detail = self.store.get_review_case(case.id)
+        listing = self.store.list_review_cases({})
+        listed = next(item for item in listing["items"] if item["id"] == case.id)
+
+        self.assertIn("sharing_hwid_limit_exceeded", detail["hard_flags"])
+        self.assertIn("sharing_hwid_limit_exceeded", detail["latest_event"]["hard_flags"])
+        self.assertIn("sharing_hwid_limit_exceeded", listed["hard_flags"])
         self.assertTrue(detail["shared_account_suspected"])
         self.assertTrue(detail["latest_event"]["shared_account_suspected"])
         self.assertTrue(listed["shared_account_suspected"])
+        self.assertEqual(detail["hwid_device_limit"], 1)
+        self.assertEqual(detail["hwid_device_count_exact"], 2)
+
+    def test_byte_based_traffic_burst_sets_hard_flag(self):
+        user = {
+            "uuid": "uuid-1",
+            "username": "alice",
+            "telegramId": "1001",
+            "id": 42,
+            "usageProfileTrafficStats": {
+                "series": [
+                    {"timestamp": "2026-04-22T10:00:00", "node-a": 300 * 1024 * 1024},
+                    {"timestamp": "2026-04-22T10:10:00", "node-a": 400 * 1024 * 1024},
+                ]
+            },
+        }
+        bundle = DecisionBundle(
+            ip="10.10.10.84",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-A",
+        )
+
+        event_id = self.store.record_analysis_event(user, bundle.ip, "TAG", bundle)
+        case = self.store.ensure_review_case(user, bundle.ip, "TAG", bundle, event_id, "unsure")
+
+        detail = self.store.get_review_case(case.id)
+
+        self.assertIn("traffic_burst_confirmed", detail["hard_flags"])
+        self.assertIn("traffic_burst", detail["usage_profile_soft_reasons"])
+
+    def test_event_count_traffic_burst_stays_soft_only(self):
+        user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}
+        bundle = DecisionBundle(
+            ip="10.10.10.85",
+            verdict="UNSURE",
+            confidence_band="UNSURE",
+            score=0,
+            asn=12345,
+            isp="ISP-A",
+        )
+
+        event_id = None
+        for _index in range(5):
+            event_id = self.store.record_analysis_event(user, bundle.ip, "TAG", bundle)
+        case = self.store.ensure_review_case(user, bundle.ip, "TAG", bundle, event_id, "unsure")
+
+        detail = self.store.get_review_case(case.id)
+
+        self.assertIn("traffic_burst", detail["usage_profile_soft_reasons"])
+        self.assertNotIn("traffic_burst_confirmed", detail["hard_flags"])
 
     def test_quality_metrics_use_persisted_provider_summary_without_bundle_decode(self):
         user = {"uuid": "uuid-1", "username": "alice", "telegramId": "1001", "id": 42}

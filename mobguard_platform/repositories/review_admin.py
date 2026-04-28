@@ -71,13 +71,16 @@ def _review_identity(user: Optional[dict[str, Any]]) -> dict[str, Any]:
 
 def _device_fields_from_row(row: Mapping[str, Any] | None) -> dict[str, Any]:
     payload = dict(row or {})
-    device_display = device_display_from_identity(payload)
+    exact_device_id = clean_text(payload.get("client_device_id"))
+    device_display = device_display_from_identity(payload) if exact_device_id else ""
     return {
-        "client_device_id": clean_text(payload.get("client_device_id")) or None,
+        "client_device_id": exact_device_id or None,
         "client_device_label": clean_text(payload.get("client_device_label")) or None,
         "client_os_family": clean_text(payload.get("client_os_family")) or None,
         "client_app_name": clean_text(payload.get("client_app_name")) or None,
         "device_display": device_display or None,
+        "device_link_status": "exact" if exact_device_id else "none",
+        "device_link_source": clean_text(payload.get("device_link_source")) or ("module_header" if exact_device_id else None),
     }
 
 
@@ -87,6 +90,99 @@ def _normalized_module_id(value: Any) -> str:
 
 def _provider_summary_payload(bundle: DecisionBundle) -> dict[str, Any]:
     return provider_summary_from_signal_flags(bundle.signal_flags)
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_hwid_devices(payload: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
+    if not isinstance(payload, Mapping):
+        return []
+    for key in ("hwidDevices", "hwid_devices", "devices"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, Mapping)]
+    return []
+
+
+def _hwid_device_id(device: Mapping[str, Any]) -> str:
+    return clean_text(
+        device.get("hwid")
+        or device.get("deviceId")
+        or device.get("device_id")
+        or device.get("clientDeviceId")
+        or device.get("client_device_id")
+    )
+
+
+def _hwid_limit(payload: Mapping[str, Any] | None) -> int | None:
+    if not isinstance(payload, Mapping):
+        return None
+    for key in (
+        "hwidDeviceLimit",
+        "hwid_device_limit",
+        "hwidLimit",
+        "hwid_limit",
+        "maxHwidDevices",
+        "max_hwid_devices",
+        "deviceLimit",
+        "device_limit",
+    ):
+        parsed = _optional_int(payload.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _hwid_count_exact(payload: Mapping[str, Any] | None) -> int | None:
+    if not isinstance(payload, Mapping):
+        return None
+    devices = _extract_hwid_devices(payload)
+    if devices:
+        exact_ids = {_hwid_device_id(device).lower() for device in devices if _hwid_device_id(device)}
+        return len(exact_ids) if exact_ids else len(devices)
+    for key in ("hwidDeviceCount", "hwid_device_count", "hwidCount", "hwid_count", "deviceCount", "device_count"):
+        parsed = _optional_int(payload.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _hwid_context(payload: Mapping[str, Any] | None) -> dict[str, Any]:
+    return {
+        "hwid_device_limit": _hwid_limit(payload),
+        "hwid_device_count_exact": _hwid_count_exact(payload),
+    }
+
+
+def _derive_hard_flags(
+    bundle: DecisionBundle,
+    *,
+    usage_snapshot: Mapping[str, Any] | None = None,
+    hwid_context: Mapping[str, Any] | None = None,
+) -> list[str]:
+    flags: list[str] = []
+    for flag in bundle.hard_flags:
+        normalized = clean_text(flag)
+        if normalized and normalized not in flags:
+            flags.append(normalized)
+
+    limit = _optional_int((hwid_context or {}).get("hwid_device_limit"))
+    count = _optional_int((hwid_context or {}).get("hwid_device_count_exact"))
+    if limit is not None and limit >= 0 and count is not None and count > limit:
+        flags.append("sharing_hwid_limit_exceeded")
+
+    burst = usage_snapshot.get("traffic_burst") if isinstance(usage_snapshot, Mapping) else None
+    if isinstance(burst, Mapping) and burst.get("source") == "traffic_bytes":
+        flags.append("traffic_burst_confirmed")
+
+    return list(dict.fromkeys(flags))
 
 
 class _ConnectionContext:
@@ -141,7 +237,8 @@ class ReviewAdminRepository(SQLiteRepository):
         row = conn.execute(
             """
             SELECT created_at, ip, tag, module_id, module_name, uuid, username, system_id, telegram_id,
-                   client_device_id, client_device_label, client_os_family, client_app_name
+                   client_device_id, client_device_label, client_os_family, client_app_name,
+                   device_link_status, device_link_source
             FROM analysis_events
             WHERE id = ?
             """,
@@ -346,7 +443,6 @@ class ReviewAdminRepository(SQLiteRepository):
         source_event_uid: str | None = None,
     ) -> int:
         now = _utcnow()
-        payload = bundle.to_dict()
         module_id = str((user or {}).get("module_id") or "").strip() or None
         module_name = str((user or {}).get("module_name") or "").strip() or module_id
         subject_key = subject_key_from_identity(user, ip=ip)
@@ -354,19 +450,31 @@ class ReviewAdminRepository(SQLiteRepository):
             observation,
             signal_flags=bundle.signal_flags,
         )
+        device_link_status = "exact" if clean_text(usage_observation.get("client_device_id")) else "none"
+        device_link_source = (
+            clean_text((observation or {}).get("device_link_source"))
+            or ("module_header" if device_link_status == "exact" else "")
+        )
+        hwid_context = _hwid_context(user)
+        event_hard_flags = _derive_hard_flags(bundle, hwid_context=hwid_context)
+        bundle.hard_flags = event_hard_flags
+        bundle.signal_flags["hard_flags"] = list(event_hard_flags)
         scope = build_review_scope(user, {**usage_observation, "ip": ip}, ip=ip)
+        payload = bundle.to_dict()
         cursor = conn.execute(
             """
             INSERT INTO analysis_events (
                 created_at, module_id, module_name, source_event_uid, decision_source, subject_key, uuid, username, system_id, telegram_id, ip, tag,
                 verdict, confidence_band, score, isp, asn,
+                asn_source, provider_source, hard_flags_json,
                 country, region, city, loc, latitude, longitude,
                 client_device_id, client_device_label, client_os_family, client_os_version,
                 client_app_name, client_app_version,
+                device_link_status, device_link_source, hwid_device_limit, hwid_device_count_exact,
                 case_scope_key, device_scope_key, scope_type,
                 punitive_eligible,
                 reasons_json, signal_flags_json, bundle_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 now,
@@ -386,6 +494,9 @@ class ReviewAdminRepository(SQLiteRepository):
                 bundle.score,
                 bundle.isp,
                 bundle.asn,
+                bundle.asn_source,
+                bundle.provider_source,
+                json.dumps(event_hard_flags, ensure_ascii=False),
                 usage_observation.get("country"),
                 usage_observation.get("region"),
                 usage_observation.get("city"),
@@ -398,6 +509,10 @@ class ReviewAdminRepository(SQLiteRepository):
                 usage_observation.get("client_os_version"),
                 usage_observation.get("client_app_name"),
                 usage_observation.get("client_app_version"),
+                device_link_status,
+                device_link_source or None,
+                hwid_context["hwid_device_limit"],
+                hwid_context["hwid_device_count_exact"],
                 scope["case_scope_key"],
                 scope["device_scope_key"],
                 scope["scope_type"],
@@ -671,6 +786,7 @@ class ReviewAdminRepository(SQLiteRepository):
         snapshot = build_usage_profile_snapshot(
             snapshot_store,
             _review_identity(user),
+            panel_user=user,
             anchor_started_at=anchor_started_at,
             device_scope_key=device_scope_key,
             case_scope_key=case_scope_key,
@@ -722,7 +838,9 @@ class ReviewAdminRepository(SQLiteRepository):
         snapshot_store: Any = _ConnectionBackedStore(self, conn)
         shared_flags_by_scope: dict[str, bool] = {}
         for item in items:
-            item["shared_account_suspected"] = False
+            item["shared_account_suspected"] = "sharing_hwid_limit_exceeded" in set(item.get("hard_flags") or [])
+            if item["shared_account_suspected"]:
+                continue
             scope_type = clean_text(item.get("scope_type") or item.get("target_scope_type")) or "ip_only"
             if scope_type != "subject_ip":
                 continue
@@ -832,6 +950,8 @@ class ReviewAdminRepository(SQLiteRepository):
                 case_scope_key=event_context["case_scope_key"],
                 conn=conn,
             )
+            hwid_context = _hwid_context(user)
+            hard_flags = _derive_hard_flags(bundle, usage_snapshot=usage_snapshot, hwid_context=hwid_context)
             conn.execute(
                 """
                 UPDATE review_cases
@@ -847,6 +967,10 @@ class ReviewAdminRepository(SQLiteRepository):
                     client_device_label = ?,
                     client_os_family = ?,
                     client_app_name = ?,
+                    device_link_status = ?,
+                    device_link_source = ?,
+                    hwid_device_limit = ?,
+                    hwid_device_count_exact = ?,
                     uuid = ?,
                     username = ?,
                     system_id = ?,
@@ -858,6 +982,9 @@ class ReviewAdminRepository(SQLiteRepository):
                     score = ?,
                     isp = ?,
                     asn = ?,
+                    asn_source = ?,
+                    provider_source = ?,
+                    hard_flags_json = ?,
                     provider_key = ?,
                     provider_classification = ?,
                     provider_service_hint = ?,
@@ -889,6 +1016,10 @@ class ReviewAdminRepository(SQLiteRepository):
                     event_context["client_device_label"],
                     event_context["client_os_family"],
                     event_context["client_app_name"],
+                    event_context["device_link_status"],
+                    event_context["device_link_source"],
+                    hwid_context["hwid_device_limit"],
+                    hwid_context["hwid_device_count_exact"],
                     (user or {}).get("uuid"),
                     (user or {}).get("username"),
                     coerce_optional_int((user or {}).get("id")),
@@ -900,6 +1031,9 @@ class ReviewAdminRepository(SQLiteRepository):
                     bundle.score,
                     bundle.isp,
                     bundle.asn,
+                    bundle.asn_source,
+                    bundle.provider_source,
+                    json.dumps(hard_flags, ensure_ascii=False),
                     provider_summary["provider_key"],
                     provider_summary["provider_classification"],
                     provider_summary["provider_service_hint"],
@@ -946,19 +1080,23 @@ class ReviewAdminRepository(SQLiteRepository):
                 case_scope_key=event_context["case_scope_key"],
                 conn=conn,
             )
+            hwid_context = _hwid_context(user)
+            hard_flags = _derive_hard_flags(bundle, usage_snapshot=usage_snapshot, hwid_context=hwid_context)
             cursor = conn.execute(
                 """
                 INSERT INTO review_cases (
                     unique_key, status, review_reason, case_scope_key, device_scope_key, scope_type, subject_key,
                     module_id, module_name, client_device_id, client_device_label, client_os_family, client_app_name,
+                    device_link_status, device_link_source, hwid_device_limit, hwid_device_count_exact,
                     uuid, username, system_id, telegram_id, ip, tag,
-                    verdict, confidence_band, score, isp, asn, provider_key, provider_classification, provider_service_hint,
+                    verdict, confidence_band, score, isp, asn, asn_source, provider_source, hard_flags_json,
+                    provider_key, provider_classification, provider_service_hint,
                     provider_conflict, provider_review_recommended, punitive_eligible, latest_event_id, repeat_count,
                     last_repeat_at,
                     reason_codes_json, usage_profile_summary, usage_profile_signal_count, usage_profile_priority,
                     usage_profile_soft_reasons_json, usage_profile_ongoing_duration_seconds, usage_profile_ongoing_duration_text,
                     opened_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     unique_key,
@@ -974,6 +1112,10 @@ class ReviewAdminRepository(SQLiteRepository):
                     event_context["client_device_label"],
                     event_context["client_os_family"],
                     event_context["client_app_name"],
+                    event_context["device_link_status"],
+                    event_context["device_link_source"],
+                    hwid_context["hwid_device_limit"],
+                    hwid_context["hwid_device_count_exact"],
                     (user or {}).get("uuid"),
                     (user or {}).get("username"),
                     coerce_optional_int((user or {}).get("id")),
@@ -985,6 +1127,9 @@ class ReviewAdminRepository(SQLiteRepository):
                     bundle.score,
                     bundle.isp,
                     bundle.asn,
+                    bundle.asn_source,
+                    bundle.provider_source,
+                    json.dumps(hard_flags, ensure_ascii=False),
                     provider_summary["provider_key"],
                     provider_summary["provider_classification"],
                     provider_summary["provider_service_hint"],
@@ -1091,7 +1236,19 @@ class ReviewAdminRepository(SQLiteRepository):
             ).fetchone()
             if not case_row:
                 raise KeyError(f"Review case {case_id} not found")
-        event_id = self.record_analysis_event(user, ip, tag, bundle)
+        event_id = self.record_analysis_event(
+            user,
+            ip,
+            tag,
+            bundle,
+            observation={
+                "client_device_id": (user or {}).get("client_device_id"),
+                "client_device_label": (user or {}).get("client_device_label"),
+                "client_os_family": (user or {}).get("client_os_family"),
+                "client_app_name": (user or {}).get("client_app_name"),
+                "device_link_source": (user or {}).get("device_link_source") if (user or {}).get("client_device_id") else None,
+            },
+        )
         with self.connect() as conn:
             event_context = self._analysis_event_scope_context(
                 conn,
@@ -1112,6 +1269,8 @@ class ReviewAdminRepository(SQLiteRepository):
         )
         subject_key = subject_key_from_identity(user, ip=event_context["ip"])
         provider_summary = _provider_summary_payload(bundle)
+        hwid_context = _hwid_context(user)
+        hard_flags = _derive_hard_flags(bundle, usage_snapshot=usage_snapshot, hwid_context=hwid_context)
 
         with self.connect() as conn:
             next_status = "OPEN" if review_reason else "SKIPPED"
@@ -1131,6 +1290,10 @@ class ReviewAdminRepository(SQLiteRepository):
                     client_device_label = ?,
                     client_os_family = ?,
                     client_app_name = ?,
+                    device_link_status = ?,
+                    device_link_source = ?,
+                    hwid_device_limit = ?,
+                    hwid_device_count_exact = ?,
                     uuid = ?,
                     username = ?,
                     system_id = ?,
@@ -1142,6 +1305,9 @@ class ReviewAdminRepository(SQLiteRepository):
                     score = ?,
                     isp = ?,
                     asn = ?,
+                    asn_source = ?,
+                    provider_source = ?,
+                    hard_flags_json = ?,
                     provider_key = ?,
                     provider_classification = ?,
                     provider_service_hint = ?,
@@ -1172,6 +1338,10 @@ class ReviewAdminRepository(SQLiteRepository):
                     event_context["client_device_label"],
                     event_context["client_os_family"],
                     event_context["client_app_name"],
+                    event_context["device_link_status"],
+                    event_context["device_link_source"],
+                    hwid_context["hwid_device_limit"],
+                    hwid_context["hwid_device_count_exact"],
                     (user or {}).get("uuid"),
                     (user or {}).get("username"),
                     coerce_optional_int((user or {}).get("id")),
@@ -1183,6 +1353,9 @@ class ReviewAdminRepository(SQLiteRepository):
                     bundle.score,
                     bundle.isp,
                     bundle.asn,
+                    bundle.asn_source,
+                    bundle.provider_source,
+                    json.dumps(hard_flags, ensure_ascii=False),
                     provider_summary["provider_key"],
                     provider_summary["provider_classification"],
                     provider_summary["provider_service_hint"],
@@ -1255,12 +1428,17 @@ class ReviewAdminRepository(SQLiteRepository):
             item["reason_codes"] = json.loads(item.pop("reason_codes_json"))
         if "usage_profile_soft_reasons_json" in item:
             item["usage_profile_soft_reasons"] = json.loads(item.pop("usage_profile_soft_reasons_json"))
+        if "hard_flags_json" in item:
+            item["hard_flags"] = json.loads(item.pop("hard_flags_json"))
+        item.setdefault("hard_flags", [])
         item["provider_conflict"] = bool(item.get("provider_conflict"))
         item["provider_review_recommended"] = bool(item.get("provider_review_recommended"))
         item["inbound_tag"] = clean_text(item.get("tag")) or None
         item["target_ip"] = clean_text(item.get("ip")) or None
         item["target_scope_type"] = clean_text(item.get("scope_type")) or "ip_only"
-        item["device_display"] = device_display_from_identity(item) or None
+        item["device_link_status"] = clean_text(item.get("device_link_status")) or ("exact" if clean_text(item.get("client_device_id")) else "none")
+        item["device_link_source"] = clean_text(item.get("device_link_source")) or None
+        item["device_display"] = device_display_from_identity(item) if item["device_link_status"] == "exact" else None
         item["shared_account_suspected"] = bool(item.get("shared_account_suspected"))
         item["review_url"] = self.build_review_url(int(item["id"]))
         return item
@@ -1271,10 +1449,15 @@ class ReviewAdminRepository(SQLiteRepository):
             event_payload["reasons"] = json.loads(event_payload.pop("reasons_json"))
             event_payload["signal_flags"] = json.loads(event_payload.pop("signal_flags_json"))
             event_payload["bundle"] = json.loads(event_payload.pop("bundle_json"))
+            if "hard_flags_json" in event_payload:
+                event_payload["hard_flags"] = json.loads(event_payload.pop("hard_flags_json"))
+            event_payload.setdefault("hard_flags", [])
             event_payload["inbound_tag"] = clean_text(event_payload.get("tag")) or None
             event_payload["target_ip"] = clean_text(event_payload.get("ip")) or None
             event_payload["target_scope_type"] = clean_text(event_payload.get("scope_type")) or "ip_only"
-            event_payload["device_display"] = device_display_from_identity(event_payload) or None
+            event_payload["device_link_status"] = clean_text(event_payload.get("device_link_status")) or ("exact" if clean_text(event_payload.get("client_device_id")) else "none")
+            event_payload["device_link_source"] = clean_text(event_payload.get("device_link_source")) or None
+            event_payload["device_display"] = device_display_from_identity(event_payload) if event_payload["device_link_status"] == "exact" else None
             event_payload["shared_account_suspected"] = bool(event_payload.get("shared_account_suspected"))
         return event_payload
 
@@ -1304,8 +1487,9 @@ class ReviewAdminRepository(SQLiteRepository):
         query = [
             """SELECT id, status, review_reason, case_scope_key, device_scope_key, scope_type, subject_key,
                module_id, module_name, client_device_id, client_device_label, client_os_family, client_app_name,
+               device_link_status, device_link_source, hwid_device_limit, hwid_device_count_exact,
                uuid, username, system_id, telegram_id, ip, tag, verdict, confidence_band,
-               score, isp, asn, punitive_eligible, repeat_count, reason_codes_json,
+               score, isp, asn, asn_source, provider_source, hard_flags_json, punitive_eligible, repeat_count, reason_codes_json,
                provider_key, provider_classification, provider_service_hint, provider_conflict, provider_review_recommended,
                usage_profile_summary, usage_profile_signal_count, usage_profile_priority,
                usage_profile_soft_reasons_json, usage_profile_ongoing_duration_seconds, usage_profile_ongoing_duration_text,
@@ -1541,11 +1725,7 @@ class ReviewAdminRepository(SQLiteRepository):
                     snapshot=usage_profile,
                     updated_at=clean_text(case.get("updated_at")) or _utcnow(),
                 )
-            case["shared_account_suspected"] = (
-                shared_account_suspected_from_usage_profile(usage_profile)
-                if clean_text(case.get("target_scope_type")) == "subject_ip"
-                else False
-            )
+            case["shared_account_suspected"] = "sharing_hwid_limit_exceeded" in set(case.get("hard_flags") or [])
             case["latest_event"] = self._decode_analysis_event_payload(event_row)
             if case["latest_event"]:
                 case["latest_event"]["shared_account_suspected"] = (

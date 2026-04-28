@@ -18,6 +18,7 @@ AsyncIpApiLookup = Callable[[str], Awaitable[Optional[bool]]]
 StatsRecorder = Callable[[Optional[int], str, Optional[str], str], None]
 DatacenterDetector = Callable[[str, str], bool]
 AsnParser = Callable[[str], Optional[int]]
+AsnResolver = Callable[[str], tuple[Optional[int], str, str]]
 IspNormalizer = Callable[[str], str]
 
 
@@ -33,6 +34,7 @@ class ScoringDependencies:
     get_manual_override: AsyncManualOverrideLookup
     get_ip_info: AsyncIpInfoLookup
     parse_asn: AsnParser
+    resolve_asn: AsnResolver
     normalize_isp_name: IspNormalizer
     is_datacenter: DatacenterDetector
     analyze_behavior: AsyncBehaviorAnalyzer
@@ -54,6 +56,8 @@ class MutableScoreState:
     hostname: str = ""
     isp_name: str = "Unknown ISP"
     asn: Optional[int] = None
+    asn_source: str = "unknown"
+    provider_source: str = "unknown"
     concurrency_immunity: bool = False
     matched_provider: Optional[ProviderProfile] = None
     matched_provider_aliases: list[str] = field(default_factory=list)
@@ -77,6 +81,10 @@ def _finalize_bundle(state: MutableScoreState, rules: RuntimeRuleView, verdict: 
     bundle.verdict = verdict
     bundle.confidence_band = confidence
     bundle.score = state.score
+    bundle.asn_source = state.asn_source
+    bundle.provider_source = state.provider_source
+    bundle.hard_flags = _derive_scoring_hard_flags(bundle, state, rules)
+    bundle.signal_flags["hard_flags"] = list(bundle.hard_flags)
     bundle.isp = details
     bundle.details = details
     bundle.log = list(state.log)
@@ -87,6 +95,40 @@ def _finalize_bundle(state: MutableScoreState, rules: RuntimeRuleView, verdict: 
     else:
         bundle.punitive_eligible = False
     return bundle
+
+
+def _unknown_provider(value: str) -> bool:
+    normalized = str(value or "").strip().lower()
+    return normalized in {"", "unknown", "unknown isp", "n/a", "none"}
+
+
+def _is_mobile_tag(config: dict[str, Any], tag: Optional[str]) -> bool:
+    normalized_tag = str(tag or "").strip()
+    if not normalized_tag:
+        return False
+    configured_tags = config.get("mobile_tags")
+    if configured_tags is None:
+        configured_tags = config.get("inbound_tags")
+    if not isinstance(configured_tags, list):
+        return False
+    return normalized_tag in {str(item or "").strip() for item in configured_tags if str(item or "").strip()}
+
+
+def _derive_scoring_hard_flags(
+    bundle: DecisionBundle,
+    state: MutableScoreState,
+    rules: RuntimeRuleView,
+) -> list[str]:
+    flags: list[str] = []
+    reason_codes = set(bundle.reason_codes)
+    if bundle.source == "manual_override" or "manual_override" in reason_codes:
+        flags.append("manual_rule_applied")
+    if (
+        bool(bundle.signal_flags.get("mobile_tagged_config"))
+        and reason_codes.intersection({"pure_home_asn", "datacenter"})
+    ):
+        flags.append("mobile_config_on_home_network")
+    return flags
 
 
 def _provider_evidence(state: MutableScoreState, rules: RuntimeRuleView) -> dict[str, Any]:
@@ -373,13 +415,35 @@ async def evaluate_mobile_network(
     state.hostname = ipinfo_data.get("hostname", "")
     state.asn = deps.parse_asn(state.org)
     state.isp_name = deps.normalize_isp_name(state.org)
+    if state.asn is not None:
+        state.asn_source = "ipinfo"
+    if not _unknown_provider(state.isp_name):
+        state.provider_source = "ipinfo"
+    if state.asn is None or _unknown_provider(state.isp_name):
+        fallback_asn, fallback_provider, fallback_source = deps.resolve_asn(context.ip)
+        if state.asn is None and fallback_asn is not None:
+            state.asn = fallback_asn
+            state.asn_source = fallback_source
+        if _unknown_provider(state.isp_name) and not _unknown_provider(fallback_provider):
+            state.org = fallback_provider
+            state.isp_name = deps.normalize_isp_name(fallback_provider)
+            state.provider_source = fallback_source
+    if state.asn_source == "unknown" and state.asn is not None:
+        state.asn_source = "ipinfo"
+    if state.provider_source == "unknown" and not _unknown_provider(state.isp_name):
+        state.provider_source = state.asn_source if state.asn_source != "unknown" else "ipinfo"
+    state.bundle.signal_flags["asn_source"] = state.asn_source
+    state.bundle.signal_flags["provider_source"] = state.provider_source
+    state.bundle.signal_flags["mobile_tagged_config"] = _is_mobile_tag(config, context.tag)
     geo_context = normalize_geo_context(ipinfo_data)
     if geo_context:
         state.bundle.signal_flags["geo"] = geo_context
     state.bundle.asn = state.asn
     state.bundle.isp = state.isp_name
     state.bundle.details = state.isp_name
-    state.log.append(f" IPInfo result: ASN {state.asn}, ISP '{state.isp_name}'")
+    state.log.append(
+        f" IPInfo/runtime ASN result: ASN {state.asn}, ISP '{state.isp_name}', sources asn={state.asn_source} provider={state.provider_source}"
+    )
     if state.hostname:
         state.log.append(f" Hostname: {state.hostname}")
 

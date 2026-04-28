@@ -148,6 +148,25 @@ const REVIEW_REASON_DESCRIPTORS: Record<string, SignalDescriptor> = {
   }
 };
 
+const HARD_FLAG_DESCRIPTORS: Record<string, SignalDescriptor> = {
+  sharing_hwid_limit_exceeded: {
+    label: "HWID limit exceeded",
+    description: "Exact HWID device count is above the configured user limit."
+  },
+  mobile_config_on_home_network: {
+    label: "Mobile config on HOME",
+    description: "A mobile-tagged config hit a hard HOME reason."
+  },
+  traffic_burst_confirmed: {
+    label: "Traffic burst",
+    description: "Byte-based traffic stats confirmed a burst."
+  },
+  manual_rule_applied: {
+    label: "Manual rule",
+    description: "The current decision came from an explicit manual override."
+  }
+};
+
 function humanizeCode(code: string): string {
   return code
     .split("_")
@@ -179,6 +198,15 @@ export function describeReviewReason(code: string): SignalDescriptor {
     REVIEW_REASON_DESCRIPTORS[code] || {
       label: humanizeCode(code),
       description: `Технический код причины ревью: ${code}`
+    }
+  );
+}
+
+export function describeHardFlag(code: string): SignalDescriptor {
+  return (
+    HARD_FLAG_DESCRIPTORS[code] || {
+      label: humanizeCode(code),
+      description: `Технический код hard-флага: ${code}`
     }
   );
 }

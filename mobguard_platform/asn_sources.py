@@ -25,6 +25,8 @@ IPTOASN_INDEX_FILENAME = "ip2asn-combined.sqlite3"
 
 
 class ASNSource:
+    source_type = "unknown"
+
     def lookup(self, ip: str) -> Tuple[Optional[int], str]:
         return None, "unknown"
 
@@ -39,7 +41,9 @@ class MMDBASNSource(ASNSource):
         single_path: Optional[str] = None,
         ipv4_path: Optional[str] = None,
         ipv6_path: Optional[str] = None,
+        source_type: str = "single_mmdb",
     ):
+        self.source_type = source_type
         self.single_reader = _open_mmdb(single_path)
         self.ipv4_reader = _open_mmdb(ipv4_path)
         self.ipv6_reader = _open_mmdb(ipv6_path)
@@ -65,6 +69,8 @@ class MMDBASNSource(ASNSource):
 
 
 class IPToASNSource(ASNSource):
+    source_type = "iptoasn_tsv"
+
     def __init__(self, tsv_gz_path: str, index_path: Optional[str] = None):
         self.tsv_gz_path = tsv_gz_path
         self.index_path = index_path or str(
@@ -204,9 +210,9 @@ def resolve_asn_source(runtime_dir: str, single_mmdb_path: Optional[str] = None)
     iptoasn_path = os.path.join(runtime_dir, IPTOASN_TSV_FILENAME)
 
     if os.path.exists(single_path):
-        return MMDBASNSource(single_path=single_path)
+        return MMDBASNSource(single_path=single_path, source_type="single_mmdb")
     if os.path.exists(ipv4_path) or os.path.exists(ipv6_path):
-        return MMDBASNSource(ipv4_path=ipv4_path, ipv6_path=ipv6_path)
+        return MMDBASNSource(ipv4_path=ipv4_path, ipv6_path=ipv6_path, source_type="split_mmdb")
     if os.path.exists(iptoasn_path):
         return IPToASNSource(iptoasn_path)
     return NullASNSource()

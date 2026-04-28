@@ -48,6 +48,7 @@ describe("ReviewQueuePage", () => {
         score: 42,
         isp: "ISP A",
         asn: 123,
+        hard_flags: ["sharing_hwid_limit_exceeded"],
         punitive_eligible: 1,
         severity: "critical",
         repeat_count: 2,
@@ -119,6 +120,7 @@ describe("ReviewQueuePage", () => {
         score: 12,
         isp: "ISP B",
         asn: 456,
+        hard_flags: ["mobile_config_on_home_network"],
         punitive_eligible: 0,
         severity: "high",
         repeat_count: 1,
@@ -175,6 +177,7 @@ describe("ReviewQueuePage", () => {
         score: 9,
         isp: "ISP C",
         asn: null,
+        hard_flags: ["manual_rule_applied"],
         punitive_eligible: 0,
         severity: "low",
         repeat_count: 1,
@@ -259,11 +262,14 @@ describe("ReviewQueuePage", () => {
     expect(screen.getByText("1.1.1.1 ×2 · 1h")).toBeInTheDocument();
     expect(screen.getByText("3.3.3.3 ×1 · 0m")).toBeInTheDocument();
     expect(screen.getByText("ISP A")).toBeInTheDocument();
-    expect(screen.getAllByText("Provider conflict").length).toBeGreaterThan(0);
-    expect(screen.getByText("Нет маркера типа сети")).toBeInTheDocument();
-    expect(screen.getByText("Резкое путешествие")).toBeInTheDocument();
-    expect(screen.getByText("Ротация IP")).toBeInTheDocument();
-    expect(screen.getAllByText("ASN смешанного типа")).toHaveLength(1);
+    expect(screen.getByText("HWID limit exceeded")).toBeInTheDocument();
+    expect(screen.getByText("Mobile config on HOME")).toBeInTheDocument();
+    expect(screen.getByText("Manual rule")).toBeInTheDocument();
+    expect(screen.queryByText("Provider conflict")).not.toBeInTheDocument();
+    expect(screen.queryByText("Нет маркера типа сети")).not.toBeInTheDocument();
+    expect(screen.queryByText("Резкое путешествие")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ротация IP")).not.toBeInTheDocument();
+    expect(screen.queryByText("ASN смешанного типа")).not.toBeInTheDocument();
     expect(screen.queryByText("Manual review")).not.toBeInTheDocument();
     expect(screen.queryByText("priority 980")).not.toBeInTheDocument();
     expect(screen.queryByText(/^OPEN$/)).not.toBeInTheDocument();

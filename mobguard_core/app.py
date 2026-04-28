@@ -867,6 +867,11 @@ class NetworkAnalyzer:
             behavior["subnet"] = db.get_subnet(target_ip)
             return behavior
 
+        def resolve_asn(target_ip: str) -> tuple[Optional[int], str, str]:
+            asn, provider = self.asn_source.lookup(target_ip)
+            source_type = str(getattr(self.asn_source, "source_type", "unknown") or "unknown")
+            return asn, provider, source_type if asn is not None or provider != "unknown" else "unknown"
+
         return await evaluate_mobile_network(
             context=ScoringContext(ip=ip, uuid=uuid, tag=tag),
             config=CONFIG,
@@ -874,6 +879,7 @@ class NetworkAnalyzer:
                 get_manual_override=get_manual_override,
                 get_ip_info=ipinfo_api.get_ip_info,
                 parse_asn=ipinfo_api.parse_asn,
+                resolve_asn=resolve_asn,
                 normalize_isp_name=ipinfo_api.normalize_isp_name,
                 is_datacenter=ipinfo_api.is_datacenter,
                 analyze_behavior=analyze_behavior,

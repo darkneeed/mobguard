@@ -393,6 +393,51 @@ def _traffic_stats_payload(panel_user: Mapping[str, Any] | None) -> Optional[dic
     return None
 
 
+def _optional_int(value: Any) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _panel_hwid_limit(panel_user: Mapping[str, Any] | None) -> Optional[int]:
+    if not isinstance(panel_user, Mapping):
+        return None
+    for key in (
+        "hwidDeviceLimit",
+        "hwid_device_limit",
+        "hwidLimit",
+        "hwid_limit",
+        "maxHwidDevices",
+        "max_hwid_devices",
+        "deviceLimit",
+        "device_limit",
+    ):
+        parsed = _optional_int(panel_user.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _panel_hwid_count(panel_user: Mapping[str, Any] | None, devices: list[dict[str, Any]]) -> Optional[int]:
+    if devices:
+        exact_ids = {
+            _clean_text(device.get("device_id")).lower()
+            for device in devices
+            if _clean_text(device.get("device_id"))
+        }
+        return len(exact_ids) if exact_ids else len(devices)
+    if not isinstance(panel_user, Mapping):
+        return None
+    for key in ("hwidDeviceCount", "hwid_device_count", "hwidCount", "hwid_count", "deviceCount", "device_count"):
+        parsed = _optional_int(panel_user.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _traffic_series_burst(payload: Mapping[str, Any] | None) -> Optional[dict[str, Any]]:
     if not isinstance(payload, Mapping):
         return None
@@ -689,6 +734,8 @@ def build_usage_profile_snapshot(
 
     observations.sort(key=lambda item: item["created_at"])
     panel_devices = _extract_panel_devices(panel_user)
+    hwid_device_limit = _panel_hwid_limit(panel_user)
+    hwid_device_count_exact = _panel_hwid_count(panel_user, panel_devices)
     event_devices = [item["device"] for item in observations if item.get("device")]
     device_map: dict[str, dict[str, Any]] = {}
     for device in [*event_devices, *panel_devices]:
@@ -962,6 +1009,8 @@ def build_usage_profile_snapshot(
         "provider_count": len(provider_counter),
         "device_count": len(device_map),
         "exact_device_count": exact_device_count,
+        "hwid_device_limit": hwid_device_limit,
+        "hwid_device_count_exact": hwid_device_count_exact,
         "device_labels": device_labels[:10],
         "devices": list(device_map.values())[:10],
         "os_families": os_families,
@@ -991,18 +1040,12 @@ def build_usage_profile_snapshot(
 
 def shared_account_suspected_from_usage_profile(snapshot: Mapping[str, Any] | None) -> bool:
     profile = snapshot if isinstance(snapshot, Mapping) else {}
-    soft_reasons = {
-        _clean_text(value)
-        for value in (profile.get("soft_reasons") if isinstance(profile.get("soft_reasons"), list) else [])
-        if _clean_text(value)
-    }
-    exact_device_count = int(profile.get("exact_device_count") or 0)
-    return (
-        exact_device_count >= DEVICE_ROTATION_THRESHOLD
-        or "device_os_mismatch" in soft_reasons
-        or "geo_impossible_travel" in soft_reasons
-        or {"cross_node_fanout", "provider_fanout"}.issubset(soft_reasons)
-    )
+    limit = profile.get("hwid_device_limit")
+    count = profile.get("hwid_device_count_exact")
+    try:
+        return limit is not None and count is not None and int(count) > int(limit)
+    except (TypeError, ValueError):
+        return False
 
 
 def build_usage_profile_template_context(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:

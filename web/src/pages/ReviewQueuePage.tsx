@@ -12,8 +12,7 @@ import { prefetchRouteModule } from "../app/routeModules";
 import { api, ReviewItem, ReviewListResponse, Session } from "../api/client";
 import { useToast } from "../components/ToastProvider";
 import {
-  describeReasonCode,
-  describeSoftReason,
+  describeHardFlag,
 } from "../features/reviews/lib/signalBadges";
 import { describeScopeContext } from "../features/reviews/lib/scopeContext";
 import { useI18n } from "../localization";
@@ -47,14 +46,6 @@ type ReviewFilters = {
 
 const PAGE_SIZE_OPTIONS = [12, 24, 48, 96];
 const SAVED_FILTERS_KEY = "mobguard.reviewQueue.savedFilters";
-const BEHAVIOR_BADGE_PRIORITY = [
-  "geo_impossible_travel",
-  "behavior_churn",
-  "provider_fanout",
-  "cross_node_fanout",
-  "device_rotation",
-] as const;
-
 const DEFAULT_FILTERS: ReviewFilters = {
   status: "OPEN",
   confidence_band: "",
@@ -121,51 +112,13 @@ type QueueBadge = {
   description: string;
 };
 
-function buildQueueProviderBadge(reasonCodes: string[]): QueueBadge | null {
-  const normalized = new Set(
-    reasonCodes.map((code) => String(code || "").trim()),
-  );
-  if (normalized.has("provider_marker_missing")) {
-    return {
-      code: "provider_marker_missing",
-      ...describeReasonCode("provider_marker_missing"),
-    };
-  }
-  if (normalized.has("mixed_asn") || normalized.has("mixed_asn_guarded")) {
-    return {
-      code: "mixed_asn",
-      ...describeReasonCode("mixed_asn"),
-    };
-  }
-  return null;
-}
-
-function buildQueueBehaviorBadges(
-  reasonCodes: string[],
-  usageReasonCodes: string[],
-): QueueBadge[] {
-  const normalizedReasonCodes = new Set(
-    reasonCodes.map((code) => String(code || "").trim()),
-  );
-  const normalizedUsageCodes = new Set(
-    usageReasonCodes.map((code) => String(code || "").trim()),
-  );
-  const badges: QueueBadge[] = [];
-
-  for (const code of BEHAVIOR_BADGE_PRIORITY) {
-    if (code === "behavior_churn") {
-      if (normalizedReasonCodes.has(code)) {
-        badges.push({ code, ...describeReasonCode(code) });
-      }
-      continue;
-    }
-
-    if (normalizedUsageCodes.has(code)) {
-      badges.push({ code, ...describeSoftReason(code) });
-    }
-  }
-
-  return badges.slice(0, 2);
+function buildQueueHardFlagBadges(hardFlags: string[] | undefined): QueueBadge[] {
+  return Array.from(
+    new Set((hardFlags || []).map((code) => String(code || "").trim()).filter(Boolean)),
+  ).map((code) => ({
+    code,
+    ...describeHardFlag(code),
+  }));
 }
 
 function formatInventoryChipLabel(
@@ -950,13 +903,7 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                   item.device_display || t("common.notAvailable");
                 const providerDisplay =
                   item.isp || item.provider_key || t("common.notAvailable");
-                const providerBadge = buildQueueProviderBadge(
-                  item.reason_codes,
-                );
-                const behaviorBadges = buildQueueBehaviorBadges(
-                  item.reason_codes,
-                  item.usage_profile_soft_reasons || [],
-                );
+                const hardFlagBadges = buildQueueHardFlagBadges(item.hard_flags);
                 return (
                   <>
                     <div className="queue-card-top">
@@ -1053,17 +1000,7 @@ export function ReviewQueuePage({ session }: { session?: Session }) {
                           count: item.repeat_count,
                         })}
                       </span>
-                      {item.provider_conflict ? (
-                        <span className="tag severity-high">
-                          {t("reviewQueue.card.providerConflict")}
-                        </span>
-                      ) : null}
-                      {providerBadge ? (
-                        <span className="tag" title={providerBadge.description}>
-                          {providerBadge.label}
-                        </span>
-                      ) : null}
-                      {behaviorBadges.map((badge) => (
+                      {hardFlagBadges.map((badge) => (
                         <span
                           key={badge.code}
                           className="tag"

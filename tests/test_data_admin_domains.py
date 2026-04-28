@@ -133,7 +133,7 @@ class DataAdminDomainTests(unittest.TestCase):
         self.assertTrue(payload["items"][0]["has_review_case"])
         self.assertEqual(payload["items"][0]["review_case_status"], "OPEN")
 
-    def test_analysis_events_facade_marks_subject_ip_shared_account_context(self):
+    def test_analysis_events_facade_does_not_infer_shared_account_from_multiple_devices(self):
         bundle = DecisionBundle(
             ip="5.6.7.8",
             verdict="UNSURE",
@@ -180,7 +180,7 @@ class DataAdminDomainTests(unittest.TestCase):
 
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["items"][0]["target_scope_type"], "subject_ip")
-        self.assertTrue(payload["items"][0]["shared_account_suspected"])
+        self.assertFalse(payload["items"][0]["shared_account_suspected"])
 
     def test_auto_decisions_facade_excludes_review_cases_and_manual_overrides(self):
         user = {

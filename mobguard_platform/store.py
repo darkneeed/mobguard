@@ -1013,6 +1013,9 @@ class PlatformStore:
                     score INTEGER NOT NULL DEFAULT 0,
                     isp TEXT,
                     asn INTEGER,
+                    asn_source TEXT NOT NULL DEFAULT 'unknown',
+                    provider_source TEXT NOT NULL DEFAULT 'unknown',
+                    hard_flags_json TEXT NOT NULL DEFAULT '[]',
                     country TEXT,
                     region TEXT,
                     city TEXT,
@@ -1025,6 +1028,10 @@ class PlatformStore:
                     client_os_version TEXT,
                     client_app_name TEXT,
                     client_app_version TEXT,
+                    device_link_status TEXT NOT NULL DEFAULT 'none',
+                    device_link_source TEXT,
+                    hwid_device_limit INTEGER,
+                    hwid_device_count_exact INTEGER,
                     punitive_eligible INTEGER NOT NULL DEFAULT 0,
                     reasons_json TEXT NOT NULL,
                     signal_flags_json TEXT NOT NULL,
@@ -1049,6 +1056,10 @@ class PlatformStore:
                     client_device_label TEXT,
                     client_os_family TEXT,
                     client_app_name TEXT,
+                    device_link_status TEXT NOT NULL DEFAULT 'none',
+                    device_link_source TEXT,
+                    hwid_device_limit INTEGER,
+                    hwid_device_count_exact INTEGER,
                     uuid TEXT,
                     username TEXT,
                     system_id INTEGER,
@@ -1060,6 +1071,9 @@ class PlatformStore:
                     score INTEGER NOT NULL DEFAULT 0,
                     isp TEXT,
                     asn INTEGER,
+                    asn_source TEXT NOT NULL DEFAULT 'unknown',
+                    provider_source TEXT NOT NULL DEFAULT 'unknown',
+                    hard_flags_json TEXT NOT NULL DEFAULT '[]',
                     provider_key TEXT,
                     provider_classification TEXT NOT NULL DEFAULT 'unknown',
                     provider_service_hint TEXT NOT NULL DEFAULT 'unknown',
@@ -1390,6 +1404,12 @@ class PlatformStore:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN isp TEXT")
             if analysis_event_columns and "asn" not in analysis_event_columns:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN asn INTEGER")
+            if analysis_event_columns and "asn_source" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN asn_source TEXT NOT NULL DEFAULT 'unknown'")
+            if analysis_event_columns and "provider_source" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN provider_source TEXT NOT NULL DEFAULT 'unknown'")
+            if analysis_event_columns and "hard_flags_json" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN hard_flags_json TEXT NOT NULL DEFAULT '[]'")
             if analysis_event_columns and "country" not in analysis_event_columns:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN country TEXT")
             if analysis_event_columns and "region" not in analysis_event_columns:
@@ -1414,6 +1434,14 @@ class PlatformStore:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN client_app_name TEXT")
             if analysis_event_columns and "client_app_version" not in analysis_event_columns:
                 conn.execute("ALTER TABLE analysis_events ADD COLUMN client_app_version TEXT")
+            if analysis_event_columns and "device_link_status" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN device_link_status TEXT NOT NULL DEFAULT 'none'")
+            if analysis_event_columns and "device_link_source" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN device_link_source TEXT")
+            if analysis_event_columns and "hwid_device_limit" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN hwid_device_limit INTEGER")
+            if analysis_event_columns and "hwid_device_count_exact" not in analysis_event_columns:
+                conn.execute("ALTER TABLE analysis_events ADD COLUMN hwid_device_count_exact INTEGER")
             if analysis_event_columns and "punitive_eligible" not in analysis_event_columns:
                 conn.execute(
                     "ALTER TABLE analysis_events ADD COLUMN punitive_eligible INTEGER NOT NULL DEFAULT 0"
@@ -1453,8 +1481,22 @@ class PlatformStore:
                 conn.execute("ALTER TABLE review_cases ADD COLUMN client_os_family TEXT")
             if review_case_columns and "client_app_name" not in review_case_columns:
                 conn.execute("ALTER TABLE review_cases ADD COLUMN client_app_name TEXT")
+            if review_case_columns and "device_link_status" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN device_link_status TEXT NOT NULL DEFAULT 'none'")
+            if review_case_columns and "device_link_source" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN device_link_source TEXT")
+            if review_case_columns and "hwid_device_limit" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN hwid_device_limit INTEGER")
+            if review_case_columns and "hwid_device_count_exact" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN hwid_device_count_exact INTEGER")
             if review_case_columns and "punitive_eligible" not in review_case_columns:
                 conn.execute("ALTER TABLE review_cases ADD COLUMN punitive_eligible INTEGER NOT NULL DEFAULT 0")
+            if review_case_columns and "asn_source" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN asn_source TEXT NOT NULL DEFAULT 'unknown'")
+            if review_case_columns and "provider_source" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN provider_source TEXT NOT NULL DEFAULT 'unknown'")
+            if review_case_columns and "hard_flags_json" not in review_case_columns:
+                conn.execute("ALTER TABLE review_cases ADD COLUMN hard_flags_json TEXT NOT NULL DEFAULT '[]'")
             if review_case_columns and "provider_key" not in review_case_columns:
                 conn.execute("ALTER TABLE review_cases ADD COLUMN provider_key TEXT")
             if review_case_columns and "provider_classification" not in review_case_columns:
@@ -3358,13 +3400,14 @@ class PlatformStore:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            self.record_analysis_event,
-            user,
-            ip,
-            tag,
-            bundle,
-            observation,
-            source_event_uid,
+            lambda: self.record_analysis_event(
+                user,
+                ip,
+                tag,
+                bundle,
+                observation=observation,
+                source_event_uid=source_event_uid,
+            ),
         )
 
     async def async_ensure_review_case(

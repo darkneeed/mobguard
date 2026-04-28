@@ -85,6 +85,7 @@ class ScoringPipelineTests(unittest.TestCase):
         legacy_home=0,
         ip_api_mobile=None,
         datacenter_detector=None,
+        resolve_asn=None,
     ):
         behavior = behavior or {
             "logs": [],
@@ -138,6 +139,7 @@ class ScoringPipelineTests(unittest.TestCase):
             get_manual_override=get_manual_override,
             get_ip_info=get_ip_info,
             parse_asn=lambda value: int(str(value).split()[0].replace("AS", "")) if str(value).startswith("AS") else None,
+            resolve_asn=resolve_asn or (lambda _ip: (None, "unknown", "unknown")),
             normalize_isp_name=lambda value: value,
             is_datacenter=datacenter_detector
             or (lambda raw_org, raw_hostname: "hosting" in raw_org.lower() or "hosting" in raw_hostname.lower()),
@@ -175,6 +177,42 @@ class ScoringPipelineTests(unittest.TestCase):
         )
         self.assertEqual(bundle.verdict, "HOME")
         self.assertEqual(bundle.confidence_band, "HIGH_HOME")
+
+    def test_ipinfo_asn_source_wins_when_present(self):
+        called = {"fallback": False}
+
+        def resolve_asn(_ip):
+            called["fallback"] = True
+            return 9049, "Fallback Fiber", "single_mmdb"
+
+        deps, _ = self.make_deps(org="AS51547 Mobile Operator", resolve_asn=resolve_asn)
+        bundle = asyncio.run(
+            evaluate_mobile_network(ScoringContext(ip="3.3.3.4"), BASE_CONFIG, deps)
+        )
+
+        self.assertFalse(called["fallback"])
+        self.assertEqual(bundle.asn, 51547)
+        self.assertEqual(bundle.asn_source, "ipinfo")
+        self.assertEqual(bundle.provider_source, "ipinfo")
+
+    def test_runtime_asn_fallback_is_used_when_ipinfo_has_unknown_asn(self):
+        deps, _ = self.make_deps(
+            org="Unknown ISP",
+            hostname="",
+            resolve_asn=lambda _ip: (9049, "Fallback Fiber", "single_mmdb"),
+        )
+        config = json.loads(json.dumps(BASE_CONFIG))
+        config["mobile_tags"] = ["TAG"]
+
+        bundle = asyncio.run(
+            evaluate_mobile_network(ScoringContext(ip="3.3.3.5", tag="TAG"), config, deps)
+        )
+
+        self.assertEqual(bundle.asn, 9049)
+        self.assertIn("Fallback Fiber", bundle.isp)
+        self.assertEqual(bundle.asn_source, "single_mmdb")
+        self.assertEqual(bundle.provider_source, "single_mmdb")
+        self.assertIn("mobile_config_on_home_network", bundle.hard_flags)
 
     def test_promoted_learning_signal_is_applied(self):
         deps, _ = self.make_deps(

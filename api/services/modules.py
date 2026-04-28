@@ -10,6 +10,7 @@ import textwrap
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Optional
 
 from behavioral_analyzers import BehavioralEngine
@@ -21,6 +22,7 @@ from mobguard_platform import (
     apply_remote_traffic_cap,
     build_auto_restriction_state,
     review_reason_for_bundle,
+    resolve_asn_source,
     should_warning_only,
 )
 from mobguard_platform.module_secrets import ModuleSecretError, decrypt_module_token, encrypt_module_token
@@ -44,6 +46,20 @@ MODULE_INGEST_LOCK = asyncio.Lock()
 MODULE_INGEST_BUSY_DETAIL = "Storage is temporarily busy; retry shortly"
 
 
+def _container_runtime_dir(container: APIContainer) -> str:
+    runtime = getattr(container, "runtime", None)
+    runtime_dir = getattr(runtime, "runtime_dir", None)
+    if runtime_dir:
+        return str(runtime_dir)
+    env_path = getattr(runtime, "env_path", None)
+    if env_path:
+        return str(Path(env_path).parent)
+    config_path = getattr(getattr(container, "store", None), "config_path", None)
+    if config_path:
+        return str(Path(config_path).parent)
+    return str(Path("runtime"))
+
+
 class ModuleIngestionBusyError(RuntimeError):
     pass
 
@@ -61,6 +77,7 @@ class ModuleBatchContext:
     settings: dict[str, Any]
     remnawave_client: PanelClient
     ipinfo: Any
+    asn_source: Any
     behavior_engine: BehavioralEngine
     exempt_ids: frozenset[int]
     exempt_tg_ids: frozenset[int]
@@ -355,6 +372,12 @@ async def _analyze_event(
         # Daily/stat buffers are not part of the panel control-plane contract in v1.
         return None
 
+    def resolve_asn(target_ip: str) -> tuple[Optional[int], str, str]:
+        asn, provider = runtime.asn_source.lookup(target_ip)
+        source_type = str(getattr(runtime.asn_source, "source_type", "unknown") or "unknown")
+        provider_known = str(provider or "").strip().lower() not in {"", "unknown", "unknown isp"}
+        return asn, provider, source_type if asn is not None or provider_known else "unknown"
+
     bundle = await evaluate_mobile_network(
         context=ScoringContext(
             ip=str(payload["ip"]),
@@ -366,6 +389,7 @@ async def _analyze_event(
             get_manual_override=get_manual_override,
             get_ip_info=ipinfo.get_ip_info,
             parse_asn=ipinfo.parse_asn,
+            resolve_asn=resolve_asn,
             normalize_isp_name=ipinfo.normalize_isp_name,
             is_datacenter=ipinfo.is_datacenter,
             analyze_behavior=analyze_behavior,
@@ -620,6 +644,10 @@ def _build_batch_context(container: APIContainer, module: dict[str, Any]) -> Mod
         settings=settings,
         remnawave_client=_remnawave_client(container),
         ipinfo=_ipinfo_client(),
+        asn_source=resolve_asn_source(
+            _container_runtime_dir(container),
+            settings.get("geoip_db") or container.store.base_config.get("settings", {}).get("geoip_db"),
+        ),
         behavior_engine=BehavioralEngine(container.analysis_store, rules),
         exempt_ids=frozenset(int(value) for value in rules.get("exempt_ids", [])),
         exempt_tg_ids=frozenset(int(value) for value in rules.get("exempt_tg_ids", [])),

@@ -424,6 +424,9 @@ def _analysis_event_select(conn: Any, store: Any) -> str:
         "asn",
     ]
     for optional_column in (
+        "asn_source",
+        "provider_source",
+        "hard_flags_json",
         "module_id",
         "module_name",
         "case_scope_key",
@@ -432,6 +435,10 @@ def _analysis_event_select(conn: Any, store: Any) -> str:
         "client_device_id",
         "client_device_label",
         "client_os_family",
+        "device_link_status",
+        "device_link_source",
+        "hwid_device_limit",
+        "hwid_device_count_exact",
         "client_app_name",
         "country",
         "region",
@@ -502,9 +509,11 @@ def _enrich_analysis_event_row(row: dict[str, Any]) -> dict[str, Any]:
     reasons = _parse_optional_json(payload.pop("reasons_json", None), [])
     signal_flags = _parse_optional_json(payload.pop("signal_flags_json", None), {})
     bundle = _parse_optional_json(payload.pop("bundle_json", None), None)
+    hard_flags = _parse_optional_json(payload.pop("hard_flags_json", None), [])
     payload["reasons"] = reasons
     payload["signal_flags"] = signal_flags
     payload["bundle"] = bundle
+    payload["hard_flags"] = hard_flags if isinstance(hard_flags, list) else []
     payload["decision_source"] = str(
         payload.get("decision_source")
         or (bundle.get("source") if isinstance(bundle, dict) else "")
@@ -518,12 +527,14 @@ def _enrich_analysis_event_row(row: dict[str, Any]) -> dict[str, Any]:
     payload["inbound_tag"] = payload.get("tag")
     payload["target_ip"] = payload.get("ip")
     payload["target_scope_type"] = payload.get("scope_type") or "ip_only"
+    payload["device_link_status"] = str(payload.get("device_link_status") or ("exact" if payload.get("client_device_id") else "none"))
+    payload["device_link_source"] = payload.get("device_link_source") or None
     payload["device_display"] = (
         payload.get("client_device_label")
         or payload.get("client_os_family")
         or payload.get("client_device_id")
         or None
-    )
+    ) if payload["device_link_status"] == "exact" else None
     payload["shared_account_suspected"] = bool(payload.get("shared_account_suspected"))
     return payload
 

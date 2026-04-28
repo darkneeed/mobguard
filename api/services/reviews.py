@@ -156,6 +156,11 @@ async def _recheck_case_ids(
                 "telegramId": detail.get("telegram_id"),
                 "module_id": detail.get("module_id"),
                 "module_name": detail.get("module_name"),
+                "client_device_id": detail.get("client_device_id"),
+                "client_device_label": detail.get("client_device_label"),
+                "client_os_family": detail.get("client_os_family"),
+                "client_app_name": detail.get("client_app_name"),
+                "device_link_source": "request_history" if detail.get("client_device_id") else None,
             }
             payload = {
                 "uuid": detail.get("uuid"),
@@ -164,6 +169,11 @@ async def _recheck_case_ids(
                 "telegram_id": detail.get("telegram_id"),
                 "ip": detail.get("ip"),
                 "tag": detail.get("tag"),
+                "client_device_id": detail.get("client_device_id"),
+                "client_device_label": detail.get("client_device_label"),
+                "client_os_family": detail.get("client_os_family"),
+                "client_app_name": detail.get("client_app_name"),
+                "device_link_source": "request_history" if detail.get("client_device_id") else None,
             }
             bundle = await _analyze_event(
                 scoring_runtime,

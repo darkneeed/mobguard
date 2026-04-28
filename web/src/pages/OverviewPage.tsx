@@ -214,6 +214,16 @@ export function OverviewPage({ session }: { session?: Session }) {
               <h2>{t("overview.attentionTitle")}</h2>
               <p className="muted">{t("overview.attentionDescription")}</p>
             </div>
+            {canReadData ? (
+              <Link
+                className="button button-secondary"
+                to="/data/console"
+                onMouseEnter={() => prefetchRouteModule("/data/console")}
+                onFocus={() => prefetchRouteModule("/data/console")}
+              >
+                {t("overview.quickLinks.events")}
+              </Link>
+            ) : null}
           </div>
           <div className="stats-grid">
             <div className="stat-card">

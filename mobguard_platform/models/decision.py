@@ -47,6 +47,9 @@ class DecisionBundle:
     reasons: list[DecisionReason] = field(default_factory=list)
     signal_flags: dict[str, Any] = field(default_factory=dict)
     asn: Optional[int] = None
+    asn_source: str = "unknown"
+    provider_source: str = "unknown"
+    hard_flags: list[str] = field(default_factory=list)
     isp: str = "Unknown ISP"
     source: str = "rule_engine"
     punitive_eligible: bool = False
@@ -123,6 +126,9 @@ class DecisionBundle:
             "reasons": [reason.to_dict() for reason in self.reasons],
             "signal_flags": dict(self.signal_flags),
             "asn": self.asn,
+            "asn_source": self.asn_source,
+            "provider_source": self.provider_source,
+            "hard_flags": list(self.hard_flags),
             "isp": self.isp,
             "source": self.source,
             "punitive_eligible": self.punitive_eligible,
@@ -142,6 +148,9 @@ class DecisionBundle:
             reasons=[DecisionReason.from_dict(item) for item in payload.get("reasons", [])],
             signal_flags=dict(payload.get("signal_flags", {})),
             asn=payload.get("asn"),
+            asn_source=str(payload.get("asn_source", "unknown") or "unknown"),
+            provider_source=str(payload.get("provider_source", "unknown") or "unknown"),
+            hard_flags=list(payload.get("hard_flags", [])),
             isp=str(payload.get("isp", "Unknown ISP")),
             source=str(payload.get("source", "rule_engine")),
             punitive_eligible=bool(payload.get("punitive_eligible", False)),
@@ -167,6 +176,9 @@ class DecisionBundle:
             confidence_band=str(cached.get("confidence", "UNSURE")),
             score=int(cached.get("score", 0)),
             asn=cached.get("asn"),
+            asn_source=str(cached.get("asn_source", "unknown") or "unknown"),
+            provider_source=str(cached.get("provider_source", "unknown") or "unknown"),
+            hard_flags=list(cached.get("hard_flags", [])),
             isp=details,
             details=details,
             punitive_eligible=False,
@@ -189,6 +201,9 @@ class DecisionBundle:
             "isp": self.isp,
             "details": self.details or self.isp,
             "asn": self.asn,
+            "asn_source": self.asn_source,
+            "provider_source": self.provider_source,
+            "hard_flags": list(self.hard_flags),
             "log": list(self.log),
             "score": self.score,
             "bundle": self.to_dict(),
